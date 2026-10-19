@@ -1,20 +1,14 @@
 --[[
     ============================================================
-    DEMON OF DARKNESS UI (DoD UI) v1.1 — PATCHED
+    DEMON OF DARKNESS UI (DoD UI) v1.2 — DUAL COLUMN & POLISHED
     Standalone, customizable interface library
 
-    Fixes in v1.1:
-      [FIX] SwitchTab auto-syncs sidebar category
-      [FIX] Minimize/maximize use separate save states
-      [FIX] Shadow layers sync with main UIScale
-      [FIX] FocusOverlay hidden during minimize
-      [FIX] bindPressAnimation reuses existing UIScale
-      [FIX] Weather intensity no longer rebuilds particles
-      [FIX] Navigation layout nil-guard (safe during init)
-      [FIX] Side-mode search/content alignment (was 5px off)
-      [FIX] Search registers top-level controls (page-level)
-      [FIX] DashboardBanner removes dead search-update code
-      [FIX] Theme customizer SetWeather no spam
+    New in v1.2:
+      [NEW] True 2-Column Layout for Content Area (Left & Right)
+      [NEW] CreateSection(tab, title, summary, open, "Left" | "Right")
+      [NEW] Polished Section UI (smoother borders, rounded corners)
+      [NEW] Polished Controls (better slider, toggle, and dropdown)
+      [FIX] Auto-scale column height to match max content
     ============================================================
 ]]
 
@@ -30,11 +24,6 @@ local TweenService       = game:GetService("TweenService")
 local CoreGui            = game:GetService("CoreGui")
 local Lighting           = game:GetService("Lighting")
 local LocalPlayer        = Players.LocalPlayer
-
-local IconsSuccess, IconsLib = pcall(function()
-    return loadstring(game:HttpGetAsync("https://raw.githubusercontent.com/Footagesus/Icons/main/Main-v2.lua"))()
-end)
-local Icons = IconsSuccess and IconsLib or nil
 
 local function getCam() return workspace.CurrentCamera end
 
@@ -69,7 +58,6 @@ Fn.untrack = function(connection, owner)
     connection:Disconnect()
 end
 
--- FIX: reuse existing UIScale instead of stacking new ones
 Fn.bindPressAnimation = function(guiObject)
     local scale = guiObject:FindFirstChildOfClass("UIScale")
     if not scale then
@@ -105,16 +93,6 @@ Fn.bindPressAnimation = function(guiObject)
         animate(1)
     end)
     return scale
-end
-
-Fn.getDeviceType = function()
-    local touch, kb, mouse = false, false, false
-    pcall(function() touch = UserInputService.TouchEnabled == true end)
-    pcall(function() kb    = UserInputService.KeyboardEnabled == true end)
-    pcall(function() mouse = UserInputService.MouseEnabled == true end)
-    if touch and not kb and not mouse then return "Mobile" end
-    if touch and (kb or mouse) then return "Tablet" end
-    return "PC"
 end
 
 Fn.accentTextColor = function(color)
@@ -657,7 +635,7 @@ function Library.new(opts)
     local self = setmetatable({}, Library)
 
     self.Title       = opts.Title or "Demon of Darkness UI"
-    self.Version     = opts.Version or "v1.0"
+    self.Version     = opts.Version or "v1.2"
     self.Author      = opts.Author or "@DemonOfDarkness"
     self.ThemeName   = opts.Theme or "Demon of Darkness"
     self.TabPosition = opts.TabPosition or "Top"
@@ -672,7 +650,7 @@ function Library.new(opts)
     if opts.Acrylic ~= nil and type(opts.Acrylic) ~= "boolean" then
         error("[DoD UI] Acrylic must be a boolean.")
     end
-    self.WindowSize = opts.Size or UDim2.fromOffset(600, 450)
+    self.WindowSize = opts.Size or UDim2.fromOffset(750, 500)
     self.Acrylic = opts.Acrylic ~= false
     if opts.AcrylicBlur == nil then
         self.AcrylicBlurIntensity = 8
@@ -714,6 +692,8 @@ function Library.new(opts)
     self._STATE = {
         ContentPages        = {},
         CategoryTabs        = {},
+        TabColumns          = {}, -- Stores LeftCol, RightCol for each tab
+        TabTopContainers    = {}, -- Stores Top container for each tab
         SearchSections      = {},
         SearchBodies        = {},
         SearchTopLevel      = {},
@@ -769,7 +749,6 @@ function Library.new(opts)
         self:SetWeather(true, self._STATE.WeatherType, self._STATE.WeatherIntensity)
     end
 
-    -- FIX: register viewport listener AFTER full init (avoid nil deref during boot)
     Fn.track(self._UI.MainContainer:GetPropertyChangedSignal("AbsoluteSize"), function()
         self:_applyNavigationLayout()
     end, self)
@@ -1223,7 +1202,6 @@ function Library:_initMainGui()
     end
 end
 
--- FIX: shadow scale synced with main UIScale
 function Library:_initShadowSync()
     local function sync()
         local pos = self._UI.MainContainer.Position
@@ -1519,7 +1497,6 @@ function Library:_initTitleBar()
     Fn.track(UI.MainContainer:GetPropertyChangedSignal("AbsoluteSize"), updateTitleLayout, self)
 end
 
--- FIX: minimize/maximize use separate save states; FocusOverlay hidden on minimize
 function Library:_initTrafficLights()
     local UI = self._UI
     local container = Instance.new("Frame", UI.TitleBar)
@@ -1595,7 +1572,6 @@ function Library:_initTrafficLights()
 
         if target == "MINIMIZED" then
             hideChildren(false)
-            -- FIX: hide FocusOverlay on minimize (was left visible)
             if UI.FocusOverlay then
                 self._focusOverlayWasVisible = UI.FocusOverlay.Visible
                 UI.FocusOverlay.Visible = false
@@ -1681,10 +1657,8 @@ function Library:_initSidebar()
     UI.TabBarDivider.BackgroundColor3 = self._Colors.Border
     UI.TabBarDivider.BackgroundTransparency = 0.5
     UI.TabBarDivider.BorderSizePixel = 0
-    -- FIX: AbsoluteSize listener moved to constructor (avoid nil deref during init)
 end
 
--- FIX: nil-guard + side-mode alignment correction
 function Library:_applyNavigationLayout()
     local UI = self._UI
     if not (UI.CategoryBar and UI.Sidebar and UI.TabBarDivider) then return end
@@ -1709,7 +1683,6 @@ function Library:_applyNavigationLayout()
             UI.SearchBar.Position = UDim2.new(0, sideWidth + 20, 0, 88)
         end
         if hasContent then
-            -- FIX: was sideWidth + 15 (5px left of SearchBar). Align to sideWidth + 20.
             UI.ContentArea.Size = UDim2.new(1, -(sideWidth + 45), 1, -133)
             UI.ContentArea.Position = UDim2.new(0, sideWidth + 20, 0, 121)
         end
@@ -1829,7 +1802,6 @@ function Library:_initSearchBar()
     end)
 end
 
--- FIX: handle SearchTopLevel (page-level controls) + expandedBeforeSearch nil guard
 function Library:_applySearchFilter(tabName)
     local STATE = self._STATE
     tabName = tabName or STATE.ActiveTab
@@ -1873,7 +1845,6 @@ function Library:_applySearchFilter(tabName)
         sectionData.searching = searching
     end
 
-    -- FIX: top-level (page-direct) controls
     local pool = STATE.SearchTopLevel and STATE.SearchTopLevel[tabName]
     if pool then
         for _, ctrl in ipairs(pool) do
@@ -1886,7 +1857,6 @@ function Library:_applySearchFilter(tabName)
     end
 end
 
--- FIX: support top-level registration when parent chain doesn't reach a section body
 function Library:_registerSearchControl(instance, searchText)
     local parent = instance.Parent
     local sectionData
@@ -1897,7 +1867,6 @@ function Library:_registerSearchControl(instance, searchText)
     end
 
     if not sectionData then
-        -- find which ContentPage this control belongs to
         local tabName
         local p = instance.Parent
         while p do
@@ -1928,7 +1897,7 @@ function Library:_registerSearchControl(instance, searchText)
 end
 
 -- =========================================================
--- CONTENT AREA
+-- CONTENT AREA (TRUE 2-COLUMN LAYOUT)
 -- =========================================================
 
 function Library:_initContentArea()
@@ -2078,7 +2047,6 @@ end
 -- WEATHER ENGINE
 -- =========================================================
 
--- FIX: don't rebuild particles when only intensity changed
 function Library:SetWeather(enabled, weatherType, intensity)
     if self:_isDead() then return end
     if type(enabled) ~= "boolean" then
@@ -2466,7 +2434,6 @@ function Library:_layoutCategoryButtons()
     end
 end
 
--- FIX: preferredTab + suppress flag prevent double-switch when called from SwitchTab
 function Library:SetActiveCategory(categoryName, preferredTab)
     if self:_isDead() then return end
     local STATE = self._STATE
@@ -2576,24 +2543,81 @@ function Library:CreateTab(categoryName, tabName)
     page.Size = UDim2.new(1, 0, 1, 0)
     page.Position = UDim2.new(0, 0, 0, 0)
     page.BackgroundTransparency = 1
-    page.ScrollBarThickness = 0
+    page.ScrollBarThickness = 2
+    page.ScrollBarImageColor3 = self._Colors.Accent
     page.AutomaticCanvasSize = Enum.AutomaticSize.Y
     page.CanvasSize = UDim2.new(0, 0, 0, 0)
     page.Visible = false
-    page.ScrollBarImageTransparency = 1
     page.VerticalScrollBarInset = Enum.ScrollBarInset.None
     page.HorizontalScrollBarInset = Enum.ScrollBarInset.None
     page.ElasticBehavior = Enum.ElasticBehavior.Never
 
-    local pad = Instance.new("UIPadding", page)
-    pad.PaddingLeft = UDim.new(0, 12)
-    pad.PaddingRight = UDim.new(0, 12)
-    pad.PaddingTop = UDim.new(0, 6)
-    pad.PaddingBottom = UDim.new(0, 12)
+    local pagePad = Instance.new("UIPadding", page)
+    pagePad.PaddingTop = UDim.new(0, 6)
+    pagePad.PaddingBottom = UDim.new(0, 12)
+    pagePad.PaddingRight = UDim.new(0, 6)
 
-    local list = Instance.new("UIListLayout", page)
-    list.SortOrder = Enum.SortOrder.LayoutOrder
-    list.Padding = UDim.new(0, 8)
+    local pageList = Instance.new("UIListLayout", page)
+    pageList.SortOrder = Enum.SortOrder.LayoutOrder
+    pageList.Padding = UDim.new(0, 10)
+
+    -- Top container (full width) for banners
+    local topContainer = Instance.new("Frame", page)
+    topContainer.Name = "TopContainer"
+    topContainer.LayoutOrder = 1
+    topContainer.Size = UDim2.new(1, 0, 0, 0)
+    topContainer.AutomaticSize = Enum.AutomaticSize.Y
+    topContainer.BackgroundTransparency = 1
+    local topLayout = Instance.new("UIListLayout", topContainer)
+    topLayout.SortOrder = Enum.SortOrder.LayoutOrder
+    topLayout.Padding = UDim.new(0, 10)
+
+    -- Dual Columns Container
+    local columnsContainer = Instance.new("Frame", page)
+    columnsContainer.Name = "ColumnsContainer"
+    columnsContainer.LayoutOrder = 2
+    columnsContainer.Size = UDim2.new(1, 0, 0, 0)
+    columnsContainer.BackgroundTransparency = 1
+    columnsContainer.ClipsDescendants = false
+
+    -- Left Column
+    local leftCol = Instance.new("Frame", columnsContainer)
+    leftCol.Name = "LeftColumn"
+    leftCol.Size = UDim2.new(0.5, -5, 0, 0)
+    leftCol.Position = UDim2.new(0, 0, 0, 0)
+    leftCol.AutomaticSize = Enum.AutomaticSize.Y
+    leftCol.BackgroundTransparency = 1
+    leftCol.ClipsDescendants = false
+    local leftLayout = Instance.new("UIListLayout", leftCol)
+    leftLayout.SortOrder = Enum.SortOrder.LayoutOrder
+    leftLayout.Padding = UDim.new(0, 10)
+
+    -- Right Column
+    local rightCol = Instance.new("Frame", columnsContainer)
+    rightCol.Name = "RightColumn"
+    rightCol.Size = UDim2.new(0.5, -5, 0, 0)
+    rightCol.Position = UDim2.new(0.5, 5, 0, 0)
+    rightCol.AutomaticSize = Enum.AutomaticSize.Y
+    rightCol.BackgroundTransparency = 1
+    rightCol.ClipsDescendants = false
+    local rightLayout = Instance.new("UIListLayout", rightCol)
+    rightLayout.SortOrder = Enum.SortOrder.LayoutOrder
+    rightLayout.Padding = UDim.new(0, 10)
+
+    -- Auto-scale height for columns container
+    local function updateColumnsSize()
+        local leftSize = leftLayout.AbsoluteContentSize.Y
+        local rightSize = rightLayout.AbsoluteContentSize.Y
+        local maxH = math.max(leftSize, rightSize)
+        columnsContainer.Size = UDim2.new(1, 0, 0, maxH)
+    end
+    leftLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(updateColumnsSize)
+    rightLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(updateColumnsSize)
+
+    -- Save references
+    STATE.ContentPages[tabName] = page
+    STATE.TabTopContainers[tabName] = topContainer
+    STATE.TabColumns[tabName] = { Left = leftCol, Right = rightCol, Container = columnsContainer }
 
     page:GetPropertyChangedSignal("CanvasPosition"):Connect(function()
         if STATE.ActiveTab == tabName then
@@ -2601,14 +2625,12 @@ function Library:CreateTab(categoryName, tabName)
         end
     end)
 
-    STATE.ContentPages[tabName] = page
     if STATE.ActiveCategory == nil or STATE.ActiveCategory == categoryName then
         self:SetActiveCategory(categoryName)
     end
     return page
 end
 
--- FIX: auto-sync sidebar category when switching to a tab in another category
 function Library:SwitchTab(tabName)
     if self:_isDead() then return end
     local STATE = self._STATE
@@ -2639,7 +2661,7 @@ function Library:SwitchTab(tabName)
     end
 end
 
-function Library:CreateSection(tabName, title, summary, defaultOpen)
+function Library:CreateSection(tabName, title, summary, defaultOpen, columnName)
     if self:_isDead() then return end
     if type(title) ~= "string" or title == "" then
         error("[DoD UI] CreateSection requires a non-empty title.")
@@ -2647,27 +2669,34 @@ function Library:CreateSection(tabName, title, summary, defaultOpen)
     if summary ~= nil and type(summary) ~= "string" then
         error("[DoD UI] CreateSection summary must be a string or nil.")
     end
-    local page = self._STATE.ContentPages[tabName]
-    if not page then
+    if columnName ~= nil and columnName ~= "Left" and columnName ~= "Right" then
+        error("[DoD UI] CreateSection column must be 'Left' or 'Right'.")
+    end
+    columnName = columnName or "Left"
+
+    local columns = self._STATE.TabColumns[tabName]
+    if not columns then
         error("[DoD UI] Tab '" .. tostring(tabName) .. "' not found. Call :CreateTab first.")
     end
-    local sectionOrder = (self._STATE.PageSectionCounts[page] or 0) + 1
-    self._STATE.PageSectionCounts[page] = sectionOrder
+    local parentCol = columns[columnName]
+
+    local sectionOrder = #parentCol:GetChildren() + 1
     local HEADER_HEIGHT = 50
 
-    local section = Instance.new("Frame", page)
+    local section = Instance.new("Frame", parentCol)
     section.Name = (title:gsub("%W", "") or "") .. "Section"
     section.LayoutOrder = sectionOrder
     section.Size = UDim2.new(1, 0, 0, HEADER_HEIGHT)
     section.BackgroundColor3 = self._Colors.Card
+    section.BackgroundTransparency = 0.15
     section.BorderSizePixel = 0
     section.ClipsDescendants = true
-    Instance.new("UICorner", section).CornerRadius = UDim.new(0, 8)
+    Instance.new("UICorner", section).CornerRadius = UDim.new(0, 12) -- Softer corners
 
     local cardStroke = Instance.new("UIStroke", section)
     cardStroke.Color = self._Colors.Border
-    cardStroke.Thickness = 1.1
-    cardStroke.Transparency = 0.2
+    cardStroke.Thickness = 1
+    cardStroke.Transparency = 0.4
 
     local header = Instance.new("TextButton", section)
     header.Size = UDim2.new(1, 0, 0, HEADER_HEIGHT)
@@ -2678,18 +2707,18 @@ function Library:CreateSection(tabName, title, summary, defaultOpen)
 
     local titleLabel = Instance.new("TextLabel", header)
     titleLabel.Size = UDim2.new(1, -50, 0, 18)
-    titleLabel.Position = UDim2.new(0, 14, 0, 9)
+    titleLabel.Position = UDim2.new(0, 16, 0, 10)
     titleLabel.BackgroundTransparency = 1
     titleLabel.Text = title
     titleLabel.TextColor3 = self._Colors.Text
     titleLabel.Font = Enum.Font.GothamBold
-    titleLabel.TextSize = 12
+    titleLabel.TextSize = 13
     titleLabel.TextXAlignment = Enum.TextXAlignment.Left
     titleLabel.TextTruncate = Enum.TextTruncate.AtEnd
 
     local summaryLabel = Instance.new("TextLabel", header)
     summaryLabel.Size = UDim2.new(1, -50, 0, 14)
-    summaryLabel.Position = UDim2.new(0, 14, 0, 27)
+    summaryLabel.Position = UDim2.new(0, 16, 0, 28)
     summaryLabel.BackgroundTransparency = 1
     summaryLabel.Text = summary or ""
     summaryLabel.TextColor3 = self._Colors.TextDim
@@ -2707,11 +2736,11 @@ function Library:CreateSection(tabName, title, summary, defaultOpen)
     indicator.Rotation = -90
     indicator.TextColor3 = self._Colors.TextDim
     indicator.Font = Enum.Font.GothamBlack
-    indicator.TextSize = 20
+    indicator.TextSize = 18
 
     local separator = Instance.new("Frame", section)
-    separator.Size = UDim2.new(1, -28, 0, 1)
-    separator.Position = UDim2.new(0, 14, 0, HEADER_HEIGHT)
+    separator.Size = UDim2.new(1, -32, 0, 1)
+    separator.Position = UDim2.new(0, 16, 0, HEADER_HEIGHT)
     separator.BackgroundColor3 = self._Colors.Border
     separator.BackgroundTransparency = 1
     separator.BorderSizePixel = 0
@@ -2726,13 +2755,13 @@ function Library:CreateSection(tabName, title, summary, defaultOpen)
 
     local bodyLayout = Instance.new("UIListLayout", body)
     bodyLayout.SortOrder = Enum.SortOrder.LayoutOrder
-    bodyLayout.Padding = UDim.new(0, 6)
+    bodyLayout.Padding = UDim.new(0, 8)
 
     local bodyPad = Instance.new("UIPadding", body)
-    bodyPad.PaddingLeft = UDim.new(0, 10)
-    bodyPad.PaddingRight = UDim.new(0, 10)
-    bodyPad.PaddingTop = UDim.new(0, 8)
-    bodyPad.PaddingBottom = UDim.new(0, 10)
+    bodyPad.PaddingLeft = UDim.new(0, 12)
+    bodyPad.PaddingRight = UDim.new(0, 12)
+    bodyPad.PaddingTop = UDim.new(0, 10)
+    bodyPad.PaddingBottom = UDim.new(0, 14)
 
     local expanded = defaultOpen == true
     local currentTween
@@ -2751,14 +2780,14 @@ function Library:CreateSection(tabName, title, summary, defaultOpen)
 
     local function updateHeight(animate)
         local innerH = bodyLayout.AbsoluteContentSize.Y
-        local contentH = (innerH > 0) and (innerH + 18) or 24
-        local targetH = expanded and (HEADER_HEIGHT + contentH + 4) or HEADER_HEIGHT
+        local contentH = (innerH > 0) and (innerH + 24) or 24
+        local targetH = expanded and (HEADER_HEIGHT + contentH) or HEADER_HEIGHT
         if currentTween then currentTween:Cancel() end
         if animate == false then
             section.Size = UDim2.new(1, 0, 0, targetH)
         else
             currentTween = TweenService:Create(section,
-                TweenInfo.new(0.20, Enum.EasingStyle.Quint, Enum.EasingDirection.Out),
+                TweenInfo.new(0.22, Enum.EasingStyle.Quint, Enum.EasingDirection.Out),
                 {Size = UDim2.new(1, 0, 0, targetH)})
             currentTween:Play()
             if not expanded then
@@ -2769,7 +2798,7 @@ function Library:CreateSection(tabName, title, summary, defaultOpen)
             end
         end
         TweenService:Create(separator, TweenInfo.new(0.2), {
-            BackgroundTransparency = expanded and 0.5 or 1
+            BackgroundTransparency = expanded and 0.6 or 1
         }):Play()
         TweenService:Create(indicator,
             TweenInfo.new(0.32, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {
@@ -2807,17 +2836,19 @@ function Library:CreateSection(tabName, title, summary, defaultOpen)
 
     header.MouseEnter:Connect(function()
         TweenService:Create(section, TweenInfo.new(0.18),
-            {BackgroundColor3 = self._Colors.CardHover}):Play()
+            {BackgroundColor3 = self._Colors.CardHover, BackgroundTransparency = 0.05}):Play()
         TweenService:Create(cardStroke, TweenInfo.new(0.18),
-            {Transparency = 0, Color = self._Colors.Accent, Thickness = 1.6}):Play()
-        TweenService:Create(indicator, TweenInfo.new(0.18),
-            {TextColor3 = self._Colors.Accent}):Play()
+            {Transparency = 0, Color = self._Colors.Accent, Thickness = 1.2}):Play()
+        if not expanded then
+            TweenService:Create(indicator, TweenInfo.new(0.18),
+                {TextColor3 = self._Colors.Accent}):Play()
+        end
     end)
     header.MouseLeave:Connect(function()
         TweenService:Create(section, TweenInfo.new(0.18),
-            {BackgroundColor3 = self._Colors.Card}):Play()
+            {BackgroundColor3 = self._Colors.Card, BackgroundTransparency = 0.15}):Play()
         TweenService:Create(cardStroke, TweenInfo.new(0.18),
-            {Transparency = 0.2, Color = self._Colors.Border, Thickness = 1.1}):Play()
+            {Transparency = 0.4, Color = self._Colors.Border, Thickness = 1}):Play()
         if not expanded then
             TweenService:Create(indicator, TweenInfo.new(0.18),
                 {TextColor3 = self._Colors.TextDim}):Play()
@@ -2852,6 +2883,8 @@ function Library:CreateSection(tabName, title, summary, defaultOpen)
     self:_applySearchFilter(tabName)
     return body
 end
+
+-- Helper for backwards compatibility
 function Library:CreateColumnSection(tabName, title, summary, defaultOpen)
     if self:_isDead() then return end
     local body = self:CreateSection(tabName, title, summary, defaultOpen)
@@ -2871,7 +2904,7 @@ function Library:CreateColumnSection(tabName, title, summary, defaultOpen)
         column.AutomaticSize = Enum.AutomaticSize.Y
         local layout = Instance.new("UIListLayout", column)
         layout.SortOrder = Enum.SortOrder.LayoutOrder
-        layout.Padding = UDim.new(0, 6)
+        layout.Padding = UDim.new(0, 8)
         local padding = Instance.new("UIPadding", column)
         padding.PaddingLeft = UDim.new(0, 4)
         padding.PaddingRight = UDim.new(0, 4)
@@ -2885,22 +2918,21 @@ function Library:CreateColumnSection(tabName, title, summary, defaultOpen)
     return leftColumn, rightColumn
 end
 
--- FIX: remove dead searchText update (banner sits on page, not in section body)
 function Library:CreateDashboardBanner(tabName)
     if self:_isDead() then return end
-    local page = self._STATE.ContentPages[tabName]
-    if not page then
+    local topContainer = self._STATE.TabTopContainers[tabName]
+    if not topContainer then
         error("[DoD UI] Tab '" .. tostring(tabName) .. "' not found. Call :CreateTab first.")
     end
 
     local placeId = game.PlaceId
-    local bannerOrder = (self._STATE.PageSectionCounts[page] or 0) + 1
-    self._STATE.PageSectionCounts[page] = bannerOrder
-    local banner = Instance.new("Frame", page)
+    local bannerOrder = #topContainer:GetChildren() + 1
+    local banner = Instance.new("Frame", topContainer)
     banner.Name = "GameDashboardBanner"
     banner.LayoutOrder = bannerOrder
     banner.Size = UDim2.new(1, 0, 0, 116)
     banner.BackgroundColor3 = self._Colors.Card
+    banner.BackgroundTransparency = 0.1
     banner.BorderSizePixel = 0
     banner.ClipsDescendants = true
     Instance.new("UICorner", banner).CornerRadius = UDim.new(0, 12)
@@ -3008,23 +3040,17 @@ function Library:CreateDashboardBanner(tabName)
             return MarketplaceService:GetProductInfo(placeId)
         end)
         if not banner.Parent then return end
-        if not ok then
-            warn("[DoD UI] Unable to load game dashboard product info: " .. tostring(productInfo))
-            return
+        if not ok then return end
+        if type(productInfo) == "table" then
+            if type(productInfo.Name) == "string" and productInfo.Name ~= "" then
+                title.Text = productInfo.Name
+            end
+            local creatorInfo = productInfo.Creator
+            if type(creatorInfo) == "table" and type(creatorInfo.Name) == "string"
+                and creatorInfo.Name ~= "" then
+                creator.Text = "by " .. creatorInfo.Name
+            end
         end
-        if type(productInfo) ~= "table" then
-            warn("[DoD UI] Game dashboard product info returned an unexpected value.")
-            return
-        end
-        if type(productInfo.Name) == "string" and productInfo.Name ~= "" then
-            title.Text = productInfo.Name
-        end
-        local creatorInfo = productInfo.Creator
-        if type(creatorInfo) == "table" and type(creatorInfo.Name) == "string"
-            and creatorInfo.Name ~= "" then
-            creator.Text = "by " .. creatorInfo.Name
-        end
-        -- FIX: dead search-update block removed (banner not in a SearchBody)
     end)
 
     self:_registerThemeRefresher(function()
@@ -3076,7 +3102,6 @@ function Library:CreateThemeCustomizer(tabName)
     )
     local weatherIntensity = math.clamp(tonumber(self._STATE.WeatherIntensity) or 65, 0, 100)
     self:AddSlider(section, "Weather intensity", 0, 100, weatherIntensity, 0, function(value)
-        -- FIX: SetWeather no longer rebuilds particles on intensity only
         self:SetWeather(self._STATE.WeatherEnabled, self._STATE.WeatherType, value)
     end)
     self:AddToggle(section, "Weather effects", self._STATE.WeatherEnabled, function(enabled)
@@ -3105,7 +3130,7 @@ function Library:AddToggle(page, text, default, callback)
     holder.BorderSizePixel = 0
     holder.Active = true
     Fn.bindPressAnimation(holder)
-    Instance.new("UICorner", holder).CornerRadius = UDim.new(0, 6)
+    Instance.new("UICorner", holder).CornerRadius = UDim.new(0, 8)
 
     local lab = Instance.new("TextLabel", holder)
     lab.Size = UDim2.new(1, -104, 1, 0)
@@ -3217,7 +3242,7 @@ function Library:AddSlider(page, text, minVal, maxVal, default, decimals, callba
     holder.BackgroundColor3 = self._Colors.Card
     holder.BackgroundTransparency = 0.3
     holder.BorderSizePixel = 0
-    Instance.new("UICorner", holder).CornerRadius = UDim.new(0, 6)
+    Instance.new("UICorner", holder).CornerRadius = UDim.new(0, 8)
 
     local lab = Instance.new("TextLabel", holder)
     lab.Size = UDim2.new(0.6, -14, 0, 18)
@@ -3240,12 +3265,17 @@ function Library:AddSlider(page, text, minVal, maxVal, default, decimals, callba
     valLab.TextXAlignment = Enum.TextXAlignment.Right
 
     local sliderBg = Instance.new("Frame", holder)
-    sliderBg.Size = UDim2.new(1, -28, 0, 5)
+    sliderBg.Size = UDim2.new(1, -28, 0, 6)
     sliderBg.Position = UDim2.new(0, 14, 0, 34)
-    sliderBg.BackgroundColor3 = Color3.fromRGB(40, 40, 52)
+    sliderBg.BackgroundColor3 = Color3.fromRGB(25, 25, 35)
     sliderBg.BorderSizePixel = 0
     sliderBg.Active = true
     Instance.new("UICorner", sliderBg).CornerRadius = UDim.new(1, 0)
+
+    local sliderStroke = Instance.new("UIStroke", sliderBg)
+    sliderStroke.Color = self._Colors.Border
+    sliderStroke.Thickness = 1
+    sliderStroke.Transparency = 0.5
 
     local fill = Instance.new("Frame", sliderBg)
     fill.Size = UDim2.new((default - minVal) / (maxVal - minVal), 0, 1, 0)
@@ -3254,18 +3284,23 @@ function Library:AddSlider(page, text, minVal, maxVal, default, decimals, callba
     Instance.new("UICorner", fill).CornerRadius = UDim.new(1, 0)
 
     local knob = Instance.new("Frame", sliderBg)
-    knob.Size = UDim2.new(0, 12, 0, 12)
-    knob.Position = UDim2.new((default - minVal) / (maxVal - minVal), -6, 0.5, -6)
+    knob.Size = UDim2.new(0, 14, 0, 14)
+    knob.Position = UDim2.new((default - minVal) / (maxVal - minVal), -7, 0.5, -7)
     knob.BackgroundColor3 = Color3.new(1, 1, 1)
     knob.BorderSizePixel = 0
     Instance.new("UICorner", knob).CornerRadius = UDim.new(1, 0)
+
+    local knobStroke = Instance.new("UIStroke", knob)
+    knobStroke.Color = Color3.fromRGB(0, 0, 0)
+    knobStroke.Thickness = 1
+    knobStroke.Transparency = 0.8
 
     local val, drag = default, false
 
     local function updateVisual(newVal)
         local rel = (newVal - minVal) / (maxVal - minVal)
         fill.Size = UDim2.new(rel, 0, 1, 0)
-        knob.Position = UDim2.new(rel, -6, 0.5, -6)
+        knob.Position = UDim2.new(rel, -7, 0.5, -7)
         valLab.Text = tostring(newVal)
     end
 
@@ -3317,6 +3352,7 @@ function Library:AddSlider(page, text, minVal, maxVal, default, decimals, callba
         lab.TextColor3 = self._Colors.Text
         valLab.TextColor3 = self._Colors.Accent
         fill.BackgroundColor3 = self._Colors.Accent
+        sliderStroke.Color = self._Colors.Border
     end)
     return self:_registerSearchControl(holder, text .. " " .. tostring(minVal) .. " " .. tostring(maxVal))
 end
@@ -3341,7 +3377,7 @@ function Library:AddDropdown(page, text, options, defaultIndex, callback)
     local holder = Instance.new("Frame", page)
     holder.Size = UDim2.new(1, 0, 0, 40)
     holder.BackgroundColor3 = self._Colors.Card
-    holder.BackgroundTransparency = 0.35
+    holder.BackgroundTransparency = 0.3
     holder.BorderSizePixel = 0
     Instance.new("UICorner", holder).CornerRadius = UDim.new(0, 8)
 
@@ -3370,7 +3406,7 @@ function Library:AddDropdown(page, text, options, defaultIndex, callback)
     valueChip.BorderSizePixel = 0
     valueChip.AutoButtonColor = false
     Fn.bindPressAnimation(valueChip)
-    Instance.new("UICorner", valueChip).CornerRadius = UDim.new(0, 7)
+    Instance.new("UICorner", valueChip).CornerRadius = UDim.new(0, 6)
 
     local chipStroke = Instance.new("UIStroke", valueChip)
     chipStroke.Color = self._Colors.Border
@@ -3557,11 +3593,11 @@ function Library:AddKeybind(page, text, default, callback)
     end
     local STATE = self._STATE
     local holder = Instance.new("Frame", page)
-    holder.Size = UDim2.new(1, 0, 0, 34)
+    holder.Size = UDim2.new(1, 0, 0, 36)
     holder.BackgroundColor3 = self._Colors.Card
     holder.BackgroundTransparency = 0.3
     holder.BorderSizePixel = 0
-    Instance.new("UICorner", holder).CornerRadius = UDim.new(0, 6)
+    Instance.new("UICorner", holder).CornerRadius = UDim.new(0, 8)
 
     local lab = Instance.new("TextLabel", holder)
     lab.Size = UDim2.new(1, -136, 1, 0)
@@ -3577,6 +3613,7 @@ function Library:AddKeybind(page, text, default, callback)
     btn.Size = UDim2.new(0, 100, 0, 26)
     btn.Position = UDim2.new(1, -112, 0.5, -13)
     btn.BackgroundColor3 = self._Colors.Accent
+    btn.BackgroundTransparency = 0.1
     btn.TextColor3 = Fn.accentTextColor(self._Colors.Accent)
     btn.Font = Enum.Font.GothamBold
     btn.TextSize = 12
@@ -3677,14 +3714,14 @@ function Library:AddButton(page, text, callback)
     holder.BackgroundColor3 = self._Colors.Card
     holder.BackgroundTransparency = 0.3
     holder.BorderSizePixel = 0
-    Instance.new("UICorner", holder).CornerRadius = UDim.new(0, 6)
+    Instance.new("UICorner", holder).CornerRadius = UDim.new(0, 8)
 
     local btn = Instance.new("TextButton", holder)
     btn.Size = UDim2.new(1, -20, 0, 28)
     btn.Position = UDim2.new(0, 10, 0, 4)
     btn.Text = text
     btn.BackgroundColor3 = self._Colors.Accent
-    btn.BackgroundTransparency = 0.2
+    btn.BackgroundTransparency = 0.15
     btn.TextColor3 = Fn.accentTextColor(self._Colors.Accent)
     btn.Font = Enum.Font.GothamBold
     btn.TextSize = 11
@@ -3694,7 +3731,7 @@ function Library:AddButton(page, text, callback)
     Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 14)
 
     btn.MouseEnter:Connect(function() btn.BackgroundTransparency = 0 end)
-    btn.MouseLeave:Connect(function() btn.BackgroundTransparency = 0.2 end)
+    btn.MouseLeave:Connect(function() btn.BackgroundTransparency = 0.15 end)
     btn.MouseButton1Click:Connect(callback)
 
     self:_registerThemeRefresher(function()
