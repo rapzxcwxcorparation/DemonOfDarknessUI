@@ -696,7 +696,11 @@ end
 -- =========================================================
 
 function Library.new(opts)
-    opts = opts or {}
+    if opts == nil then
+        opts = {}
+    elseif type(opts) ~= "table" then
+        error("[DoD UI] Library.new expects an options table.")
+    end
     local self = setmetatable({}, Library)
 
     self.Title       = opts.Title or "Demon of Darkness UI"
@@ -731,6 +735,29 @@ function Library.new(opts)
     end
 
     self._UI = {}
+    self._Colors = table.clone(D.Colors)
+    if opts.FocusOverlay ~= nil and type(opts.FocusOverlay) ~= "boolean" then
+        error("[DoD UI] FocusOverlay must be a boolean.")
+    end
+    if opts.FocusOverlayType ~= nil and not table.find(D.FocusOverlayTypes, opts.FocusOverlayType) then
+        error("[DoD UI] FocusOverlayType must be a supported overlay type.")
+    end
+    if opts.Weather ~= nil and type(opts.Weather) ~= "table" then
+        error("[DoD UI] Weather must be a table.")
+    end
+    if opts.Weather then
+        if opts.Weather.Enabled ~= nil and type(opts.Weather.Enabled) ~= "boolean" then
+            error("[DoD UI] Weather.Enabled must be a boolean.")
+        end
+        if opts.Weather.Type ~= nil and not table.find(D.WeatherTypes, opts.Weather.Type) then
+            error("[DoD UI] Weather.Type must be a supported weather type.")
+        end
+        local intensity = opts.Weather.Intensity
+        if intensity ~= nil and (type(intensity) ~= "number" or intensity < 0
+            or intensity > 100 or intensity ~= intensity) then
+            error("[DoD UI] Weather.Intensity must be a number between 0 and 100.")
+        end
+    end
     self._STATE = {
         ContentPages        = {},
         CategoryTabs        = {},
@@ -798,20 +825,20 @@ end
 function Library:_applyThemeColors(themeName)
     local theme = D.Themes[themeName] or D.Themes.Dark
     local base = D.Themes.Dark
-    D.Colors.Accent = theme.Accent or base.Accent
-    D.Colors.Accent2 = theme.Accent2 or base.Accent2
+    self._Colors.Accent = theme.Accent or base.Accent
+    self._Colors.Accent2 = theme.Accent2 or base.Accent2
     if self._AccentOverride then
-        D.Colors.Accent = self._AccentOverride
-        D.Colors.Accent2 = self._AccentOverride:Lerp(Color3.new(1, 1, 1), 0.25)
+        self._Colors.Accent = self._AccentOverride
+        self._Colors.Accent2 = self._AccentOverride:Lerp(Color3.new(1, 1, 1), 0.25)
     end
-    D.Colors.Bg = theme.Bg or base.Bg
-    D.Colors.Bg2 = theme.Bg2 or base.Bg2
-    D.Colors.Card = theme.Card or base.Card
-    D.Colors.CardHover = theme.CardHover or theme.Card or base.CardHover or base.Card
-    D.Colors.Sidebar = theme.Sidebar or base.Sidebar
-    D.Colors.Border = theme.Border or base.Border
-    D.Colors.Text = theme.Text or (theme.Bg and Fn.accentTextColor(theme.Bg)) or base.Text
-    D.Colors.TextDim = theme.TextDim or base.TextDim
+    self._Colors.Bg = theme.Bg or base.Bg
+    self._Colors.Bg2 = theme.Bg2 or base.Bg2
+    self._Colors.Card = theme.Card or base.Card
+    self._Colors.CardHover = theme.CardHover or theme.Card or base.CardHover or base.Card
+    self._Colors.Sidebar = theme.Sidebar or base.Sidebar
+    self._Colors.Border = theme.Border or base.Border
+    self._Colors.Text = theme.Text or (theme.Bg and Fn.accentTextColor(theme.Bg)) or base.Text
+    self._Colors.TextDim = theme.TextDim or base.TextDim
     return theme
 end
 
@@ -824,59 +851,59 @@ function Library:SetTheme(themeName, silent)
     local UI = self._UI
     local ok, err = pcall(function()
         if UI.MainContainer then
-            UI.MainContainer.BackgroundColor3 = D.Colors.Bg
+            UI.MainContainer.BackgroundColor3 = self._Colors.Bg
             UI.MainContainer.BackgroundTransparency = self.Acrylic and 0.32 or 0.1
         end
 
         if UI.AcrylicTexture then
-            UI.AcrylicTexture.BackgroundColor3 = D.Colors.Accent2
+            UI.AcrylicTexture.BackgroundColor3 = self._Colors.Accent2
         end
         if UI.AcrylicGradient then
             UI.AcrylicGradient.Color = ColorSequence.new({
                 ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 255, 255)),
-                ColorSequenceKeypoint.new(0.48, D.Colors.Accent2),
+                ColorSequenceKeypoint.new(0.48, self._Colors.Accent2),
                 ColorSequenceKeypoint.new(1, Color3.fromRGB(255, 255, 255)),
             })
         end
         if UI.TitleBar then
-            UI.TitleBar.BackgroundColor3 = D.Colors.Bg2
+            UI.TitleBar.BackgroundColor3 = self._Colors.Bg2
         end
         if UI.CategoryBar then
-            UI.CategoryBar.BackgroundColor3 = self.TabPosition == "Bottom" and D.Colors.Card or D.Colors.Sidebar
+            UI.CategoryBar.BackgroundColor3 = self.TabPosition == "Bottom" and self._Colors.Card or self._Colors.Sidebar
         end
         if UI.CategoryBarStroke then
-            UI.CategoryBarStroke.Color = D.Colors.Border
+            UI.CategoryBarStroke.Color = self._Colors.Border
         end
         if UI.Sidebar then
-            UI.Sidebar.BackgroundColor3 = D.Colors.Sidebar
+            UI.Sidebar.BackgroundColor3 = self._Colors.Sidebar
         end
-        if UI.TitleLabel then UI.TitleLabel.TextColor3 = D.Colors.Text end
-        if UI.TitleDiscord then UI.TitleDiscord.TextColor3 = D.Colors.Text end
-        if UI.TitleLogoDot then UI.TitleLogoDot.BackgroundColor3 = D.Colors.Accent end
+        if UI.TitleLabel then UI.TitleLabel.TextColor3 = self._Colors.Text end
+        if UI.TitleDiscord then UI.TitleDiscord.TextColor3 = self._Colors.Text end
+        if UI.TitleLogoDot then UI.TitleLogoDot.BackgroundColor3 = self._Colors.Accent end
         if UI.TitleVersionBadge then
-            UI.TitleVersionBadge.BackgroundColor3 = D.Colors.Accent
-            UI.TitleVersionBadge.TextColor3 = Fn.accentTextColor(D.Colors.Accent)
+            UI.TitleVersionBadge.BackgroundColor3 = self._Colors.Accent
+            UI.TitleVersionBadge.TextColor3 = Fn.accentTextColor(self._Colors.Accent)
         end
-        if UI.MainStroke then UI.MainStroke.Color = D.Colors.Border end
+        if UI.MainStroke then UI.MainStroke.Color = self._Colors.Border end
         if UI.TitleGradient then
             UI.TitleGradient.Color = ColorSequence.new({
-                ColorSequenceKeypoint.new(0, D.Colors.Accent),
-                ColorSequenceKeypoint.new(1, D.Colors.Accent2),
+                ColorSequenceKeypoint.new(0, self._Colors.Accent),
+                ColorSequenceKeypoint.new(1, self._Colors.Accent2),
             })
         end
-        if UI.SearchBar then UI.SearchBar.BackgroundColor3 = D.Colors.Card end
-        if UI.SearchBarStroke then UI.SearchBarStroke.Color = D.Colors.Border end
+        if UI.SearchBar then UI.SearchBar.BackgroundColor3 = self._Colors.Card end
+        if UI.SearchBarStroke then UI.SearchBarStroke.Color = self._Colors.Border end
         if UI.SearchInput then
-            UI.SearchInput.TextColor3 = D.Colors.Text
-            UI.SearchInput.PlaceholderColor3 = D.Colors.TextDim
+            UI.SearchInput.TextColor3 = self._Colors.Text
+            UI.SearchInput.PlaceholderColor3 = self._Colors.TextDim
         end
-        if UI.SearchIcon then UI.SearchIcon.ImageColor3 = D.Colors.TextDim end
+        if UI.SearchIcon then UI.SearchIcon.ImageColor3 = self._Colors.TextDim end
         if UI.MobileToggle then
-            UI.MobileToggle.BackgroundColor3 = D.Colors.Card
+            UI.MobileToggle.BackgroundColor3 = self._Colors.Card
             UI.MobileToggle.TextColor3 = Color3.new(1, 1, 1)
         end
         if UI.MobileToggleStroke then
-            UI.MobileToggleStroke.Color = D.Colors.Accent
+            UI.MobileToggleStroke.Color = self._Colors.Accent
         end
     end)
     if not ok then
@@ -892,21 +919,21 @@ function Library:SetTheme(themeName, silent)
 
     for frame, parts in pairs(self._STATE.notifParts) do
         if frame and frame.Parent then
-            frame.BackgroundColor3 = D.Colors.Bg2
-            if parts.stroke and parts.stroke.Parent then parts.stroke.Color = D.Colors.Accent end
-            if parts.accentBar and parts.accentBar.Parent then parts.accentBar.BackgroundColor3 = D.Colors.Accent end
-            if parts.progressBar and parts.progressBar.Parent then parts.progressBar.BackgroundColor3 = D.Colors.Accent end
-            if parts.titleLabel and parts.titleLabel.Parent then parts.titleLabel.TextColor3 = D.Colors.Text end
-            if parts.textLabel and parts.textLabel.Parent then parts.textLabel.TextColor3 = D.Colors.TextDim end
+            frame.BackgroundColor3 = self._Colors.Bg2
+            if parts.stroke and parts.stroke.Parent then parts.stroke.Color = self._Colors.Accent end
+            if parts.accentBar and parts.accentBar.Parent then parts.accentBar.BackgroundColor3 = self._Colors.Accent end
+            if parts.progressBar and parts.progressBar.Parent then parts.progressBar.BackgroundColor3 = self._Colors.Accent end
+            if parts.titleLabel and parts.titleLabel.Parent then parts.titleLabel.TextColor3 = self._Colors.Text end
+            if parts.textLabel and parts.textLabel.Parent then parts.textLabel.TextColor3 = self._Colors.TextDim end
         end
     end
 
     if self._STATE.SubTabBar then
         self._STATE.SubTabBar:RefreshTheme({
-            PillBg       = D.Colors.Card,
-            LeftAccent   = D.Colors.Accent,
+            PillBg       = self._Colors.Card,
+            LeftAccent   = self._Colors.Accent,
             TextActive   = Color3.fromRGB(255, 255, 255),
-            TextInactive = D.Colors.TextDim,
+            TextInactive = self._Colors.TextDim,
             FontActive   = Enum.Font.GothamBold,
             FontInactive = Enum.Font.GothamMedium,
         })
@@ -931,6 +958,7 @@ function Library:SetAccentColor(color)
 end
 
 function Library:SetAcrylic(enabled, blurIntensity)
+    if self:_isDead() then return end
     if type(enabled) ~= "boolean" then
         error("[DoD UI] SetAcrylic expects a boolean enabled value.")
     end
@@ -955,6 +983,7 @@ function Library:SetAcrylic(enabled, blurIntensity)
 end
 
 function Library:SetAcrylicIntensity(intensity)
+    if self:_isDead() then return end
     if type(intensity) ~= "number" or intensity < 0 or intensity > 24
         or intensity ~= intensity then
         error("[DoD UI] Acrylic intensity must be a number between 0 and 24.")
@@ -972,7 +1001,7 @@ end
 -- =========================================================
 
 function Library:_initNotifications()
-    local gui = CoreGui:FindFirstChild("DoD_UI_Notifications") or Instance.new("ScreenGui")
+    local gui = Instance.new("ScreenGui")
     gui.Name = "DoD_UI_Notifications"
     gui.Parent = CoreGui
     gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
@@ -994,6 +1023,8 @@ end
 function Library:Notify(title, text)
     local STATE = self._STATE
     if STATE.Destroyed then return end
+    title = tostring(title or "")
+    text = tostring(text or "")
     if STATE.NotifActive >= STATE.NotifMax then
         table.insert(STATE.NotifQueue, { title = title, text = text })
         return
@@ -1005,7 +1036,7 @@ function Library:Notify(title, text)
             STATE.NotifActive = math.max(0, STATE.NotifActive - 1)
             return
         end
-        local palette = D.Colors or {}
+        local palette = self._Colors or {}
         local accent = palette.Accent or Color3.fromRGB(180, 180, 195)
         local frame = Instance.new("Frame", self._UI.NotifGui)
         frame.Size = UDim2.new(0, 260, 0, 55)
@@ -1153,7 +1184,7 @@ function Library:_initMainGui()
     MC.Size = self.WindowSize
     MC.Position = UDim2.new(0.5, 0, 0.5, 0)
     MC.AnchorPoint = Vector2.new(0.5, 0.5)
-    MC.BackgroundColor3 = D.Colors.Bg
+    MC.BackgroundColor3 = self._Colors.Bg
     MC.BackgroundTransparency = self.Acrylic and 0.32 or 0.1
     MC.BorderSizePixel = 0
     MC.ClipsDescendants = true
@@ -1184,7 +1215,7 @@ function Library:_initMainGui()
     UI.AcrylicTexture = Instance.new("Frame", MC)
     UI.AcrylicTexture.Name = "AcrylicTexture"
     UI.AcrylicTexture.Size = UDim2.fromScale(1, 1)
-    UI.AcrylicTexture.BackgroundColor3 = D.Colors.Accent2
+    UI.AcrylicTexture.BackgroundColor3 = self._Colors.Accent2
     UI.AcrylicTexture.BackgroundTransparency = self.Acrylic and 0.94 or 1
     UI.AcrylicTexture.BorderSizePixel = 0
     UI.AcrylicTexture.Active = false
@@ -1195,7 +1226,7 @@ function Library:_initMainGui()
     UI.AcrylicGradient.Rotation = 35
     UI.AcrylicGradient.Color = ColorSequence.new({
         ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 255, 255)),
-        ColorSequenceKeypoint.new(0.48, D.Colors.Accent2),
+        ColorSequenceKeypoint.new(0.48, self._Colors.Accent2),
         ColorSequenceKeypoint.new(1, Color3.fromRGB(255, 255, 255)),
     })
     UI.AcrylicGradient.Transparency = NumberSequence.new({
@@ -1217,7 +1248,7 @@ function Library:_initMainGui()
     UI.MainScale.Scale = 1
 
     UI.MainStroke = Instance.new("UIStroke", MC)
-    UI.MainStroke.Color = D.Colors.Border
+    UI.MainStroke.Color = self._Colors.Border
     UI.MainStroke.Thickness = 1.5
 
     -- Shadow layers
@@ -1285,7 +1316,7 @@ function Library:_initKeybindOverlay()
     overlay.Size = UDim2.fromOffset(250, 210)
     overlay.AnchorPoint = Vector2.new(1, 1)
     overlay.Position = UDim2.new(1, -18, 1, -62)
-    overlay.BackgroundColor3 = D.Colors.Bg2
+    overlay.BackgroundColor3 = self._Colors.Bg2
     overlay.BackgroundTransparency = 0.12
     overlay.BorderSizePixel = 0
     overlay.Visible = false
@@ -1293,7 +1324,7 @@ function Library:_initKeybindOverlay()
     overlay.ClipsDescendants = true
     Instance.new("UICorner", overlay).CornerRadius = UDim.new(0, 10)
     local stroke = Instance.new("UIStroke", overlay)
-    stroke.Color = D.Colors.Border
+    stroke.Color = self._Colors.Border
     stroke.Thickness = 1
 
     local heading = Instance.new("TextLabel", overlay)
@@ -1302,7 +1333,7 @@ function Library:_initKeybindOverlay()
     heading.Position = UDim2.new(0, 12, 0, 0)
     heading.BackgroundTransparency = 1
     heading.Text = "ACTIVE KEYBINDS"
-    heading.TextColor3 = D.Colors.Text
+    heading.TextColor3 = self._Colors.Text
     heading.Font = Enum.Font.GothamBold
     heading.TextSize = 11
     heading.TextXAlignment = Enum.TextXAlignment.Left
@@ -1314,7 +1345,7 @@ function Library:_initKeybindOverlay()
     closeButton.Position = UDim2.new(1, -32, 0, 3)
     closeButton.BackgroundTransparency = 1
     closeButton.Text = "x"
-    closeButton.TextColor3 = D.Colors.TextDim
+    closeButton.TextColor3 = self._Colors.TextDim
     closeButton.Font = Enum.Font.GothamBold
     closeButton.TextSize = 14
     closeButton.ZIndex = 252
@@ -1326,7 +1357,7 @@ function Library:_initKeybindOverlay()
     list.BackgroundTransparency = 1
     list.BorderSizePixel = 0
     list.ScrollBarThickness = 3
-    list.ScrollBarImageColor3 = D.Colors.Accent
+    list.ScrollBarImageColor3 = self._Colors.Accent
     list.AutomaticCanvasSize = Enum.AutomaticSize.Y
     list.CanvasSize = UDim2.new(0, 0, 0, 0)
     list.ZIndex = 251
@@ -1339,7 +1370,7 @@ function Library:_initKeybindOverlay()
     emptyMessage.Size = UDim2.new(1, -8, 0, 32)
     emptyMessage.BackgroundTransparency = 1
     emptyMessage.Text = "No keybinds assigned"
-    emptyMessage.TextColor3 = D.Colors.TextDim
+    emptyMessage.TextColor3 = self._Colors.TextDim
     emptyMessage.Font = Enum.Font.GothamMedium
     emptyMessage.TextSize = 10
     emptyMessage.TextXAlignment = Enum.TextXAlignment.Center
@@ -1350,11 +1381,11 @@ function Library:_initKeybindOverlay()
     toggle.Size = UDim2.fromOffset(82, 30)
     toggle.AnchorPoint = Vector2.new(1, 1)
     toggle.Position = UDim2.new(1, -18, 1, -18)
-    toggle.BackgroundColor3 = D.Colors.Card
+    toggle.BackgroundColor3 = self._Colors.Card
     toggle.BackgroundTransparency = 0.12
     toggle.BorderSizePixel = 0
     toggle.Text = "KEYS"
-    toggle.TextColor3 = D.Colors.Text
+    toggle.TextColor3 = self._Colors.Text
     toggle.Font = Enum.Font.GothamBold
     toggle.TextSize = 10
     toggle.AutoButtonColor = false
@@ -1362,7 +1393,7 @@ function Library:_initKeybindOverlay()
     toggle.Visible = false
     Instance.new("UICorner", toggle).CornerRadius = UDim.new(0, 8)
     local toggleStroke = Instance.new("UIStroke", toggle)
-    toggleStroke.Color = D.Colors.Accent
+    toggleStroke.Color = self._Colors.Accent
     toggleStroke.Thickness = 1
     Fn.bindPressAnimation(toggle)
 
@@ -1381,19 +1412,19 @@ function Library:_initKeybindOverlay()
     UI.KeybindOverlayToggleStroke = toggleStroke
 
     self:_registerThemeRefresher(function()
-        overlay.BackgroundColor3 = D.Colors.Bg2
-        stroke.Color = D.Colors.Border
-        heading.TextColor3 = D.Colors.Text
-        emptyMessage.TextColor3 = D.Colors.TextDim
-        closeButton.TextColor3 = D.Colors.TextDim
-        list.ScrollBarImageColor3 = D.Colors.Accent
-        toggle.BackgroundColor3 = D.Colors.Card
-        toggle.TextColor3 = D.Colors.Text
-        toggleStroke.Color = D.Colors.Accent
+        overlay.BackgroundColor3 = self._Colors.Bg2
+        stroke.Color = self._Colors.Border
+        heading.TextColor3 = self._Colors.Text
+        emptyMessage.TextColor3 = self._Colors.TextDim
+        closeButton.TextColor3 = self._Colors.TextDim
+        list.ScrollBarImageColor3 = self._Colors.Accent
+        toggle.BackgroundColor3 = self._Colors.Card
+        toggle.TextColor3 = self._Colors.Text
+        toggleStroke.Color = self._Colors.Accent
         for _, row in pairs(self._STATE.KeybindOverlayRows) do
-            row.name.TextColor3 = D.Colors.Text
-            row.key.BackgroundColor3 = D.Colors.Card
-            row.key.TextColor3 = D.Colors.Accent
+            row.name.TextColor3 = self._Colors.Text
+            row.key.BackgroundColor3 = self._Colors.Card
+            row.key.TextColor3 = self._Colors.Accent
         end
     end)
 end
@@ -1410,7 +1441,7 @@ function Library:_refreshKeybindOverlay()
             frame.Name = "Keybind_" .. tostring(index)
             frame.LayoutOrder = index
             frame.Size = UDim2.new(1, -2, 0, 30)
-            frame.BackgroundColor3 = D.Colors.Card
+            frame.BackgroundColor3 = self._Colors.Card
             frame.BackgroundTransparency = 0.35
             frame.BorderSizePixel = 0
             frame.ZIndex = 252
@@ -1421,7 +1452,7 @@ function Library:_refreshKeybindOverlay()
             name.Size = UDim2.new(1, -92, 1, 0)
             name.Position = UDim2.new(0, 9, 0, 0)
             name.BackgroundTransparency = 1
-            name.TextColor3 = D.Colors.Text
+            name.TextColor3 = self._Colors.Text
             name.Font = Enum.Font.GothamMedium
             name.TextSize = 10
             name.TextXAlignment = Enum.TextXAlignment.Left
@@ -1432,9 +1463,9 @@ function Library:_refreshKeybindOverlay()
             key.Name = "Shortcut"
             key.Size = UDim2.new(0, 76, 0, 22)
             key.Position = UDim2.new(1, -82, 0.5, -11)
-            key.BackgroundColor3 = D.Colors.Bg2
+            key.BackgroundColor3 = self._Colors.Bg2
             key.BorderSizePixel = 0
-            key.TextColor3 = D.Colors.Accent
+            key.TextColor3 = self._Colors.Accent
             key.Font = Enum.Font.GothamBold
             key.TextSize = 10
             key.TextTruncate = Enum.TextTruncate.AtEnd
@@ -1451,12 +1482,14 @@ function Library:_refreshKeybindOverlay()
 end
 
 function Library:CreateKeybindOverlay()
+    if self:_isDead() then return end
     self:_refreshKeybindOverlay()
     self._UI.KeybindOverlayToggle.Visible = true
     return self._UI.KeybindOverlay
 end
 
 function Library:SetKeybindOverlayVisible(visible)
+    if self:_isDead() then return end
     if type(visible) ~= "boolean" then
         error("[DoD UI] SetKeybindOverlayVisible expects a boolean value.")
     end
@@ -1471,14 +1504,14 @@ function Library:_initTitleBar()
     local UI = self._UI
     UI.TitleBar = Instance.new("Frame", UI.MainContainer)
     UI.TitleBar.Size = UDim2.new(1, 0, 0, 42)
-    UI.TitleBar.BackgroundColor3 = D.Colors.Bg2
+    UI.TitleBar.BackgroundColor3 = self._Colors.Bg2
     UI.TitleBar.BorderSizePixel = 0
     Instance.new("UICorner", UI.TitleBar).CornerRadius = UDim.new(0, 14)
 
     UI.TitleGradient = Instance.new("UIGradient", UI.TitleBar)
     UI.TitleGradient.Color = ColorSequence.new({
-        ColorSequenceKeypoint.new(0, D.Colors.Accent),
-        ColorSequenceKeypoint.new(1, D.Colors.Accent2),
+        ColorSequenceKeypoint.new(0, self._Colors.Accent),
+        ColorSequenceKeypoint.new(1, self._Colors.Accent2),
     })
     UI.TitleGradient.Rotation = 90
     UI.TitleGradient.Transparency = NumberSequence.new(0.85)
@@ -1486,7 +1519,7 @@ function Library:_initTitleBar()
     UI.TitleLogoDot = Instance.new("Frame", UI.TitleBar)
     UI.TitleLogoDot.Size = UDim2.new(0, 8, 0, 8)
     UI.TitleLogoDot.Position = UDim2.new(0, 16, 0.5, -4)
-    UI.TitleLogoDot.BackgroundColor3 = D.Colors.Accent
+    UI.TitleLogoDot.BackgroundColor3 = self._Colors.Accent
     UI.TitleLogoDot.BorderSizePixel = 0
     Instance.new("UICorner", UI.TitleLogoDot).CornerRadius = UDim.new(1, 0)
 
@@ -1495,7 +1528,7 @@ function Library:_initTitleBar()
     UI.TitleLabel.Position = UDim2.new(0, 32, 0, 0)
     UI.TitleLabel.BackgroundTransparency = 1
     UI.TitleLabel.Text = self.Title
-    UI.TitleLabel.TextColor3 = D.Colors.Text
+    UI.TitleLabel.TextColor3 = self._Colors.Text
     UI.TitleLabel.Font = Enum.Font.GothamBlack
     UI.TitleLabel.TextSize = 14
     UI.TitleLabel.TextXAlignment = Enum.TextXAlignment.Left
@@ -1503,10 +1536,10 @@ function Library:_initTitleBar()
     UI.TitleVersionBadge = Instance.new("TextLabel", UI.TitleBar)
     UI.TitleVersionBadge.Size = UDim2.new(0, 60, 0, 20)
     UI.TitleVersionBadge.Position = UDim2.new(0, 240, 0.5, -10)
-    UI.TitleVersionBadge.BackgroundColor3 = D.Colors.Accent
+    UI.TitleVersionBadge.BackgroundColor3 = self._Colors.Accent
     UI.TitleVersionBadge.BackgroundTransparency = 0.15
     UI.TitleVersionBadge.Text = self.Version
-    UI.TitleVersionBadge.TextColor3 = Fn.accentTextColor(D.Colors.Accent)
+    UI.TitleVersionBadge.TextColor3 = Fn.accentTextColor(self._Colors.Accent)
     UI.TitleVersionBadge.Font = Enum.Font.GothamBold
     UI.TitleVersionBadge.TextSize = 11
     UI.TitleVersionBadge.BorderSizePixel = 0
@@ -1518,7 +1551,7 @@ function Library:_initTitleBar()
     UI.TitleDiscord.BackgroundTransparency = 1
     UI.TitleDiscord.Text = "<i>" .. self.Author .. "</i>"
     UI.TitleDiscord.RichText = true
-    UI.TitleDiscord.TextColor3 = D.Colors.TextDim
+    UI.TitleDiscord.TextColor3 = self._Colors.TextDim
     UI.TitleDiscord.Font = Enum.Font.GothamBold
     UI.TitleDiscord.TextSize = 12
     UI.TitleDiscord.TextXAlignment = Enum.TextXAlignment.Right
@@ -1631,9 +1664,13 @@ function Library:_initTrafficLights()
         else
             self._hudSavedSize = UI.MainContainer.Size
             self._hudSavedPos = UI.MainContainer.Position
-            local vp = getCam().ViewportSize
+            local camera = getCam()
+            if not camera then return end
+            local vp = camera.ViewportSize
+            local maxWidth = math.max(1, vp.X - 40)
+            local maxHeight = math.max(1, vp.Y - 40)
             TweenService:Create(UI.MainContainer, hudTweenInfo, {
-                Size = UDim2.new(0, vp.X - 40, 0, vp.Y - 40),
+                Size = UDim2.new(0, maxWidth, 0, maxHeight),
                 Position = UDim2.new(0.5, 0, 0.5, 0),
             }):Play()
             self._hudState = "MAXIMIZED"
@@ -1651,20 +1688,20 @@ function Library:_initSidebar()
     UI.CategoryBar = Instance.new("Frame", UI.MainContainer)
     UI.CategoryBar.Size = UDim2.new(1, -20, 0, 46)
     UI.CategoryBar.Position = UDim2.new(0, 10, 0, 42)
-    UI.CategoryBar.BackgroundColor3 = D.Colors.Sidebar
+    UI.CategoryBar.BackgroundColor3 = self._Colors.Sidebar
     UI.CategoryBar.BackgroundTransparency = 0.35
     UI.CategoryBar.BorderSizePixel = 0
     UI.CategoryBar.ClipsDescendants = true
     Instance.new("UICorner", UI.CategoryBar).CornerRadius = UDim.new(0, 14)
     UI.CategoryBarStroke = Instance.new("UIStroke", UI.CategoryBar)
-    UI.CategoryBarStroke.Color = D.Colors.Border
+    UI.CategoryBarStroke.Color = self._Colors.Border
     UI.CategoryBarStroke.Thickness = 1
     UI.CategoryBarStroke.Transparency = 1
 
     UI.Sidebar = Instance.new("Frame", UI.MainContainer)
     UI.Sidebar.Size = UDim2.new(1, -20, 0, 30)
     UI.Sidebar.Position = UDim2.new(0, 10, 0, 94)
-    UI.Sidebar.BackgroundColor3 = D.Colors.Sidebar
+    UI.Sidebar.BackgroundColor3 = self._Colors.Sidebar
     UI.Sidebar.BackgroundTransparency = 1
     UI.Sidebar.BorderSizePixel = 0
     UI.Sidebar.ClipsDescendants = true
@@ -1673,7 +1710,7 @@ function Library:_initSidebar()
     UI.TabBarDivider = Instance.new("Frame", UI.MainContainer)
     UI.TabBarDivider.Size = UDim2.new(1, -20, 0, 1)
     UI.TabBarDivider.Position = UDim2.new(0, 10, 0, 124)
-    UI.TabBarDivider.BackgroundColor3 = D.Colors.Border
+    UI.TabBarDivider.BackgroundColor3 = self._Colors.Border
     UI.TabBarDivider.BackgroundTransparency = 0.5
     UI.TabBarDivider.BorderSizePixel = 0
 
@@ -1705,7 +1742,7 @@ function Library:_applyNavigationLayout()
     elseif position == "Bottom" then
         UI.CategoryBar.Size = UDim2.new(0, 160, 0, 44)
         UI.CategoryBar.Position = UDim2.new(0.5, -80, 1, -54)
-        UI.CategoryBar.BackgroundColor3 = D.Colors.Card
+        UI.CategoryBar.BackgroundColor3 = self._Colors.Card
         UI.CategoryBar.BackgroundTransparency = 0.1
         UI.CategoryBarStroke.Transparency = 0.25
 
@@ -1721,7 +1758,7 @@ function Library:_applyNavigationLayout()
     else
         UI.CategoryBar.Size = UDim2.new(1, -20, 0, 46)
         UI.CategoryBar.Position = UDim2.new(0, 10, 0, 42)
-        UI.CategoryBar.BackgroundColor3 = D.Colors.Sidebar
+        UI.CategoryBar.BackgroundColor3 = self._Colors.Sidebar
         UI.CategoryBar.BackgroundTransparency = 0.35
         UI.CategoryBarStroke.Transparency = 1
 
@@ -1766,13 +1803,13 @@ function Library:_initSearchBar()
     UI.SearchBar = Instance.new("Frame", UI.MainContainer)
     UI.SearchBar.Size = UDim2.new(1, -30, 0, 28)
     UI.SearchBar.Position = UDim2.new(0, 15, 0, 129)
-    UI.SearchBar.BackgroundColor3 = D.Colors.Card
+    UI.SearchBar.BackgroundColor3 = self._Colors.Card
     UI.SearchBar.BackgroundTransparency = 0.15
     UI.SearchBar.BorderSizePixel = 0
     Instance.new("UICorner", UI.SearchBar).CornerRadius = UDim.new(1, 0)
 
     UI.SearchBarStroke = Instance.new("UIStroke", UI.SearchBar)
-    UI.SearchBarStroke.Color = D.Colors.Border
+    UI.SearchBarStroke.Color = self._Colors.Border
     UI.SearchBarStroke.Thickness = 1.1
     UI.SearchBarStroke.Transparency = 0.25
 
@@ -1781,7 +1818,7 @@ function Library:_initSearchBar()
     UI.SearchIcon.Position = UDim2.new(0, 14, 0.5, -7)
     UI.SearchIcon.BackgroundTransparency = 1
     UI.SearchIcon.Image = "rbxassetid://6031154871"
-    UI.SearchIcon.ImageColor3 = D.Colors.TextDim
+    UI.SearchIcon.ImageColor3 = self._Colors.TextDim
 
     UI.SearchInput = Instance.new("TextBox", UI.SearchBar)
     UI.SearchInput.Size = UDim2.new(1, -50, 1, 0)
@@ -1789,8 +1826,8 @@ function Library:_initSearchBar()
     UI.SearchInput.BackgroundTransparency = 1
     UI.SearchInput.Text = ""
     UI.SearchInput.PlaceholderText = "Search settings..."
-    UI.SearchInput.PlaceholderColor3 = D.Colors.TextDim
-    UI.SearchInput.TextColor3 = D.Colors.Text
+    UI.SearchInput.PlaceholderColor3 = self._Colors.TextDim
+    UI.SearchInput.TextColor3 = self._Colors.Text
     UI.SearchInput.Font = Enum.Font.GothamMedium
     UI.SearchInput.TextSize = 12
     UI.SearchInput.TextXAlignment = Enum.TextXAlignment.Left
@@ -1803,12 +1840,12 @@ function Library:_initSearchBar()
 
     UI.SearchInput.Focused:Connect(function()
         TweenService:Create(UI.SearchBarStroke, TweenInfo.new(0.22), {
-            Color = D.Colors.Accent, Transparency = 0.1
+            Color = self._Colors.Accent, Transparency = 0.1
         }):Play()
     end)
     UI.SearchInput.FocusLost:Connect(function()
         TweenService:Create(UI.SearchBarStroke, TweenInfo.new(0.22), {
-            Color = D.Colors.Border, Transparency = 0.25
+            Color = self._Colors.Border, Transparency = 0.25
         }):Play()
     end)
 end
@@ -1909,7 +1946,7 @@ function Library:_rebuildFocusPattern()
     if patternType == "None" then return end
 
     local theme = D.Themes[self.ThemeName] or D.Themes.Dark
-    local accent = theme.GridColor or theme.Accent or D.Colors.Accent
+    local accent = theme.GridColor or theme.Accent or self._Colors.Accent
     local altAccent = theme.GridAltColor or accent
 
     local function pickColor(index)
@@ -1987,7 +2024,7 @@ function Library:_updateFocusOverlay(theme)
     theme = theme or D.Themes[self.ThemeName] or D.Themes.Dark
     if not UI.FocusOverlay then return end
 
-    UI.FocusOverlay.BackgroundColor3 = theme.FocusOverlayColor or theme.OverlayColor or D.Colors.Bg
+    UI.FocusOverlay.BackgroundColor3 = theme.FocusOverlayColor or theme.OverlayColor or self._Colors.Bg
     UI.FocusOverlay.BackgroundTransparency = self._STATE.FocusOverlayEnabled
         and (theme.OverlayTransparency or 0.45) or 1
     UI.FocusOverlay.Visible = self._STATE.FocusOverlayEnabled and self._STATE.GuiVisible
@@ -1997,8 +2034,14 @@ end
 
 function Library:SetFocusOverlay(enabled, patternType)
     if self:_isDead() then return end
+    if type(enabled) ~= "boolean" then
+        error("[DoD UI] SetFocusOverlay expects a boolean enabled value.")
+    end
+    if patternType ~= nil and not table.find(D.FocusOverlayTypes, patternType) then
+        error("[DoD UI] SetFocusOverlay received an unsupported pattern type.")
+    end
     self._STATE.FocusOverlayEnabled = enabled
-    if patternType then
+    if patternType ~= nil then
         self._STATE.FocusOverlayType = patternType
         self:_rebuildFocusPattern()
     end
@@ -2024,6 +2067,16 @@ end
 
 function Library:SetWeather(enabled, weatherType, intensity)
     if self:_isDead() then return end
+    if type(enabled) ~= "boolean" then
+        error("[DoD UI] SetWeather expects a boolean enabled value.")
+    end
+    if weatherType ~= nil and not table.find(D.WeatherTypes, weatherType) then
+        error("[DoD UI] SetWeather received an unsupported weather type.")
+    end
+    if intensity ~= nil and (type(intensity) ~= "number" or intensity < 0
+        or intensity > 100 or intensity ~= intensity) then
+        error("[DoD UI] Weather intensity must be a number between 0 and 100.")
+    end
     self._STATE.WeatherEnabled = enabled
     if weatherType then self._STATE.WeatherType = weatherType end
     if intensity then self._STATE.WeatherIntensity = intensity end
@@ -2196,8 +2249,8 @@ function Library:_initMobileToggle()
     UI.MobileToggle.RichText = true
     UI.MobileToggle.Size = UDim2.new(0, 48, 0, 48)
     UI.MobileToggle.Position = UDim2.new(0, 16, 0.5, -24)
-    UI.MobileToggle.BackgroundColor3 = D.Colors.Card
-    UI.MobileToggle.TextColor3 = D.Colors.Text
+    UI.MobileToggle.BackgroundColor3 = self._Colors.Card
+    UI.MobileToggle.TextColor3 = self._Colors.Text
     UI.MobileToggle.Font = Enum.Font.Gotham
     UI.MobileToggle.TextSize = 13
     UI.MobileToggle.AutoButtonColor = false
@@ -2205,7 +2258,7 @@ function Library:_initMobileToggle()
     Instance.new("UICorner", UI.MobileToggle).CornerRadius = UDim.new(1, 0)
 
     UI.MobileToggleStroke = Instance.new("UIStroke", UI.MobileToggle)
-    UI.MobileToggleStroke.Color = D.Colors.Accent
+    UI.MobileToggleStroke.Color = self._Colors.Accent
     UI.MobileToggleStroke.Thickness = 1.2
     UI.MobileToggleStroke.Transparency = 0.35
 
@@ -2264,8 +2317,17 @@ end
 
 function Library:CreateCategory(categoryName, iconSpec)
     if self:_isDead() then return end
+    if type(categoryName) ~= "string" or categoryName == "" then
+        error("[DoD UI] CreateCategory requires a non-empty category name.")
+    end
+    if iconSpec ~= nil and type(iconSpec) ~= "string" then
+        error("[DoD UI] CreateCategory iconSpec must be a string or nil.")
+    end
     local UI = self._UI
     local STATE = self._STATE
+    if STATE.CategoryButtons and STATE.CategoryButtons[categoryName] then
+        error("[DoD UI] Category '" .. categoryName .. "' already exists.")
+    end
     STATE.CategoryTabs[categoryName] = STATE.CategoryTabs[categoryName] or {}
     STATE.CategoryOrder = STATE.CategoryOrder or {}
     STATE.CategoryButtons = STATE.CategoryButtons or {}
@@ -2276,7 +2338,7 @@ function Library:CreateCategory(categoryName, iconSpec)
     local btn = Instance.new("TextButton", UI.CategoryBar)
     btn.Name = "CatBtn_" .. categoryName
     btn.Size = self.TabPosition == "Side" and UDim2.new(1, -16, 0, 34) or UDim2.new(0, 110, 0, 30)
-    btn.BackgroundColor3 = D.Colors.Card
+    btn.BackgroundColor3 = self._Colors.Card
     btn.BackgroundTransparency = 1
     btn.Text = ""
     btn.BorderSizePixel = 0
@@ -2304,7 +2366,7 @@ function Library:CreateCategory(categoryName, iconSpec)
     label.Position = UDim2.new(0, self.TabPosition == "Side" and 32 or 36, 0, 0)
     label.BackgroundTransparency = 1
     label.Text = categoryName
-    label.TextColor3 = D.Colors.TextDim
+    label.TextColor3 = self._Colors.TextDim
     label.Font = Enum.Font.GothamMedium
     label.TextSize = 12
     label.TextXAlignment = Enum.TextXAlignment.Left
@@ -2316,6 +2378,12 @@ function Library:CreateCategory(categoryName, iconSpec)
 
     STATE.CategoryButtons = STATE.CategoryButtons or {}
     STATE.CategoryButtons[categoryName] = { button = btn, label = label, icon = iconImg }
+    self:_registerThemeRefresher(function()
+        if not btn.Parent then return end
+        btn.BackgroundColor3 = self._Colors.Card
+        label.TextColor3 = categoryName == STATE.ActiveCategory
+            and Color3.fromRGB(255, 255, 255) or self._Colors.TextDim
+    end)
 
     -- Auto layout
     self:_layoutCategoryButtons()
@@ -2384,6 +2452,7 @@ end
 function Library:SetActiveCategory(categoryName)
     if self:_isDead() then return end
     local STATE = self._STATE
+    if not STATE.CategoryButtons or not STATE.CategoryButtons[categoryName] then return end
     STATE.ActiveCategory = categoryName
     STATE.ActiveSubIndices = STATE.ActiveSubIndices or {}
 
@@ -2393,7 +2462,7 @@ function Library:SetActiveCategory(categoryName)
             BackgroundTransparency = active and 0.55 or 1,
         }):Play()
         TweenService:Create(data.label, TweenInfo.new(0.2), {
-            TextColor3 = active and Color3.fromRGB(255, 255, 255) or D.Colors.TextDim,
+            TextColor3 = active and Color3.fromRGB(255, 255, 255) or self._Colors.TextDim,
         }):Play()
         data.label.Font = active and Enum.Font.GothamBold or Enum.Font.GothamMedium
         TweenService:Create(data.icon, TweenInfo.new(0.2), {
@@ -2420,8 +2489,8 @@ function Library:SetActiveCategory(categoryName)
             Data = subData,
             TabWidth = self.TabWidth, TabHeight = 28, Padding = 6,
             Theme = {
-                PillBg = D.Colors.Card, LeftAccent = D.Colors.Accent,
-                TextActive = Color3.fromRGB(255, 255, 255), TextInactive = D.Colors.TextDim,
+                PillBg = self._Colors.Card, LeftAccent = self._Colors.Accent,
+                TextActive = Color3.fromRGB(255, 255, 255), TextInactive = self._Colors.TextDim,
                 FontActive = Enum.Font.GothamBold, FontInactive = Enum.Font.GothamMedium,
             },
             OnChanged = function(_, subName)
@@ -2452,10 +2521,16 @@ end
 
 function Library:CreateTab(categoryName, tabName)
     if self:_isDead() then return end
+    if type(tabName) ~= "string" or tabName == "" then
+        error("[DoD UI] CreateTab requires a non-empty tab name.")
+    end
     local UI = self._UI
     local STATE = self._STATE
     if not STATE.CategoryButtons or not STATE.CategoryButtons[categoryName] then
         error("[DoD UI] Category '" .. tostring(categoryName) .. "' belum dibuat. Panggil :CreateCategory dulu.")
+    end
+    if STATE.ContentPages[tabName] then
+        error("[DoD UI] Tab '" .. tabName .. "' already exists.")
     end
     STATE.TabCategories[tabName] = categoryName
     STATE.CategoryTabs[categoryName] = STATE.CategoryTabs[categoryName] or {}
@@ -2518,6 +2593,13 @@ function Library:SwitchTab(tabName)
 end
 
 function Library:CreateSection(tabName, title, summary, defaultOpen)
+    if self:_isDead() then return end
+    if type(title) ~= "string" or title == "" then
+        error("[DoD UI] CreateSection requires a non-empty title.")
+    end
+    if summary ~= nil and type(summary) ~= "string" then
+        error("[DoD UI] CreateSection summary must be a string or nil.")
+    end
     local page = self._STATE.ContentPages[tabName]
     if not page then
         error("[DoD UI] Tab '" .. tostring(tabName) .. "' not found. Call :CreateTab first.")
@@ -2530,13 +2612,13 @@ function Library:CreateSection(tabName, title, summary, defaultOpen)
     section.Name = (title:gsub("%W", "") or "") .. "Section"
     section.LayoutOrder = sectionOrder
     section.Size = UDim2.new(1, 0, 0, HEADER_HEIGHT)
-    section.BackgroundColor3 = D.Colors.Card
+    section.BackgroundColor3 = self._Colors.Card
     section.BorderSizePixel = 0
     section.ClipsDescendants = true
     Instance.new("UICorner", section).CornerRadius = UDim.new(0, 8)
 
     local cardStroke = Instance.new("UIStroke", section)
-    cardStroke.Color = D.Colors.Border
+    cardStroke.Color = self._Colors.Border
     cardStroke.Thickness = 1.1
     cardStroke.Transparency = 0.2
 
@@ -2552,7 +2634,7 @@ function Library:CreateSection(tabName, title, summary, defaultOpen)
     titleLabel.Position = UDim2.new(0, 14, 0, 9)
     titleLabel.BackgroundTransparency = 1
     titleLabel.Text = title
-    titleLabel.TextColor3 = D.Colors.Text
+    titleLabel.TextColor3 = self._Colors.Text
     titleLabel.Font = Enum.Font.GothamBold
     titleLabel.TextSize = 12
     titleLabel.TextXAlignment = Enum.TextXAlignment.Left
@@ -2563,7 +2645,7 @@ function Library:CreateSection(tabName, title, summary, defaultOpen)
     summaryLabel.Position = UDim2.new(0, 14, 0, 27)
     summaryLabel.BackgroundTransparency = 1
     summaryLabel.Text = summary or ""
-    summaryLabel.TextColor3 = D.Colors.TextDim
+    summaryLabel.TextColor3 = self._Colors.TextDim
     summaryLabel.Font = Enum.Font.GothamMedium
     summaryLabel.TextSize = 10
     summaryLabel.TextXAlignment = Enum.TextXAlignment.Left
@@ -2576,14 +2658,14 @@ function Library:CreateSection(tabName, title, summary, defaultOpen)
     indicator.BackgroundTransparency = 1
     indicator.Text = "↑"
     indicator.Rotation = -90
-    indicator.TextColor3 = D.Colors.TextDim
+    indicator.TextColor3 = self._Colors.TextDim
     indicator.Font = Enum.Font.GothamBlack
     indicator.TextSize = 20
 
     local separator = Instance.new("Frame", section)
     separator.Size = UDim2.new(1, -28, 0, 1)
     separator.Position = UDim2.new(0, 14, 0, HEADER_HEIGHT)
-    separator.BackgroundColor3 = D.Colors.Border
+    separator.BackgroundColor3 = self._Colors.Border
     separator.BackgroundTransparency = 1
     separator.BorderSizePixel = 0
 
@@ -2645,7 +2727,7 @@ function Library:CreateSection(tabName, title, summary, defaultOpen)
         TweenService:Create(indicator,
             TweenInfo.new(0.32, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {
                 Rotation = expanded and 0 or -90,
-                TextColor3 = expanded and D.Colors.Accent or D.Colors.TextDim,
+                TextColor3 = expanded and self._Colors.Accent or self._Colors.TextDim,
             }):Play()
     end
 
@@ -2678,20 +2760,20 @@ function Library:CreateSection(tabName, title, summary, defaultOpen)
 
     header.MouseEnter:Connect(function()
         TweenService:Create(section, TweenInfo.new(0.18),
-            {BackgroundColor3 = D.Colors.CardHover}):Play()
+            {BackgroundColor3 = self._Colors.CardHover}):Play()
         TweenService:Create(cardStroke, TweenInfo.new(0.18),
-            {Transparency = 0, Color = D.Colors.Accent, Thickness = 1.6}):Play()
+            {Transparency = 0, Color = self._Colors.Accent, Thickness = 1.6}):Play()
         TweenService:Create(indicator, TweenInfo.new(0.18),
-            {TextColor3 = D.Colors.Accent}):Play()
+            {TextColor3 = self._Colors.Accent}):Play()
     end)
     header.MouseLeave:Connect(function()
         TweenService:Create(section, TweenInfo.new(0.18),
-            {BackgroundColor3 = D.Colors.Card}):Play()
+            {BackgroundColor3 = self._Colors.Card}):Play()
         TweenService:Create(cardStroke, TweenInfo.new(0.18),
-            {Transparency = 0.2, Color = D.Colors.Border, Thickness = 1.1}):Play()
+            {Transparency = 0.2, Color = self._Colors.Border, Thickness = 1.1}):Play()
         if not expanded then
             TweenService:Create(indicator, TweenInfo.new(0.18),
-                {TextColor3 = D.Colors.TextDim}):Play()
+                {TextColor3 = self._Colors.TextDim}):Play()
         end
     end)
 
@@ -2712,12 +2794,12 @@ function Library:CreateSection(tabName, title, summary, defaultOpen)
     end
 
     self:_registerThemeRefresher(function()
-        section.BackgroundColor3 = D.Colors.Card
-        cardStroke.Color = D.Colors.Border
-        titleLabel.TextColor3 = D.Colors.Text
-        summaryLabel.TextColor3 = D.Colors.TextDim
-        indicator.TextColor3 = expanded and D.Colors.Accent or D.Colors.TextDim
-        separator.BackgroundColor3 = D.Colors.Border
+        section.BackgroundColor3 = self._Colors.Card
+        cardStroke.Color = self._Colors.Border
+        titleLabel.TextColor3 = self._Colors.Text
+        summaryLabel.TextColor3 = self._Colors.TextDim
+        indicator.TextColor3 = expanded and self._Colors.Accent or self._Colors.TextDim
+        separator.BackgroundColor3 = self._Colors.Border
     end)
 
     -- Wrap methods so user can chain: sec:Toggle(...) or use UI:AddToggle(sec, ...)
@@ -2728,6 +2810,7 @@ function Library:CreateSection(tabName, title, summary, defaultOpen)
 end
 
 function Library:CreateColumnSection(tabName, title, summary, defaultOpen)
+    if self:_isDead() then return end
     local body = self:CreateSection(tabName, title, summary, defaultOpen)
     local row = Instance.new("Frame", body)
     row.Name = "Columns"
@@ -2763,6 +2846,7 @@ function Library:CreateColumnSection(tabName, title, summary, defaultOpen)
 end
 
 function Library:CreateDashboardBanner(tabName)
+    if self:_isDead() then return end
     local page = self._STATE.ContentPages[tabName]
     if not page then
         error("[DoD UI] Tab '" .. tostring(tabName) .. "' not found. Call :CreateTab first.")
@@ -2775,13 +2859,13 @@ function Library:CreateDashboardBanner(tabName)
     banner.Name = "GameDashboardBanner"
     banner.LayoutOrder = bannerOrder
     banner.Size = UDim2.new(1, 0, 0, 116)
-    banner.BackgroundColor3 = D.Colors.Card
+    banner.BackgroundColor3 = self._Colors.Card
     banner.BorderSizePixel = 0
     banner.ClipsDescendants = true
     Instance.new("UICorner", banner).CornerRadius = UDim.new(0, 12)
 
     local stroke = Instance.new("UIStroke", banner)
-    stroke.Color = D.Colors.Border
+    stroke.Color = self._Colors.Border
     stroke.Thickness = 1
     stroke.Transparency = 0.18
 
@@ -2789,7 +2873,7 @@ function Library:CreateDashboardBanner(tabName)
     thumbnail.Name = "GameThumbnail"
     thumbnail.Size = UDim2.fromOffset(64, 64)
     thumbnail.Position = UDim2.new(0, 12, 0, 10)
-    thumbnail.BackgroundColor3 = D.Colors.Bg2
+    thumbnail.BackgroundColor3 = self._Colors.Bg2
     thumbnail.BorderSizePixel = 0
     thumbnail.ScaleType = Enum.ScaleType.Crop
     thumbnail.Image = "rbxthumb://type=GameIcon&id=" .. tostring(placeId) .. "&w=150&h=150"
@@ -2801,7 +2885,7 @@ function Library:CreateDashboardBanner(tabName)
     title.Position = UDim2.new(0, 88, 0, 16)
     title.BackgroundTransparency = 1
     title.Text = tostring(game.Name ~= "" and game.Name or "Current Experience")
-    title.TextColor3 = D.Colors.Text
+    title.TextColor3 = self._Colors.Text
     title.Font = Enum.Font.GothamBold
     title.TextSize = 15
     title.TextXAlignment = Enum.TextXAlignment.Left
@@ -2813,7 +2897,7 @@ function Library:CreateDashboardBanner(tabName)
     creator.Position = UDim2.new(0, 88, 0, 40)
     creator.BackgroundTransparency = 1
     creator.Text = "by Unknown Creator"
-    creator.TextColor3 = D.Colors.TextDim
+    creator.TextColor3 = self._Colors.TextDim
     creator.Font = Enum.Font.GothamMedium
     creator.TextSize = 11
     creator.TextXAlignment = Enum.TextXAlignment.Left
@@ -2830,11 +2914,11 @@ function Library:CreateDashboardBanner(tabName)
         badge.Name = spec.name
         badge.Size = UDim2.new(1 / 3, -12, 0, 22)
         badge.Position = UDim2.new(spec.position / 3, 12 - spec.position * 6, 0, 84)
-        badge.BackgroundColor3 = D.Colors.Bg2
+        badge.BackgroundColor3 = self._Colors.Bg2
         badge.BackgroundTransparency = 0.15
         badge.BorderSizePixel = 0
         badge.Text = spec.text
-        badge.TextColor3 = D.Colors.TextDim
+        badge.TextColor3 = self._Colors.TextDim
         badge.Font = Enum.Font.GothamMedium
         badge.TextSize = 9
         badge.TextTruncate = Enum.TextTruncate.AtEnd
@@ -2920,14 +3004,14 @@ function Library:CreateDashboardBanner(tabName)
 
     self:_registerThemeRefresher(function()
         if not banner.Parent then return end
-        banner.BackgroundColor3 = D.Colors.Card
-        stroke.Color = D.Colors.Border
-        thumbnail.BackgroundColor3 = D.Colors.Bg2
-        title.TextColor3 = D.Colors.Text
-        creator.TextColor3 = D.Colors.TextDim
+        banner.BackgroundColor3 = self._Colors.Card
+        stroke.Color = self._Colors.Border
+        thumbnail.BackgroundColor3 = self._Colors.Bg2
+        title.TextColor3 = self._Colors.Text
+        creator.TextColor3 = self._Colors.TextDim
         for _, badge in ipairs(badges) do
-            badge.BackgroundColor3 = D.Colors.Bg2
-            badge.TextColor3 = D.Colors.TextDim
+            badge.BackgroundColor3 = self._Colors.Bg2
+            badge.TextColor3 = self._Colors.TextDim
         end
     end)
 
@@ -2935,6 +3019,7 @@ function Library:CreateDashboardBanner(tabName)
 end
 
 function Library:CreateThemeCustomizer(tabName)
+    if self:_isDead() then return end
     local section = self:CreateSection(
         tabName,
         "Theme Customizer",
@@ -2946,7 +3031,7 @@ function Library:CreateThemeCustomizer(tabName)
         self._AccentOverride = nil
         self:SetTheme(themeName)
     end)
-    self:AddColorPicker(section, "Accent color", D.Colors.Accent, function(color)
+    self:AddColorPicker(section, "Accent color", self._Colors.Accent, function(color)
         self:SetAccentColor(color)
     end)
     self:AddToggle(section, "Acrylic blur", self.Acrylic, function(enabled)
@@ -2984,10 +3069,16 @@ end
 
 function Library:AddToggle(page, text, default, callback)
     if self:_isDead() then return end
+    if default ~= nil and type(default) ~= "boolean" then
+        error("[DoD UI] AddToggle default must be a boolean.")
+    end
+    if callback ~= nil and type(callback) ~= "function" then
+        error("[DoD UI] AddToggle callback must be a function.")
+    end
     callback = callback or function() end
     local holder = Instance.new("Frame", page)
     holder.Size = UDim2.new(1, 0, 0, 36)
-    holder.BackgroundColor3 = D.Colors.Card
+    holder.BackgroundColor3 = self._Colors.Card
     holder.BackgroundTransparency = 0.3
     holder.BorderSizePixel = 0
     holder.Active = true
@@ -2999,7 +3090,7 @@ function Library:AddToggle(page, text, default, callback)
     lab.Position = UDim2.new(0, 12, 0, 0)
     lab.BackgroundTransparency = 1
     lab.Text = text
-    lab.TextColor3 = D.Colors.Text
+    lab.TextColor3 = self._Colors.Text
     lab.Font = Enum.Font.GothamBold
     lab.TextSize = 12
     lab.TextXAlignment = Enum.TextXAlignment.Left
@@ -3008,12 +3099,12 @@ function Library:AddToggle(page, text, default, callback)
     local switchBg = Instance.new("Frame", holder)
     switchBg.Size = UDim2.new(0, 36, 0, 20)
     switchBg.Position = UDim2.new(1, -50, 0.5, -10)
-    switchBg.BackgroundColor3 = default and D.Colors.Accent or Color3.fromRGB(45, 45, 55)
+    switchBg.BackgroundColor3 = default and self._Colors.Accent or Color3.fromRGB(45, 45, 55)
     switchBg.BorderSizePixel = 0
     Instance.new("UICorner", switchBg).CornerRadius = UDim.new(1, 0)
 
     local switchStroke = Instance.new("UIStroke", switchBg)
-    switchStroke.Color = default and D.Colors.Accent or D.Colors.Border
+    switchStroke.Color = default and self._Colors.Accent or self._Colors.Border
     switchStroke.Thickness = 1
 
     local knob = Instance.new("Frame", switchBg)
@@ -3028,7 +3119,7 @@ function Library:AddToggle(page, text, default, callback)
     stateLabel.Position = UDim2.new(1, -80, 0, 0)
     stateLabel.BackgroundTransparency = 1
     stateLabel.Text = default and "ON" or "OFF"
-    stateLabel.TextColor3 = default and D.Colors.Green or D.Colors.TextDim
+    stateLabel.TextColor3 = default and self._Colors.Green or self._Colors.TextDim
     stateLabel.Font = Enum.Font.GothamBlack
     stateLabel.TextSize = 10
     stateLabel.TextXAlignment = Enum.TextXAlignment.Right
@@ -3036,11 +3127,11 @@ function Library:AddToggle(page, text, default, callback)
     local state = default
 
     local function updateVisual()
-        switchBg.BackgroundColor3 = state and D.Colors.Accent or Color3.fromRGB(45, 45, 55)
-        switchStroke.Color = state and D.Colors.Accent or D.Colors.Border
+        switchBg.BackgroundColor3 = state and self._Colors.Accent or Color3.fromRGB(45, 45, 55)
+        switchStroke.Color = state and self._Colors.Accent or self._Colors.Border
         knob.Position = state and UDim2.new(1, -18, 0.5, -8) or UDim2.new(0, 2, 0.5, -8)
         stateLabel.Text = state and "ON" or "OFF"
-        stateLabel.TextColor3 = state and D.Colors.Green or D.Colors.TextDim
+        stateLabel.TextColor3 = state and self._Colors.Green or self._Colors.TextDim
     end
 
     local pressPos, lastToggle
@@ -3062,7 +3153,11 @@ function Library:AddToggle(page, text, default, callback)
         callback(state)
     end)
 
-    self:_registerThemeRefresher(function() updateVisual() end)
+    self:_registerThemeRefresher(function()
+        holder.BackgroundColor3 = self._Colors.Card
+        lab.TextColor3 = self._Colors.Text
+        updateVisual()
+    end)
     return self:_registerSearchControl(holder, text)
 end
 
@@ -3078,13 +3173,30 @@ function Library:AddSlider(page, text, minVal, maxVal, default, decimals, callba
     if maxVal <= minVal then
         error("[DoD UI] AddSlider maxVal harus lebih besar dari minVal.")
     end
+    if minVal ~= minVal or maxVal ~= maxVal or minVal == math.huge or maxVal == math.huge
+        or minVal == -math.huge or maxVal == -math.huge then
+        error("[DoD UI] AddSlider bounds must be finite numbers.")
+    end
+    if maxVal - minVal == math.huge then
+        error("[DoD UI] AddSlider range is too large.")
+    end
+    if decimals == nil then decimals = 1 end
+    if type(decimals) ~= "number" or decimals < 0 or decimals > 6 or decimals % 1 ~= 0 then
+        error("[DoD UI] AddSlider decimals must be an integer between 0 and 6.")
+    end
+    if callback ~= nil and type(callback) ~= "function" then
+        error("[DoD UI] AddSlider callback must be a function.")
+    end
     if type(default) ~= "number" then default = minVal end
+    if default ~= default or default == math.huge or default == -math.huge then
+        error("[DoD UI] AddSlider default must be finite.")
+    end
     default = math.clamp(default, minVal, maxVal)
     callback = callback or function() end
 
     local holder = Instance.new("Frame", page)
     holder.Size = UDim2.new(1, 0, 0, 54)
-    holder.BackgroundColor3 = D.Colors.Card
+    holder.BackgroundColor3 = self._Colors.Card
     holder.BackgroundTransparency = 0.3
     holder.BorderSizePixel = 0
     Instance.new("UICorner", holder).CornerRadius = UDim.new(0, 6)
@@ -3094,7 +3206,7 @@ function Library:AddSlider(page, text, minVal, maxVal, default, decimals, callba
     lab.Position = UDim2.new(0, 14, 0, 6)
     lab.BackgroundTransparency = 1
     lab.Text = text
-    lab.TextColor3 = D.Colors.Text
+    lab.TextColor3 = self._Colors.Text
     lab.Font = Enum.Font.GothamMedium
     lab.TextSize = 12
     lab.TextXAlignment = Enum.TextXAlignment.Left
@@ -3104,7 +3216,7 @@ function Library:AddSlider(page, text, minVal, maxVal, default, decimals, callba
     valLab.Position = UDim2.new(0.6, 0, 0, 6)
     valLab.BackgroundTransparency = 1
     valLab.Text = tostring(default)
-    valLab.TextColor3 = D.Colors.Accent
+    valLab.TextColor3 = self._Colors.Accent
     valLab.Font = Enum.Font.GothamBold
     valLab.TextSize = 12
     valLab.TextXAlignment = Enum.TextXAlignment.Right
@@ -3114,11 +3226,12 @@ function Library:AddSlider(page, text, minVal, maxVal, default, decimals, callba
     sliderBg.Position = UDim2.new(0, 14, 0, 34)
     sliderBg.BackgroundColor3 = Color3.fromRGB(40, 40, 52)
     sliderBg.BorderSizePixel = 0
+    sliderBg.Active = true
     Instance.new("UICorner", sliderBg).CornerRadius = UDim.new(1, 0)
 
     local fill = Instance.new("Frame", sliderBg)
     fill.Size = UDim2.new((default - minVal) / (maxVal - minVal), 0, 1, 0)
-    fill.BackgroundColor3 = D.Colors.Accent
+    fill.BackgroundColor3 = self._Colors.Accent
     fill.BorderSizePixel = 0
     Instance.new("UICorner", fill).CornerRadius = UDim.new(1, 0)
 
@@ -3138,9 +3251,34 @@ function Library:AddSlider(page, text, minVal, maxVal, default, decimals, callba
         valLab.Text = tostring(newVal)
     end
 
+    local function setFromPosition(position)
+        local width = sliderBg.AbsoluteSize.X
+        if width <= 0 then return end
+        local rel = math.clamp((position.X - sliderBg.AbsolutePosition.X) / width, 0, 1)
+        val = minVal + (maxVal - minVal) * rel
+        local mult = 10 ^ decimals
+        local scaled = val * mult
+        if math.abs(val) <= math.huge / mult then
+            if scaled >= 0 then
+                val = math.floor(scaled + 0.5) / mult
+            else
+                val = math.ceil(scaled - 0.5) / mult
+            end
+        end
+        updateVisual(val)
+        callback(val)
+    end
+
     knob.InputBegan:Connect(function(inp)
         if inp.UserInputType == Enum.UserInputType.MouseButton1 or inp.UserInputType == Enum.UserInputType.Touch then
             drag = true
+        end
+    end)
+
+    sliderBg.InputBegan:Connect(function(inp)
+        if inp.UserInputType == Enum.UserInputType.MouseButton1 or inp.UserInputType == Enum.UserInputType.Touch then
+            drag = true
+            setFromPosition(inp.Position)
         end
     end)
 
@@ -3152,26 +3290,15 @@ function Library:AddSlider(page, text, minVal, maxVal, default, decimals, callba
 
     Fn.track(UserInputService.InputChanged, function(inp)
         if drag and (inp.UserInputType == Enum.UserInputType.MouseMovement or inp.UserInputType == Enum.UserInputType.Touch) then
-            local rel = math.clamp((inp.Position.X - sliderBg.AbsolutePosition.X) / sliderBg.AbsoluteSize.X, 0, 1)
-            val = minVal + (maxVal - minVal) * rel
-            local precision = (decimals == 0) and 0 or 1
-            local mult = 10 ^ precision
-            local scaled = val * mult
-            if scaled >= 0 then
-                val = math.floor(scaled + 0.5) / mult
-            else
-                val = math.ceil(scaled - 0.5) / mult
-            end
-            updateVisual(val)
-            callback(val)
+            setFromPosition(inp.Position)
         end
     end, self)
 
     self:_registerThemeRefresher(function()
-        holder.BackgroundColor3 = D.Colors.Card
-        lab.TextColor3 = D.Colors.Text
-        valLab.TextColor3 = D.Colors.Accent
-        fill.BackgroundColor3 = D.Colors.Accent
+        holder.BackgroundColor3 = self._Colors.Card
+        lab.TextColor3 = self._Colors.Text
+        valLab.TextColor3 = self._Colors.Accent
+        fill.BackgroundColor3 = self._Colors.Accent
     end)
     return self:_registerSearchControl(holder, text .. " " .. tostring(minVal) .. " " .. tostring(maxVal))
 end
@@ -3185,7 +3312,11 @@ function Library:AddDropdown(page, text, options, defaultIndex, callback)
     if type(options) ~= "table" or #options == 0 then
         error("[DoD UI] AddDropdown options harus array non-empty.")
     end
-    if type(defaultIndex) ~= "number" or defaultIndex < 1 or defaultIndex > #options then
+    if callback ~= nil and type(callback) ~= "function" then
+        error("[DoD UI] AddDropdown callback must be a function.")
+    end
+    if type(defaultIndex) ~= "number" or defaultIndex % 1 ~= 0
+        or defaultIndex < 1 or defaultIndex > #options then
         defaultIndex = 1
     end
     callback = callback or function() end
@@ -3195,13 +3326,13 @@ function Library:AddDropdown(page, text, options, defaultIndex, callback)
 
     local holder = Instance.new("Frame", page)
     holder.Size = UDim2.new(1, 0, 0, 40)
-    holder.BackgroundColor3 = D.Colors.Card
+    holder.BackgroundColor3 = self._Colors.Card
     holder.BackgroundTransparency = 0.35
     holder.BorderSizePixel = 0
     Instance.new("UICorner", holder).CornerRadius = UDim.new(0, 8)
 
     local holderStroke = Instance.new("UIStroke", holder)
-    holderStroke.Color = D.Colors.Border
+    holderStroke.Color = self._Colors.Border
     holderStroke.Thickness = 1
     holderStroke.Transparency = 0.5
 
@@ -3210,7 +3341,7 @@ function Library:AddDropdown(page, text, options, defaultIndex, callback)
     label.Position = UDim2.new(0, 14, 0, 0)
     label.BackgroundTransparency = 1
     label.Text = text
-    label.TextColor3 = D.Colors.Text
+    label.TextColor3 = self._Colors.Text
     label.Font = Enum.Font.GothamBold
     label.TextSize = 12
     label.TextXAlignment = Enum.TextXAlignment.Left
@@ -3219,7 +3350,7 @@ function Library:AddDropdown(page, text, options, defaultIndex, callback)
     local valueChip = Instance.new("TextButton", holder)
     valueChip.Size = UDim2.new(0.58, -14, 0, 28)
     valueChip.Position = UDim2.new(0.42, 4, 0.5, -14)
-    valueChip.BackgroundColor3 = D.Colors.Bg2
+    valueChip.BackgroundColor3 = self._Colors.Bg2
     valueChip.BackgroundTransparency = 0.2
     valueChip.Text = ""
     valueChip.BorderSizePixel = 0
@@ -3228,7 +3359,7 @@ function Library:AddDropdown(page, text, options, defaultIndex, callback)
     Instance.new("UICorner", valueChip).CornerRadius = UDim.new(0, 7)
 
     local chipStroke = Instance.new("UIStroke", valueChip)
-    chipStroke.Color = D.Colors.Border
+    chipStroke.Color = self._Colors.Border
     chipStroke.Thickness = 1
     chipStroke.Transparency = 0.4
 
@@ -3237,7 +3368,7 @@ function Library:AddDropdown(page, text, options, defaultIndex, callback)
     chipLabel.Position = UDim2.new(0, 12, 0, 0)
     chipLabel.BackgroundTransparency = 1
     chipLabel.Text = tostring(options[defaultIndex])
-    chipLabel.TextColor3 = D.Colors.Text
+    chipLabel.TextColor3 = self._Colors.Text
     chipLabel.Font = Enum.Font.GothamBold
     chipLabel.TextSize = 11
     chipLabel.TextXAlignment = Enum.TextXAlignment.Left
@@ -3246,7 +3377,7 @@ function Library:AddDropdown(page, text, options, defaultIndex, callback)
     local currentIndex = defaultIndex
     local popup = Instance.new("Frame", UI.MainGui)
     popup.Name = "DropdownPopup"
-    popup.BackgroundColor3 = D.Colors.Bg2
+    popup.BackgroundColor3 = self._Colors.Bg2
     popup.BorderSizePixel = 0
     popup.Visible = false
     popup.ZIndex = 200
@@ -3254,7 +3385,7 @@ function Library:AddDropdown(page, text, options, defaultIndex, callback)
     Instance.new("UICorner", popup).CornerRadius = UDim.new(0, 8)
 
     local popupStroke = Instance.new("UIStroke", popup)
-    popupStroke.Color = D.Colors.Accent
+    popupStroke.Color = self._Colors.Accent
     popupStroke.Thickness = 1
     popupStroke.Transparency = 0.3
 
@@ -3263,7 +3394,7 @@ function Library:AddDropdown(page, text, options, defaultIndex, callback)
     popupScroll.BackgroundTransparency = 1
     popupScroll.BorderSizePixel = 0
     popupScroll.ScrollBarThickness = 3
-    popupScroll.ScrollBarImageColor3 = D.Colors.Accent
+    popupScroll.ScrollBarImageColor3 = self._Colors.Accent
     popupScroll.CanvasSize = UDim2.new(0, 0, 0, 0)
     popupScroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
     popupScroll.ZIndex = 201
@@ -3286,7 +3417,7 @@ function Library:AddDropdown(page, text, options, defaultIndex, callback)
         for i, opt in ipairs(options) do
             local optBtn = Instance.new("TextButton", popupScroll)
             optBtn.Size = UDim2.new(1, 0, 0, 30)
-            optBtn.BackgroundColor3 = D.Colors.Card
+            optBtn.BackgroundColor3 = self._Colors.Card
             optBtn.BackgroundTransparency = 1
             optBtn.Text = ""
             optBtn.BorderSizePixel = 0
@@ -3300,7 +3431,7 @@ function Library:AddDropdown(page, text, options, defaultIndex, callback)
             optLabel.Position = UDim2.new(0, 12, 0, 0)
             optLabel.BackgroundTransparency = 1
             optLabel.Text = tostring(opt)
-            optLabel.TextColor3 = D.Colors.Text
+            optLabel.TextColor3 = self._Colors.Text
             optLabel.Font = Enum.Font.GothamBold
             optLabel.TextSize = 12
             optLabel.TextXAlignment = Enum.TextXAlignment.Left
@@ -3310,7 +3441,7 @@ function Library:AddDropdown(page, text, options, defaultIndex, callback)
             check.Position = UDim2.new(1, -28, 0, 0)
             check.BackgroundTransparency = 1
             check.Text = "✓"
-            check.TextColor3 = D.Colors.Accent
+            check.TextColor3 = self._Colors.Accent
             check.Font = Enum.Font.GothamBlack
             check.TextSize = 14
             check.Visible = (i == currentIndex)
@@ -3320,19 +3451,29 @@ function Library:AddDropdown(page, text, options, defaultIndex, callback)
             optBtn.MouseButton1Click:Connect(function()
                 currentIndex = i
                 chipLabel.Text = tostring(options[i])
-                callback(i, options[i])
                 popup.Visible = false
+                callback(i, options[i])
             end)
             table.insert(optionButtons, optBtn)
         end
     end
 
     local function updatePopupPosition()
+        local camera = getCam()
+        if not camera then return end
         local chipPos = valueChip.AbsolutePosition
         local chipSize = valueChip.AbsoluteSize
         local totalHeight = math.min(#options * 32 + 14, 240)
-        popup.Size = UDim2.new(0, chipSize.X, 0, totalHeight)
-        popup.Position = UDim2.new(0, chipPos.X, 0, chipPos.Y + chipSize.Y + 6)
+        local viewport = camera.ViewportSize
+        local width = math.min(chipSize.X, math.max(1, viewport.X - 16))
+        local x = math.clamp(chipPos.X, 8, math.max(8, viewport.X - width - 8))
+        local y = chipPos.Y + chipSize.Y + 6
+        if y + totalHeight > viewport.Y - 8 then
+            y = chipPos.Y - totalHeight - 6
+        end
+        y = math.clamp(y, 8, math.max(8, viewport.Y - totalHeight - 8))
+        popup.Size = UDim2.fromOffset(width, totalHeight)
+        popup.Position = UDim2.fromOffset(x, y)
     end
 
     valueChip.MouseButton1Click:Connect(function()
@@ -3372,14 +3513,14 @@ function Library:AddDropdown(page, text, options, defaultIndex, callback)
     end)
 
     self:_registerThemeRefresher(function()
-        holder.BackgroundColor3 = D.Colors.Card
-        holderStroke.Color = D.Colors.Border
-        label.TextColor3 = D.Colors.Text
-        valueChip.BackgroundColor3 = D.Colors.Bg2
-        chipStroke.Color = D.Colors.Border
-        chipLabel.TextColor3 = D.Colors.Text
-        popup.BackgroundColor3 = D.Colors.Bg2
-        popupStroke.Color = D.Colors.Accent
+        holder.BackgroundColor3 = self._Colors.Card
+        holderStroke.Color = self._Colors.Border
+        label.TextColor3 = self._Colors.Text
+        valueChip.BackgroundColor3 = self._Colors.Bg2
+        chipStroke.Color = self._Colors.Border
+        chipLabel.TextColor3 = self._Colors.Text
+        popup.BackgroundColor3 = self._Colors.Bg2
+        popupStroke.Color = self._Colors.Accent
     end)
 
     local searchableOptions = {}
@@ -3394,10 +3535,20 @@ end
 -- =========================================================
 
 function Library:AddKeybind(page, text, default, callback)
+    if self:_isDead() then return end
+    if default ~= nil and not (
+        (typeof(default) == "EnumItem" and default.EnumType == Enum.KeyCode)
+        or default == "LClick" or default == "RClick"
+    ) then
+        error("[DoD UI] AddKeybind default must be an Enum.KeyCode, LClick, RClick, or nil.")
+    end
+    if callback ~= nil and type(callback) ~= "function" then
+        error("[DoD UI] AddKeybind callback must be a function.")
+    end
     local STATE = self._STATE
     local holder = Instance.new("Frame", page)
     holder.Size = UDim2.new(1, 0, 0, 34)
-    holder.BackgroundColor3 = D.Colors.Card
+    holder.BackgroundColor3 = self._Colors.Card
     holder.BackgroundTransparency = 0.3
     holder.BorderSizePixel = 0
     Instance.new("UICorner", holder).CornerRadius = UDim.new(0, 6)
@@ -3407,7 +3558,7 @@ function Library:AddKeybind(page, text, default, callback)
     lab.Position = UDim2.new(0, 12, 0, 0)
     lab.BackgroundTransparency = 1
     lab.Text = text
-    lab.TextColor3 = D.Colors.Text
+    lab.TextColor3 = self._Colors.Text
     lab.Font = Enum.Font.GothamBold
     lab.TextSize = 13
     lab.TextXAlignment = Enum.TextXAlignment.Left
@@ -3415,8 +3566,8 @@ function Library:AddKeybind(page, text, default, callback)
     local btn = Instance.new("TextButton", holder)
     btn.Size = UDim2.new(0, 100, 0, 26)
     btn.Position = UDim2.new(1, -112, 0.5, -13)
-    btn.BackgroundColor3 = D.Colors.Accent
-    btn.TextColor3 = Fn.accentTextColor(D.Colors.Accent)
+    btn.BackgroundColor3 = self._Colors.Accent
+    btn.TextColor3 = Fn.accentTextColor(self._Colors.Accent)
     btn.Font = Enum.Font.GothamBold
     btn.TextSize = 12
     btn.BorderSizePixel = 0
@@ -3497,10 +3648,10 @@ function Library:AddKeybind(page, text, default, callback)
     end
 
     self:_registerThemeRefresher(function()
-        holder.BackgroundColor3 = D.Colors.Card
-        lab.TextColor3 = D.Colors.Text
-        btn.BackgroundColor3 = D.Colors.Accent
-        btn.TextColor3 = Fn.accentTextColor(D.Colors.Accent)
+        holder.BackgroundColor3 = self._Colors.Card
+        lab.TextColor3 = self._Colors.Text
+        btn.BackgroundColor3 = self._Colors.Accent
+        btn.TextColor3 = Fn.accentTextColor(self._Colors.Accent)
     end)
     return self:_registerSearchControl(holder, text)
 end
@@ -3511,10 +3662,13 @@ end
 
 function Library:AddButton(page, text, callback)
     if self:_isDead() then return end
+    if callback ~= nil and type(callback) ~= "function" then
+        error("[DoD UI] AddButton callback must be a function.")
+    end
     callback = callback or function() end
     local holder = Instance.new("Frame", page)
     holder.Size = UDim2.new(1, 0, 0, 36)
-    holder.BackgroundColor3 = D.Colors.Card
+    holder.BackgroundColor3 = self._Colors.Card
     holder.BackgroundTransparency = 0.3
     holder.BorderSizePixel = 0
     Instance.new("UICorner", holder).CornerRadius = UDim.new(0, 6)
@@ -3523,9 +3677,9 @@ function Library:AddButton(page, text, callback)
     btn.Size = UDim2.new(1, -20, 0, 28)
     btn.Position = UDim2.new(0, 10, 0, 4)
     btn.Text = text
-    btn.BackgroundColor3 = D.Colors.Accent
+    btn.BackgroundColor3 = self._Colors.Accent
     btn.BackgroundTransparency = 0.2
-    btn.TextColor3 = Fn.accentTextColor(D.Colors.Accent)
+    btn.TextColor3 = Fn.accentTextColor(self._Colors.Accent)
     btn.Font = Enum.Font.GothamBold
     btn.TextSize = 11
     btn.BorderSizePixel = 0
@@ -3538,21 +3692,22 @@ function Library:AddButton(page, text, callback)
     btn.MouseButton1Click:Connect(callback)
 
     self:_registerThemeRefresher(function()
-        holder.BackgroundColor3 = D.Colors.Card
-        btn.BackgroundColor3 = D.Colors.Accent
-        btn.TextColor3 = Fn.accentTextColor(D.Colors.Accent)
+        holder.BackgroundColor3 = self._Colors.Card
+        btn.BackgroundColor3 = self._Colors.Accent
+        btn.TextColor3 = Fn.accentTextColor(self._Colors.Accent)
     end)
     return self:_registerSearchControl(holder, text)
 end
 
 function Library:AddLabel(page, text)
+    if self:_isDead() then return end
     local label = Instance.new("TextLabel", page)
     label.Name = "Label"
     label.Size = UDim2.new(1, 0, 0, 0)
     label.AutomaticSize = Enum.AutomaticSize.Y
     label.BackgroundTransparency = 1
     label.Text = tostring(text)
-    label.TextColor3 = D.Colors.Text
+    label.TextColor3 = self._Colors.Text
     label.Font = Enum.Font.GothamMedium
     label.TextSize = 12
     label.TextXAlignment = Enum.TextXAlignment.Left
@@ -3560,18 +3715,19 @@ function Library:AddLabel(page, text)
     label.TextWrapped = true
 
     self:_registerThemeRefresher(function()
-        label.TextColor3 = D.Colors.Text
+        label.TextColor3 = self._Colors.Text
     end)
     return self:_registerSearchControl(label, text)
 end
 
 function Library:AddParagraph(page, title, desc)
+    if self:_isDead() then return end
     desc = desc or ""
     local holder = Instance.new("Frame", page)
     holder.Name = "Paragraph"
     holder.Size = UDim2.new(1, 0, 0, 0)
     holder.AutomaticSize = Enum.AutomaticSize.Y
-    holder.BackgroundColor3 = D.Colors.Card
+    holder.BackgroundColor3 = self._Colors.Card
     holder.BackgroundTransparency = 0.3
     holder.BorderSizePixel = 0
     Instance.new("UICorner", holder).CornerRadius = UDim.new(0, 7)
@@ -3592,7 +3748,7 @@ function Library:AddParagraph(page, title, desc)
     titleLabel.Size = UDim2.new(1, 0, 0, 18)
     titleLabel.BackgroundTransparency = 1
     titleLabel.Text = tostring(title)
-    titleLabel.TextColor3 = D.Colors.Text
+    titleLabel.TextColor3 = self._Colors.Text
     titleLabel.Font = Enum.Font.GothamBold
     titleLabel.TextSize = 12
     titleLabel.TextXAlignment = Enum.TextXAlignment.Left
@@ -3605,7 +3761,7 @@ function Library:AddParagraph(page, title, desc)
     description.AutomaticSize = Enum.AutomaticSize.Y
     description.BackgroundTransparency = 1
     description.Text = tostring(desc)
-    description.TextColor3 = D.Colors.TextDim
+    description.TextColor3 = self._Colors.TextDim
     description.Font = Enum.Font.Gotham
     description.TextSize = 11
     description.TextXAlignment = Enum.TextXAlignment.Left
@@ -3613,14 +3769,15 @@ function Library:AddParagraph(page, title, desc)
     description.TextWrapped = true
 
     self:_registerThemeRefresher(function()
-        holder.BackgroundColor3 = D.Colors.Card
-        titleLabel.TextColor3 = D.Colors.Text
-        description.TextColor3 = D.Colors.TextDim
+        holder.BackgroundColor3 = self._Colors.Card
+        titleLabel.TextColor3 = self._Colors.Text
+        description.TextColor3 = self._Colors.TextDim
     end)
     return self:_registerSearchControl(holder, tostring(title) .. " " .. tostring(desc))
 end
 
 function Library:AddTextbox(page, text, placeholder, callback)
+    if self:_isDead() then return end
     if callback ~= nil and type(callback) ~= "function" then
         error("[DoD UI] AddTextbox callback must be a function.")
     end
@@ -3629,7 +3786,7 @@ function Library:AddTextbox(page, text, placeholder, callback)
     local holder = Instance.new("Frame", page)
     holder.Name = "Textbox"
     holder.Size = UDim2.new(1, 0, 0, 40)
-    holder.BackgroundColor3 = D.Colors.Card
+    holder.BackgroundColor3 = self._Colors.Card
     holder.BackgroundTransparency = 0.3
     holder.BorderSizePixel = 0
     Instance.new("UICorner", holder).CornerRadius = UDim.new(0, 7)
@@ -3639,7 +3796,7 @@ function Library:AddTextbox(page, text, placeholder, callback)
     label.Position = UDim2.new(0, 12, 0, 0)
     label.BackgroundTransparency = 1
     label.Text = tostring(text)
-    label.TextColor3 = D.Colors.Text
+    label.TextColor3 = self._Colors.Text
     label.Font = Enum.Font.GothamMedium
     label.TextSize = 11
     label.TextXAlignment = Enum.TextXAlignment.Left
@@ -3649,14 +3806,14 @@ function Library:AddTextbox(page, text, placeholder, callback)
     input.Name = "Input"
     input.Size = UDim2.new(0.58, -18, 0, 28)
     input.Position = UDim2.new(0.42, 4, 0.5, -14)
-    input.BackgroundColor3 = D.Colors.Bg2
+    input.BackgroundColor3 = self._Colors.Bg2
     input.BackgroundTransparency = 0.15
     input.BorderSizePixel = 0
     input.ClearTextOnFocus = false
     input.Text = ""
     input.PlaceholderText = tostring(placeholder or "")
-    input.PlaceholderColor3 = D.Colors.TextDim
-    input.TextColor3 = D.Colors.Text
+    input.PlaceholderColor3 = self._Colors.TextDim
+    input.TextColor3 = self._Colors.Text
     input.Font = Enum.Font.Gotham
     input.TextSize = 11
     input.TextXAlignment = Enum.TextXAlignment.Left
@@ -3671,16 +3828,17 @@ function Library:AddTextbox(page, text, placeholder, callback)
     end)
 
     self:_registerThemeRefresher(function()
-        holder.BackgroundColor3 = D.Colors.Card
-        label.TextColor3 = D.Colors.Text
-        input.BackgroundColor3 = D.Colors.Bg2
-        input.TextColor3 = D.Colors.Text
-        input.PlaceholderColor3 = D.Colors.TextDim
+        holder.BackgroundColor3 = self._Colors.Card
+        label.TextColor3 = self._Colors.Text
+        input.BackgroundColor3 = self._Colors.Bg2
+        input.TextColor3 = self._Colors.Text
+        input.PlaceholderColor3 = self._Colors.TextDim
     end)
     return self:_registerSearchControl(holder, tostring(text) .. " " .. tostring(placeholder or ""))
 end
 
 function Library:AddColorPicker(page, text, defaultColor3, callback)
+    if self:_isDead() then return end
     if typeof(defaultColor3) ~= "Color3" then
         error("[DoD UI] AddColorPicker expects defaultColor3 to be a Color3 value.")
     end
@@ -3692,7 +3850,7 @@ function Library:AddColorPicker(page, text, defaultColor3, callback)
     local holder = Instance.new("Frame", page)
     holder.Name = "ColorPicker"
     holder.Size = UDim2.new(1, 0, 0, 40)
-    holder.BackgroundColor3 = D.Colors.Card
+    holder.BackgroundColor3 = self._Colors.Card
     holder.BackgroundTransparency = 0.3
     holder.BorderSizePixel = 0
     Instance.new("UICorner", holder).CornerRadius = UDim.new(0, 7)
@@ -3702,7 +3860,7 @@ function Library:AddColorPicker(page, text, defaultColor3, callback)
     label.Position = UDim2.new(0, 12, 0, 0)
     label.BackgroundTransparency = 1
     label.Text = tostring(text)
-    label.TextColor3 = D.Colors.Text
+    label.TextColor3 = self._Colors.Text
     label.Font = Enum.Font.GothamMedium
     label.TextSize = 11
     label.TextXAlignment = Enum.TextXAlignment.Left
@@ -3720,7 +3878,7 @@ function Library:AddColorPicker(page, text, defaultColor3, callback)
     Instance.new("UICorner", preview).CornerRadius = UDim.new(0, 6)
 
     local previewStroke = Instance.new("UIStroke", preview)
-    previewStroke.Color = D.Colors.Border
+    previewStroke.Color = self._Colors.Border
     previewStroke.Thickness = 1
 
     local hue, saturation, value = Color3.toHSV(defaultColor3)
@@ -3728,7 +3886,7 @@ function Library:AddColorPicker(page, text, defaultColor3, callback)
     local popup = Instance.new("Frame", self._UI.MainGui)
     popup.Name = "ColorPickerPopup"
     popup.Size = UDim2.new(0, 230, 0, 176)
-    popup.BackgroundColor3 = D.Colors.Bg2
+    popup.BackgroundColor3 = self._Colors.Bg2
     popup.BorderSizePixel = 0
     popup.Visible = false
     popup.ZIndex = 210
@@ -3736,7 +3894,7 @@ function Library:AddColorPicker(page, text, defaultColor3, callback)
     Instance.new("UICorner", popup).CornerRadius = UDim.new(0, 9)
 
     local popupStroke = Instance.new("UIStroke", popup)
-    popupStroke.Color = D.Colors.Border
+    popupStroke.Color = self._Colors.Border
     popupStroke.Thickness = 1
 
     local saturationValue = Instance.new("Frame", popup)
@@ -3873,7 +4031,9 @@ function Library:AddColorPicker(page, text, defaultColor3, callback)
             if other.popup ~= popup then other.close() end
         end
 
-        local viewport = getCam().ViewportSize
+        local camera = getCam()
+        if not camera then return end
+        local viewport = camera.ViewportSize
         local popupWidth, popupHeight = popup.AbsoluteSize.X, popup.AbsoluteSize.Y
         local x = math.clamp(preview.AbsolutePosition.X, 8, math.max(8, viewport.X - popupWidth - 8))
         local y = preview.AbsolutePosition.Y + preview.AbsoluteSize.Y + 6
@@ -3908,11 +4068,11 @@ function Library:AddColorPicker(page, text, defaultColor3, callback)
     })
 
     self:_registerThemeRefresher(function()
-        holder.BackgroundColor3 = D.Colors.Card
-        label.TextColor3 = D.Colors.Text
-        previewStroke.Color = D.Colors.Border
-        popup.BackgroundColor3 = D.Colors.Bg2
-        popupStroke.Color = D.Colors.Border
+        holder.BackgroundColor3 = self._Colors.Card
+        label.TextColor3 = self._Colors.Text
+        previewStroke.Color = self._Colors.Border
+        popup.BackgroundColor3 = self._Colors.Bg2
+        popupStroke.Color = self._Colors.Border
     end)
 
     return self:_registerSearchControl(holder, text)
