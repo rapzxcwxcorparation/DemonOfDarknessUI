@@ -2849,12 +2849,9 @@ function Library:CreateSection(tabName, title, summary, defaultOpen)
         separator.BackgroundColor3 = self._Colors.Border
     end)
 
-    body._Toggle = toggle
-
     self:_applySearchFilter(tabName)
     return body
 end
-
 function Library:CreateColumnSection(tabName, title, summary, defaultOpen)
     if self:_isDead() then return end
     local body = self:CreateSection(tabName, title, summary, defaultOpen)
