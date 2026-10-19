@@ -518,7 +518,7 @@ function SubTabModule:_createSubGroup(mainCategory, subList)
         badge.BorderSizePixel = 0
         badge.Visible = false
         Instance.new("UICorner", badge).CornerRadius = UDim.new(1, 0)
-        btn.Badge = badge
+        -- [FIX] btn.Badge = badge (Dihapus karena TextButton ga boleh punya custom prop)
 
         btn.MouseEnter:Connect(function()
             if self.ActiveSubIndices[mainCategory] ~= i then
@@ -3072,13 +3072,14 @@ function Library:SetTabBadge(categoryName, tabName, text, color)
     if not group then return end
     for _, btn in ipairs(group.Buttons) do
         if btn.Text == tostring(tabName) then
-            if btn.Badge then
+            local bdg = btn:FindFirstChild("Badge")
+            if bdg then
                 if text then
-                    btn.Badge.Text = tostring(text)
-                    btn.Badge.BackgroundColor3 = color or Color3.fromRGB(255, 100, 100)
-                    btn.Badge.Visible = true
+                    bdg.Text = tostring(text)
+                    bdg.BackgroundColor3 = color or Color3.fromRGB(255, 100, 100)
+                    bdg.Visible = true
                 else
-                    btn.Badge.Visible = false
+                    bdg.Visible = false
                 end
             end
             return
