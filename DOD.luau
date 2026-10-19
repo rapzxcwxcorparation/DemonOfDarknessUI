@@ -1,84 +1,35 @@
 --[[
     ============================================================
-    DEMON OF DARKNESS UI (DoD UI)
-    A standalone, customizable interface library
-    
-    Features:
-      - 20 themes, including Demon of Darkness
-      - 10 weather effects (Snow, Rain, Fireflies, Aurora, etc.)
-      - 6 focus overlay patterns (Grid, Dots, Diagonal, etc.)
-      - Pill-tab sub navigation
-      - Accordion sections
-      - Controls: Toggle / Slider / Dropdown / Keybind / Button
-      - Display and input: Label / Paragraph / Textbox / ColorPicker
-      - Game dashboard banner with live server metadata
-      - Built-in live theme customizer and active keybind overlay
-      - Notification queue (max 3 concurrent)
-      - Drag, minimize, maximize, unload
-      - Mobile toggle button
-      - Blur effect
+    DEMON OF DARKNESS UI (DoD UI) v1.1 — PATCHED
+    Standalone, customizable interface library
 
-    Usage:
-        local Lib = loadstring(game:HttpGet("..."))()
-        local UI  = Lib.new({
-            Title         = "Demon of Darkness UI",
-            Version       = "v1.0",
-            Author        = "@DemonOfDarkness",
-            Theme         = "Demon of Darkness",
-            TabPosition   = "Top",
-            TabWidth      = 130,
-            Size          = UDim2.fromOffset(600, 450),
-            Acrylic       = true,
-            AcrylicBlur   = 8,
-            FocusOverlay  = true,
-            Weather       = { Enabled = false, Type = "Snow", Intensity = 65 },
-        })
-
-        UI:CreateCategory("Combat", "crosshair")
-        UI:CreateCategory("Visual", "asset:133917951304995")
-        UI:CreateCategory("Settings", "asset:9405931596")
-
-        UI:CreateTab("Combat", "Aimbot")
-        UI:CreateTab("Combat", "Trigger")
-        UI:CreateTab("Visual", "ESP")
-        UI:CreateTab("Settings", "Settings")
-
-        local sec = UI:CreateSection("Aimbot", "Targeting", "Aim configuration", true)
-        local dashboard = UI:CreateDashboardBanner("Aimbot")
-        UI:CreateThemeCustomizer("Settings")
-        UI:CreateKeybindOverlay()
-        UI:AddToggle(sec, "Enable", true, function(v) print(v) end)
-        UI:AddSlider(sec, "FOV", 30, 500, 180, 0, function(v) print(v) end)
-        local left, right = UI:CreateColumnSection("Aimbot", "Advanced", "Two-column controls", true)
-        UI:AddToggle(left, "Silent aim", false, function(v) print(v) end)
-        UI:AddSlider(right, "Smoothness", 1, 20, 5, 0, function(v) print(v) end)
-        UI:AddDropdown(sec, "Mode", {"Manual", "Dynamic"}, 1, function(i,v) print(v) end)
-        UI:AddKeybind(sec, "Toggle", Enum.KeyCode.T, function(k) print(k) end)
-        UI:AddButton(sec, "Reset", function() print("clicked") end)
-        UI:AddLabel(sec, "Additional information")
-        UI:AddParagraph(sec, "About", "Description text")
-        UI:AddTextbox(sec, "Player name", "Enter a name", function(value) print(value) end)
-        UI:AddColorPicker(sec, "Highlight", Color3.fromRGB(120, 80, 220), function(color) print(color) end)
-
-        UI:Notify("System", "Loaded")
-        UI:SetTheme("Cyberpunk")
-        UI:SetWeather(true, "Snow", 65)
-        UI:SetFocusOverlay(true)
+    Fixes in v1.1:
+      [FIX] SwitchTab auto-syncs sidebar category
+      [FIX] Minimize/maximize use separate save states
+      [FIX] Shadow layers sync with main UIScale
+      [FIX] FocusOverlay hidden during minimize
+      [FIX] bindPressAnimation reuses existing UIScale
+      [FIX] Weather intensity no longer rebuilds particles
+      [FIX] Navigation layout nil-guard (safe during init)
+      [FIX] Side-mode search/content alignment (was 5px off)
+      [FIX] Search registers top-level controls (page-level)
+      [FIX] DashboardBanner removes dead search-update code
+      [FIX] Theme customizer SetWeather no spam
     ============================================================
 ]]
 
 local Library = {}
 Library.__index = Library
 
-local Players          = game:GetService("Players")
-local RunService       = game:GetService("RunService")
+local Players            = game:GetService("Players")
+local RunService         = game:GetService("RunService")
 local MarketplaceService = game:GetService("MarketplaceService")
-local Stats            = game:GetService("Stats")
-local UserInputService = game:GetService("UserInputService")
-local TweenService     = game:GetService("TweenService")
-local CoreGui          = game:GetService("CoreGui")
-local Lighting         = game:GetService("Lighting")
-local LocalPlayer      = Players.LocalPlayer
+local Stats              = game:GetService("Stats")
+local UserInputService   = game:GetService("UserInputService")
+local TweenService       = game:GetService("TweenService")
+local CoreGui            = game:GetService("CoreGui")
+local Lighting           = game:GetService("Lighting")
+local LocalPlayer        = Players.LocalPlayer
 
 local IconsSuccess, IconsLib = pcall(function()
     return loadstring(game:HttpGetAsync("https://raw.githubusercontent.com/Footagesus/Icons/main/Main-v2.lua"))()
@@ -114,23 +65,26 @@ end
 Fn.untrack = function(connection, owner)
     local connections = owner._STATE.TrackedConns
     local index = table.find(connections, connection)
-    if index then
-        table.remove(connections, index)
-    end
+    if index then table.remove(connections, index) end
     connection:Disconnect()
 end
 
+-- FIX: reuse existing UIScale instead of stacking new ones
 Fn.bindPressAnimation = function(guiObject)
-    local scale = Instance.new("UIScale", guiObject)
-    scale.Scale = 1
+    local scale = guiObject:FindFirstChildOfClass("UIScale")
+    if not scale then
+        scale = Instance.new("UIScale", guiObject)
+        scale.Scale = 1
+    end
+    local baseScale = scale.Scale
     local activeTween
 
-    local function animate(targetScale)
+    local function animate(factor)
         if activeTween then activeTween:Cancel() end
         activeTween = TweenService:Create(
             scale,
             TweenInfo.new(0.09, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
-            {Scale = targetScale}
+            {Scale = baseScale * factor}
         )
         activeTween:Play()
     end
@@ -173,7 +127,7 @@ Fn.accentTextColor = function(color)
 end
 
 -- =========================================================
--- THEMES (19 presets)
+-- THEMES (20 presets)
 -- =========================================================
 
 D.Themes = {
@@ -475,7 +429,7 @@ local function randomFloat(minV, maxV)
 end
 
 -- =========================================================
--- SUB-TAB MODULE (pill-tab pill navigation)
+-- SUB-TAB MODULE
 -- =========================================================
 
 local SubTabModule = {}
@@ -696,8 +650,7 @@ end
 -- =========================================================
 
 function Library.new(opts)
-    if opts == nil then
-        opts = {}
+    if opts == nil then opts = {}
     elseif type(opts) ~= "table" then
         error("[DoD UI] Library.new expects an options table.")
     end
@@ -763,6 +716,7 @@ function Library.new(opts)
         CategoryTabs        = {},
         SearchSections      = {},
         SearchBodies        = {},
+        SearchTopLevel      = {},
         SearchQuery         = "",
         PageSectionCounts   = {},
         TabCategories       = {},
@@ -815,6 +769,11 @@ function Library.new(opts)
         self:SetWeather(true, self._STATE.WeatherType, self._STATE.WeatherIntensity)
     end
 
+    -- FIX: register viewport listener AFTER full init (avoid nil deref during boot)
+    Fn.track(self._UI.MainContainer:GetPropertyChangedSignal("AbsoluteSize"), function()
+        self:_applyNavigationLayout()
+    end, self)
+
     return self
 end
 
@@ -854,10 +813,7 @@ function Library:SetTheme(themeName, silent)
             UI.MainContainer.BackgroundColor3 = self._Colors.Bg
             UI.MainContainer.BackgroundTransparency = self.Acrylic and 0.32 or 0.1
         end
-
-        if UI.AcrylicTexture then
-            UI.AcrylicTexture.BackgroundColor3 = self._Colors.Accent2
-        end
+        if UI.AcrylicTexture then UI.AcrylicTexture.BackgroundColor3 = self._Colors.Accent2 end
         if UI.AcrylicGradient then
             UI.AcrylicGradient.Color = ColorSequence.new({
                 ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 255, 255)),
@@ -865,20 +821,15 @@ function Library:SetTheme(themeName, silent)
                 ColorSequenceKeypoint.new(1, Color3.fromRGB(255, 255, 255)),
             })
         end
-        if UI.TitleBar then
-            UI.TitleBar.BackgroundColor3 = self._Colors.Bg2
-        end
+        if UI.TitleBar then UI.TitleBar.BackgroundColor3 = self._Colors.Bg2 end
         if UI.CategoryBar then
             UI.CategoryBar.BackgroundColor3 = self.TabPosition == "Bottom" and self._Colors.Card or self._Colors.Sidebar
         end
-        if UI.CategoryBarStroke then
-            UI.CategoryBarStroke.Color = self._Colors.Border
-        end
-        if UI.Sidebar then
-            UI.Sidebar.BackgroundColor3 = self._Colors.Sidebar
-        end
+        if UI.CategoryBarStroke then UI.CategoryBarStroke.Color = self._Colors.Border end
+        if UI.Sidebar then UI.Sidebar.BackgroundColor3 = self._Colors.Sidebar end
+        if UI.TabBarDivider then UI.TabBarDivider.BackgroundColor3 = self._Colors.Border end
         if UI.TitleLabel then UI.TitleLabel.TextColor3 = self._Colors.Text end
-        if UI.TitleDiscord then UI.TitleDiscord.TextColor3 = self._Colors.Text end
+        if UI.TitleDiscord then UI.TitleDiscord.TextColor3 = self._Colors.TextDim end
         if UI.TitleLogoDot then UI.TitleLogoDot.BackgroundColor3 = self._Colors.Accent end
         if UI.TitleVersionBadge then
             UI.TitleVersionBadge.BackgroundColor3 = self._Colors.Accent
@@ -900,11 +851,9 @@ function Library:SetTheme(themeName, silent)
         if UI.SearchIcon then UI.SearchIcon.ImageColor3 = self._Colors.TextDim end
         if UI.MobileToggle then
             UI.MobileToggle.BackgroundColor3 = self._Colors.Card
-            UI.MobileToggle.TextColor3 = Color3.new(1, 1, 1)
+            UI.MobileToggle.TextColor3 = self._Colors.Text
         end
-        if UI.MobileToggleStroke then
-            UI.MobileToggleStroke.Color = self._Colors.Accent
-        end
+        if UI.MobileToggleStroke then UI.MobileToggleStroke.Color = self._Colors.Accent end
     end)
     if not ok then
         warn("[DoD UI] Theme UI refresh failed: " .. tostring(err))
@@ -962,9 +911,7 @@ function Library:SetAcrylic(enabled, blurIntensity)
     if type(enabled) ~= "boolean" then
         error("[DoD UI] SetAcrylic expects a boolean enabled value.")
     end
-    if blurIntensity ~= nil then
-        self:SetAcrylicIntensity(blurIntensity)
-    end
+    if blurIntensity ~= nil then self:SetAcrylicIntensity(blurIntensity) end
     self.Acrylic = enabled
 
     local UI = self._UI
@@ -1147,7 +1094,6 @@ function Library:_initMainGui()
     UI.MainGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
     UI.MainGui.DisplayOrder = 1000
 
-    -- Focus overlay (behind main container)
     UI.FocusOverlay = Instance.new("Frame", UI.MainGui)
     UI.FocusOverlay.Name = "FocusOverlay"
     UI.FocusOverlay.Size = UDim2.fromScale(1, 1)
@@ -1163,7 +1109,6 @@ function Library:_initMainGui()
     UI.GridPattern.BackgroundTransparency = 1
     UI.GridPattern.ZIndex = 0
 
-    -- Snow layer
     UI.SnowLayer = Instance.new("Frame", UI.MainGui)
     UI.SnowLayer.Name = "SnowLayer"
     UI.SnowLayer.Size = UDim2.fromScale(1, 1)
@@ -1172,13 +1117,11 @@ function Library:_initMainGui()
     UI.SnowLayer.ZIndex = 2
     UI.SnowLayer.Visible = false
 
-    -- Blur effect
     UI.GuiBlur = Lighting:FindFirstChild("DoD_UI_Blur") or Instance.new("BlurEffect")
     UI.GuiBlur.Name = "DoD_UI_Blur"
     UI.GuiBlur.Size = 0
     UI.GuiBlur.Parent = Lighting
 
-    -- Main container
     local MC = Instance.new("Frame", UI.MainGui)
     UI.MainContainer = MC
     MC.Size = self.WindowSize
@@ -1251,7 +1194,6 @@ function Library:_initMainGui()
     UI.MainStroke.Color = self._Colors.Border
     UI.MainStroke.Thickness = 1.5
 
-    -- Shadow layers
     self._shadowLayers = {}
     local shadowConfigs = {
         {offset = 1, baseTransparency = 0.55},
@@ -1281,6 +1223,7 @@ function Library:_initMainGui()
     end
 end
 
+-- FIX: shadow scale synced with main UIScale
 function Library:_initShadowSync()
     local function sync()
         local pos = self._UI.MainContainer.Position
@@ -1297,16 +1240,24 @@ function Library:_initShadowSync()
             layer.frame.Size = UDim2.fromOffset(absoluteSize.X, absoluteSize.Y)
         end
     end
+    local function syncScale()
+        local scale = self._UI.MainScale.Scale
+        for _, layer in ipairs(self._shadowLayers) do
+            layer.scale.Scale = scale
+        end
+    end
     sync()
     syncSize()
-    self._UI.MainContainer:GetPropertyChangedSignal("Position"):Connect(sync)
-    self._UI.MainContainer:GetPropertyChangedSignal("Size"):Connect(syncSize)
-    self._UI.MainContainer:GetPropertyChangedSignal("AbsoluteSize"):Connect(syncSize)
-    self._UI.MainContainer:GetPropertyChangedSignal("Visible"):Connect(function()
+    syncScale()
+    Fn.track(self._UI.MainContainer:GetPropertyChangedSignal("Position"), sync, self)
+    Fn.track(self._UI.MainContainer:GetPropertyChangedSignal("Size"), syncSize, self)
+    Fn.track(self._UI.MainContainer:GetPropertyChangedSignal("AbsoluteSize"), syncSize, self)
+    Fn.track(self._UI.MainContainer:GetPropertyChangedSignal("Visible"), function()
         for _, layer in ipairs(self._shadowLayers) do
             layer.frame.Visible = self._UI.MainContainer.Visible
         end
-    end)
+    end, self)
+    Fn.track(self._UI.MainScale:GetPropertyChangedSignal("Scale"), syncScale, self)
 end
 
 function Library:_initKeybindOverlay()
@@ -1568,6 +1519,7 @@ function Library:_initTitleBar()
     Fn.track(UI.MainContainer:GetPropertyChangedSignal("AbsoluteSize"), updateTitleLayout, self)
 end
 
+-- FIX: minimize/maximize use separate save states; FocusOverlay hidden on minimize
 function Library:_initTrafficLights()
     local UI = self._UI
     local container = Instance.new("Frame", UI.TitleBar)
@@ -1602,15 +1554,13 @@ function Library:_initTrafficLights()
         table.insert(UI.TrafficDots, dot)
     end
 
-    -- Red = unload
     UI.TrafficDots[1].MouseButton1Click:Connect(function()
         self:Destroy()
     end)
 
-    -- Yellow = minimize/restore
-    self._hudState = "NORMAL"
-    self._hudSavedSize = nil
-    self._hudSavedPos = nil
+    self._hudState    = "NORMAL"
+    self._hudNormalSize = self.WindowSize
+    self._hudNormalPos  = UDim2.new(0.5, 0, 0.5, 0)
 
     local hudTweenInfo = TweenInfo.new(0.3, Enum.EasingStyle.Quart, Enum.EasingDirection.Out)
 
@@ -1633,53 +1583,71 @@ function Library:_initTrafficLights()
         end
     end
 
-    UI.TrafficDots[2].MouseButton1Click:Connect(function()
-        if self._hudState == "MINIMIZED" then
-            local targetPos = self._hudSavedPos or UDim2.new(0.5, 0, 0.5, 0)
-            TweenService:Create(UI.MainContainer, hudTweenInfo, {
-                Size = self._hudSavedSize, Position = targetPos,
-            }):Play()
-            self._hudState = "NORMAL"
-            task.delay(0.15, function() hideChildren(true) end)
-        else
-            self._hudSavedSize = UI.MainContainer.Size
-            self._hudSavedPos = UI.MainContainer.Position
-            self._hudState = "MINIMIZED"
+    local function applyHudState(target)
+        if self._hudState == target then return end
+        local prev = self._hudState
+        self._hudState = target
+
+        if prev == "NORMAL" then
+            self._hudNormalSize = UI.MainContainer.Size
+            self._hudNormalPos  = UI.MainContainer.Position
+        end
+
+        if target == "MINIMIZED" then
             hideChildren(false)
+            -- FIX: hide FocusOverlay on minimize (was left visible)
+            if UI.FocusOverlay then
+                self._focusOverlayWasVisible = UI.FocusOverlay.Visible
+                UI.FocusOverlay.Visible = false
+            end
             local curr = UI.MainContainer.Size
             TweenService:Create(UI.MainContainer, hudTweenInfo, {
                 Size = UDim2.new(curr.X.Scale, curr.X.Offset, 0, 42),
             }):Play()
-        end
-    end)
-
-    -- Green = maximize
-    UI.TrafficDots[3].MouseButton1Click:Connect(function()
-        if self._hudState == "MAXIMIZED" then
-            local targetPos = self._hudSavedPos or UDim2.new(0.5, 0, 0.5, 0)
-            TweenService:Create(UI.MainContainer, hudTweenInfo, {
-                Size = self._hudSavedSize, Position = targetPos,
-            }):Play()
-            self._hudState = "NORMAL"
-        else
-            self._hudSavedSize = UI.MainContainer.Size
-            self._hudSavedPos = UI.MainContainer.Position
+        elseif target == "MAXIMIZED" then
             local camera = getCam()
             if not camera then return end
             local vp = camera.ViewportSize
-            local maxWidth = math.max(1, vp.X - 40)
-            local maxHeight = math.max(1, vp.Y - 40)
             TweenService:Create(UI.MainContainer, hudTweenInfo, {
-                Size = UDim2.new(0, maxWidth, 0, maxHeight),
+                Size = UDim2.new(0, math.max(1, vp.X - 40), 0, math.max(1, vp.Y - 40)),
                 Position = UDim2.new(0.5, 0, 0.5, 0),
             }):Play()
-            self._hudState = "MAXIMIZED"
+        else -- NORMAL
+            local tw = TweenService:Create(UI.MainContainer, hudTweenInfo, {
+                Size = self._hudNormalSize,
+                Position = self._hudNormalPos,
+            })
+            tw.Completed:Connect(function()
+                if self._hudState == "NORMAL" then
+                    hideChildren(true)
+                    if self._STATE.FocusOverlayEnabled and self._STATE.GuiVisible and UI.FocusOverlay then
+                        UI.FocusOverlay.Visible = true
+                    end
+                end
+            end)
+            tw:Play()
+        end
+    end
+
+    UI.TrafficDots[2].MouseButton1Click:Connect(function()
+        if self._hudState == "MINIMIZED" then
+            applyHudState("NORMAL")
+        else
+            applyHudState("MINIMIZED")
+        end
+    end)
+
+    UI.TrafficDots[3].MouseButton1Click:Connect(function()
+        if self._hudState == "MAXIMIZED" then
+            applyHudState("NORMAL")
+        else
+            applyHudState("MAXIMIZED")
         end
     end)
 end
 
 -- =========================================================
--- CATEGORY BAR (top pill tabs) + SUB-TAB HOST
+-- CATEGORY BAR + SUB-TAB HOST
 -- =========================================================
 
 function Library:_initSidebar()
@@ -1713,17 +1681,18 @@ function Library:_initSidebar()
     UI.TabBarDivider.BackgroundColor3 = self._Colors.Border
     UI.TabBarDivider.BackgroundTransparency = 0.5
     UI.TabBarDivider.BorderSizePixel = 0
-
-    Fn.track(UI.MainContainer:GetPropertyChangedSignal("AbsoluteSize"), function()
-        self:_applyNavigationLayout()
-    end, self)
+    -- FIX: AbsoluteSize listener moved to constructor (avoid nil deref during init)
 end
 
+-- FIX: nil-guard + side-mode alignment correction
 function Library:_applyNavigationLayout()
     local UI = self._UI
+    if not (UI.CategoryBar and UI.Sidebar and UI.TabBarDivider) then return end
     local position = self.TabPosition
     local mainWidth = UI.MainContainer.AbsoluteSize.X
     local sideWidth = math.min(self.TabWidth + 20, math.max(120, mainWidth * 0.36))
+    local hasSearch  = UI.SearchBar ~= nil
+    local hasContent = UI.ContentArea ~= nil
 
     if position == "Side" then
         UI.CategoryBar.Size = UDim2.new(0, sideWidth, 1, -62)
@@ -1735,10 +1704,15 @@ function Library:_applyNavigationLayout()
         UI.TabBarDivider.Size = UDim2.new(0, 1, 1, -60)
         UI.TabBarDivider.Position = UDim2.new(0, sideWidth + 10, 0, 50)
 
-        UI.SearchBar.Size = UDim2.new(1, -(sideWidth + 45), 0, 28)
-        UI.SearchBar.Position = UDim2.new(0, sideWidth + 20, 0, 88)
-        UI.ContentArea.Size = UDim2.new(1, -(sideWidth + 40), 1, -133)
-        UI.ContentArea.Position = UDim2.new(0, sideWidth + 15, 0, 121)
+        if hasSearch then
+            UI.SearchBar.Size = UDim2.new(1, -(sideWidth + 45), 0, 28)
+            UI.SearchBar.Position = UDim2.new(0, sideWidth + 20, 0, 88)
+        end
+        if hasContent then
+            -- FIX: was sideWidth + 15 (5px left of SearchBar). Align to sideWidth + 20.
+            UI.ContentArea.Size = UDim2.new(1, -(sideWidth + 45), 1, -133)
+            UI.ContentArea.Position = UDim2.new(0, sideWidth + 20, 0, 121)
+        end
     elseif position == "Bottom" then
         UI.CategoryBar.Size = UDim2.new(0, 160, 0, 44)
         UI.CategoryBar.Position = UDim2.new(0.5, -80, 1, -54)
@@ -1751,10 +1725,14 @@ function Library:_applyNavigationLayout()
         UI.TabBarDivider.Size = UDim2.new(1, -20, 0, 1)
         UI.TabBarDivider.Position = UDim2.new(0, 10, 0, 80)
 
-        UI.SearchBar.Size = UDim2.new(1, -30, 0, 28)
-        UI.SearchBar.Position = UDim2.new(0, 15, 0, 86)
-        UI.ContentArea.Size = UDim2.new(1, -30, 1, -177)
-        UI.ContentArea.Position = UDim2.new(0, 15, 0, 119)
+        if hasSearch then
+            UI.SearchBar.Size = UDim2.new(1, -30, 0, 28)
+            UI.SearchBar.Position = UDim2.new(0, 15, 0, 86)
+        end
+        if hasContent then
+            UI.ContentArea.Size = UDim2.new(1, -30, 1, -177)
+            UI.ContentArea.Position = UDim2.new(0, 15, 0, 119)
+        end
     else
         UI.CategoryBar.Size = UDim2.new(1, -20, 0, 46)
         UI.CategoryBar.Position = UDim2.new(0, 10, 0, 42)
@@ -1767,10 +1745,14 @@ function Library:_applyNavigationLayout()
         UI.TabBarDivider.Size = UDim2.new(1, -20, 0, 1)
         UI.TabBarDivider.Position = UDim2.new(0, 10, 0, 124)
 
-        UI.SearchBar.Size = UDim2.new(1, -30, 0, 28)
-        UI.SearchBar.Position = UDim2.new(0, 15, 0, 129)
-        UI.ContentArea.Size = UDim2.new(1, -30, 1, -234)
-        UI.ContentArea.Position = UDim2.new(0, 15, 0, 162)
+        if hasSearch then
+            UI.SearchBar.Size = UDim2.new(1, -30, 0, 28)
+            UI.SearchBar.Position = UDim2.new(0, 15, 0, 129)
+        end
+        if hasContent then
+            UI.ContentArea.Size = UDim2.new(1, -30, 1, -234)
+            UI.ContentArea.Position = UDim2.new(0, 15, 0, 162)
+        end
     end
 
     self:_layoutCategoryButtons()
@@ -1781,14 +1763,11 @@ function Library:_resizeSubTabs()
     local subTabBar = self._STATE.SubTabBar
     local category = self._STATE.ActiveCategory
     if not subTabBar or not category then return end
-
     local tabs = self._STATE.CategoryTabs[category] or {}
     local tabCount = #tabs
     if tabCount == 0 then return end
-
     local availableWidth = self._UI.Sidebar.AbsoluteSize.X
     if availableWidth <= 0 then return end
-
     local gap = math.min(subTabBar.Padding, availableWidth / math.max(tabCount * 2 - 1, 1))
     local tabWidth = math.min(self.TabWidth, (availableWidth - gap * (tabCount - 1)) / tabCount)
     subTabBar:Resize(tabWidth, gap)
@@ -1850,6 +1829,7 @@ function Library:_initSearchBar()
     end)
 end
 
+-- FIX: handle SearchTopLevel (page-level controls) + expandedBeforeSearch nil guard
 function Library:_applySearchFilter(tabName)
     local STATE = self._STATE
     tabName = tabName or STATE.ActiveTab
@@ -1881,18 +1861,32 @@ function Library:_applySearchFilter(tabName)
         sectionData.section.Visible = sectionMatchesResults
 
         if searching then
-            local shouldExpand = sectionMatchesResults
-            if sectionData.expanded ~= shouldExpand then
-                sectionData.setExpanded(shouldExpand, false)
+            if sectionData.expanded ~= sectionMatchesResults then
+                sectionData.setExpanded(sectionMatchesResults, false)
             end
         elseif sectionData.searching then
-            sectionData.setExpanded(sectionData.expandedBeforeSearch, false)
-            sectionData.expandedBeforeSearch = nil
+            if sectionData.expandedBeforeSearch ~= nil then
+                sectionData.setExpanded(sectionData.expandedBeforeSearch, false)
+                sectionData.expandedBeforeSearch = nil
+            end
         end
         sectionData.searching = searching
     end
+
+    -- FIX: top-level (page-direct) controls
+    local pool = STATE.SearchTopLevel and STATE.SearchTopLevel[tabName]
+    if pool then
+        for _, ctrl in ipairs(pool) do
+            if ctrl.instance.Parent then
+                local matches = not searching
+                    or string.find(string.lower(ctrl.searchText), query, 1, true) ~= nil
+                ctrl.instance.Visible = matches
+            end
+        end
+    end
 end
 
+-- FIX: support top-level registration when parent chain doesn't reach a section body
 function Library:_registerSearchControl(instance, searchText)
     local parent = instance.Parent
     local sectionData
@@ -1903,6 +1897,25 @@ function Library:_registerSearchControl(instance, searchText)
     end
 
     if not sectionData then
+        -- find which ContentPage this control belongs to
+        local tabName
+        local p = instance.Parent
+        while p do
+            for name, page in pairs(self._STATE.ContentPages) do
+                if page == p then tabName = name; break end
+            end
+            if tabName then break end
+            p = p.Parent
+        end
+        if tabName then
+            self._STATE.SearchTopLevel = self._STATE.SearchTopLevel or {}
+            self._STATE.SearchTopLevel[tabName] = self._STATE.SearchTopLevel[tabName] or {}
+            table.insert(self._STATE.SearchTopLevel[tabName], {
+                instance = instance,
+                searchText = tostring(searchText or ""),
+            })
+            self:_applySearchFilter(tabName)
+        end
         return instance
     end
 
@@ -1929,7 +1942,7 @@ function Library:_initContentArea()
 end
 
 -- =========================================================
--- FOCUS OVERLAY + PATTERNS
+-- FOCUS OVERLAY
 -- =========================================================
 
 function Library:_initFocusOverlay()
@@ -2065,6 +2078,7 @@ end
 -- WEATHER ENGINE
 -- =========================================================
 
+-- FIX: don't rebuild particles when only intensity changed
 function Library:SetWeather(enabled, weatherType, intensity)
     if self:_isDead() then return end
     if type(enabled) ~= "boolean" then
@@ -2077,11 +2091,16 @@ function Library:SetWeather(enabled, weatherType, intensity)
         or intensity > 100 or intensity ~= intensity) then
         error("[DoD UI] Weather intensity must be a number between 0 and 100.")
     end
+    local wasEnabled = self._STATE.WeatherEnabled
+    local typeChanged = weatherType and weatherType ~= self._STATE.WeatherType
     self._STATE.WeatherEnabled = enabled
     if weatherType then self._STATE.WeatherType = weatherType end
     if intensity then self._STATE.WeatherIntensity = intensity end
+
     if enabled then
-        self:_createWeather(self._STATE.WeatherType)
+        if not wasEnabled or typeChanged or not self._STATE.SnowConnection then
+            self:_createWeather(self._STATE.WeatherType)
+        end
     else
         self:_stopWeather()
     end
@@ -2376,7 +2395,6 @@ function Library:CreateCategory(categoryName, iconSpec)
         self:SetActiveCategory(categoryName)
     end)
 
-    STATE.CategoryButtons = STATE.CategoryButtons or {}
     STATE.CategoryButtons[categoryName] = { button = btn, label = label, icon = iconImg }
     self:_registerThemeRefresher(function()
         if not btn.Parent then return end
@@ -2385,7 +2403,6 @@ function Library:CreateCategory(categoryName, iconSpec)
             and Color3.fromRGB(255, 255, 255) or self._Colors.TextDim
     end)
 
-    -- Auto layout
     self:_layoutCategoryButtons()
     return btn
 end
@@ -2449,7 +2466,8 @@ function Library:_layoutCategoryButtons()
     end
 end
 
-function Library:SetActiveCategory(categoryName)
+-- FIX: preferredTab + suppress flag prevent double-switch when called from SwitchTab
+function Library:SetActiveCategory(categoryName, preferredTab)
     if self:_isDead() then return end
     local STATE = self._STATE
     if not STATE.CategoryButtons or not STATE.CategoryButtons[categoryName] then return end
@@ -2479,42 +2497,60 @@ function Library:SetActiveCategory(categoryName)
         STATE.SubTabBar = nil
     end
 
-    if STATE.CategoryTabs[categoryName] and #STATE.CategoryTabs[categoryName] > 0 then
-        local savedIdx = STATE.ActiveSubIndices[categoryName]
-        local savedName = savedIdx and STATE.CategoryTabs[categoryName][savedIdx]
+    local tabs = STATE.CategoryTabs[categoryName]
+    if not (tabs and #tabs > 0) then return end
 
-        local subData = { [categoryName] = STATE.CategoryTabs[categoryName] }
-        STATE.SubTabBar = SubTabModule.new({
-            Parent = self._UI.Sidebar,
-            Data = subData,
-            TabWidth = self.TabWidth, TabHeight = 28, Padding = 6,
-            Theme = {
-                PillBg = self._Colors.Card, LeftAccent = self._Colors.Accent,
-                TextActive = Color3.fromRGB(255, 255, 255), TextInactive = self._Colors.TextDim,
-                FontActive = Enum.Font.GothamBold, FontInactive = Enum.Font.GothamMedium,
-            },
-            OnChanged = function(_, subName)
-                local tabs = STATE.CategoryTabs[categoryName] or {}
-                for idx, name in ipairs(tabs) do
-                    if name == subName then
-                        STATE.ActiveSubIndices[categoryName] = idx
-                        break
-                    end
-                end
-                if STATE.ContentPages[subName] then
-                    self:SwitchTab(subName)
-                end
-            end,
-        })
-        self:_resizeSubTabs()
-        STATE.SubTabBar:SwitchCategory(categoryName)
-
-        if savedName and savedIdx and savedIdx > 1 then
-            STATE.SubTabBar:SetActiveSub(categoryName, savedName)
-            STATE.ActiveSubIndices[categoryName] = savedIdx
-            if STATE.ContentPages[savedName] then
-                self:SwitchTab(savedName)
+    local targetIdx, targetName
+    if preferredTab and STATE.ContentPages[preferredTab] then
+        for idx, name in ipairs(tabs) do
+            if name == preferredTab then
+                targetIdx, targetName = idx, name
+                break
             end
+        end
+    end
+    if not targetName then
+        local savedIdx = STATE.ActiveSubIndices[categoryName]
+        if savedIdx and tabs[savedIdx] then
+            targetIdx, targetName = savedIdx, tabs[savedIdx]
+        else
+            targetIdx, targetName = 1, tabs[1]
+        end
+    end
+
+    local suppress = false
+    STATE.SubTabBar = SubTabModule.new({
+        Parent = self._UI.Sidebar,
+        Data = { [categoryName] = tabs },
+        TabWidth = self.TabWidth, TabHeight = 28, Padding = 6,
+        Theme = {
+            PillBg = self._Colors.Card, LeftAccent = self._Colors.Accent,
+            TextActive = Color3.fromRGB(255, 255, 255), TextInactive = self._Colors.TextDim,
+            FontActive = Enum.Font.GothamBold, FontInactive = Enum.Font.GothamMedium,
+        },
+        OnChanged = function(_, subName)
+            if suppress then return end
+            for idx, name in ipairs(tabs) do
+                if name == subName then
+                    STATE.ActiveSubIndices[categoryName] = idx
+                    break
+                end
+            end
+            if STATE.ContentPages[subName] then
+                self:SwitchTab(subName)
+            end
+        end,
+    })
+    self:_resizeSubTabs()
+    suppress = true
+    STATE.SubTabBar:SwitchCategory(categoryName)
+    suppress = false
+
+    if targetName then
+        STATE.SubTabBar:SetActiveSub(categoryName, targetName)
+        STATE.ActiveSubIndices[categoryName] = targetIdx
+        if STATE.ContentPages[targetName] then
+            self:SwitchTab(targetName)
         end
     end
 end
@@ -2566,14 +2602,25 @@ function Library:CreateTab(categoryName, tabName)
     end)
 
     STATE.ContentPages[tabName] = page
+    if STATE.ActiveCategory == nil or STATE.ActiveCategory == categoryName then
+        self:SetActiveCategory(categoryName)
+    end
     return page
 end
 
+-- FIX: auto-sync sidebar category when switching to a tab in another category
 function Library:SwitchTab(tabName)
     if self:_isDead() then return end
     local STATE = self._STATE
     local page = STATE.ContentPages[tabName]
     if not page then return end
+
+    local ownerCat = STATE.TabCategories[tabName]
+    if ownerCat and STATE.ActiveCategory ~= ownerCat then
+        self:SetActiveCategory(ownerCat, tabName)
+        return
+    end
+
     for _, p in pairs(STATE.ContentPages) do p.Visible = false end
     page.Visible = true
     STATE.ActiveTab = tabName
@@ -2582,13 +2629,13 @@ function Library:SwitchTab(tabName)
         task.defer(function()
             for _ = 1, 3 do
                 task.wait(0.05)
-                page.CanvasPosition = saved
+                if page.Parent then page.CanvasPosition = saved end
             end
         end)
     end
     self:_applySearchFilter(tabName)
-    if STATE.SubTabBar and STATE.TabCategories[tabName] then
-        pcall(function() STATE.SubTabBar:SetActiveSub(STATE.TabCategories[tabName], tabName) end)
+    if STATE.SubTabBar and ownerCat then
+        pcall(function() STATE.SubTabBar:SetActiveSub(ownerCat, tabName) end)
     end
 end
 
@@ -2802,7 +2849,6 @@ function Library:CreateSection(tabName, title, summary, defaultOpen)
         separator.BackgroundColor3 = self._Colors.Border
     end)
 
-    -- Wrap methods so user can chain: sec:Toggle(...) or use UI:AddToggle(sec, ...)
     body._Toggle = toggle
 
     self:_applySearchFilter(tabName)
@@ -2826,17 +2872,14 @@ function Library:CreateColumnSection(tabName, title, summary, defaultOpen)
         column.Position = UDim2.new(xPosition, xPosition == 0 and 0 or 6, 0, 0)
         column.BackgroundTransparency = 1
         column.AutomaticSize = Enum.AutomaticSize.Y
-
         local layout = Instance.new("UIListLayout", column)
         layout.SortOrder = Enum.SortOrder.LayoutOrder
         layout.Padding = UDim.new(0, 6)
-
         local padding = Instance.new("UIPadding", column)
         padding.PaddingLeft = UDim.new(0, 4)
         padding.PaddingRight = UDim.new(0, 4)
         padding.PaddingTop = UDim.new(0, 1)
         padding.PaddingBottom = UDim.new(0, 1)
-
         return column
     end
 
@@ -2845,6 +2888,7 @@ function Library:CreateColumnSection(tabName, title, summary, defaultOpen)
     return leftColumn, rightColumn
 end
 
+-- FIX: remove dead searchText update (banner sits on page, not in section body)
 function Library:CreateDashboardBanner(tabName)
     if self:_isDead() then return end
     local page = self._STATE.ContentPages[tabName]
@@ -2962,7 +3006,6 @@ function Library:CreateDashboardBanner(tabName)
         badges[3].Text = "Ping: " .. pingText
     end, self)
 
-    local searchText = tostring(game.Name) .. " " .. tostring(placeId) .. " " .. creator.Text
     task.spawn(function()
         local ok, productInfo = pcall(function()
             return MarketplaceService:GetProductInfo(placeId)
@@ -2984,22 +3027,7 @@ function Library:CreateDashboardBanner(tabName)
             and creatorInfo.Name ~= "" then
             creator.Text = "by " .. creatorInfo.Name
         end
-        searchText = title.Text .. " " .. tostring(placeId) .. " " .. creator.Text
-        local parent = banner.Parent
-        while parent do
-            local sectionData = self._STATE.SearchBodies[parent]
-            if sectionData then
-                for _, control in ipairs(sectionData.controls) do
-                    if control.instance == banner then
-                        control.searchText = searchText
-                        break
-                    end
-                end
-                break
-            end
-            parent = parent.Parent
-        end
-        self:_applySearchFilter(tabName)
+        -- FIX: dead search-update block removed (banner not in a SearchBody)
     end)
 
     self:_registerThemeRefresher(function()
@@ -3015,7 +3043,7 @@ function Library:CreateDashboardBanner(tabName)
         end
     end)
 
-    return self:_registerSearchControl(banner, searchText)
+    return banner
 end
 
 function Library:CreateThemeCustomizer(tabName)
@@ -3051,11 +3079,8 @@ function Library:CreateThemeCustomizer(tabName)
     )
     local weatherIntensity = math.clamp(tonumber(self._STATE.WeatherIntensity) or 65, 0, 100)
     self:AddSlider(section, "Weather intensity", 0, 100, weatherIntensity, 0, function(value)
-        self:SetWeather(
-            self._STATE.WeatherEnabled,
-            self._STATE.WeatherType,
-            value
-        )
+        -- FIX: SetWeather no longer rebuilds particles on intensity only
+        self:SetWeather(self._STATE.WeatherEnabled, self._STATE.WeatherType, value)
     end)
     self:AddToggle(section, "Weather effects", self._STATE.WeatherEnabled, function(enabled)
         self:SetWeather(enabled, self._STATE.WeatherType, self._STATE.WeatherIntensity)
@@ -3064,7 +3089,7 @@ function Library:CreateThemeCustomizer(tabName)
 end
 
 -- =========================================================
--- CONTROLS: Toggle
+-- CONTROLS
 -- =========================================================
 
 function Library:AddToggle(page, text, default, callback)
@@ -3160,10 +3185,6 @@ function Library:AddToggle(page, text, default, callback)
     end)
     return self:_registerSearchControl(holder, text)
 end
-
--- =========================================================
--- CONTROLS: Slider
--- =========================================================
 
 function Library:AddSlider(page, text, minVal, maxVal, default, decimals, callback)
     if self:_isDead() then return end
@@ -3302,10 +3323,6 @@ function Library:AddSlider(page, text, minVal, maxVal, default, decimals, callba
     end)
     return self:_registerSearchControl(holder, text .. " " .. tostring(minVal) .. " " .. tostring(maxVal))
 end
-
--- =========================================================
--- CONTROLS: Dropdown
--- =========================================================
 
 function Library:AddDropdown(page, text, options, defaultIndex, callback)
     if self:_isDead() then return end
@@ -3530,10 +3547,6 @@ function Library:AddDropdown(page, text, options, defaultIndex, callback)
     return self:_registerSearchControl(holder, text .. " " .. table.concat(searchableOptions, " "))
 end
 
--- =========================================================
--- CONTROLS: Keybind
--- =========================================================
-
 function Library:AddKeybind(page, text, default, callback)
     if self:_isDead() then return end
     if default ~= nil and not (
@@ -3655,10 +3668,6 @@ function Library:AddKeybind(page, text, default, callback)
     end)
     return self:_registerSearchControl(holder, text)
 end
-
--- =========================================================
--- CONTROLS: Button
--- =========================================================
 
 function Library:AddButton(page, text, callback)
     if self:_isDead() then return end
@@ -4163,6 +4172,7 @@ function Library:Destroy()
     table.clear(STATE.activeDropdownPopups)
     table.clear(STATE.SearchSections)
     table.clear(STATE.SearchBodies)
+    table.clear(STATE.SearchTopLevel)
 end
 
 -- =========================================================
