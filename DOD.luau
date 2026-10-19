@@ -3515,170 +3515,235 @@ function Library:CreateDashboardBanner(tabName)
         error("[DoD UI] Tab '" .. tostring(tabName) .. "' not found. Call :CreateTab first.")
     end
 
-    local placeId = game.PlaceId
-    local bannerOrder = #topContainer:GetChildren() + 1
-    local banner = Instance.new("Frame", topContainer)
-    banner.Name = "GameDashboardBanner"
-    banner.LayoutOrder = bannerOrder
-    banner.Size = UDim2.new(1, 0, 0, 124)
-    banner.BackgroundColor3 = self._Colors.Card
-    banner.BackgroundTransparency = 0.05
-    banner.BorderSizePixel = 0
-    banner.ClipsDescendants = true
-    Instance.new("UICorner", banner).CornerRadius = UDim.new(0, 14)
-
-    local bgGrad = Instance.new("UIGradient", banner)
-    bgGrad.Color = ColorSequence.new(self._Colors.Accent, self._Colors.Card)
-    bgGrad.Transparency = NumberSequence.new({NumberSequenceKeypoint.new(0, 0.95), NumberSequenceKeypoint.new(1, 1)})
-    bgGrad.Rotation = 45
-
-    local stroke = Instance.new("UIStroke", banner)
-    stroke.Color = self._Colors.Border
-    stroke.Thickness = 1
-    stroke.Transparency = 0.3
-
-    local thumbWrap = Instance.new("Frame", banner)
-    thumbWrap.Size = UDim2.fromOffset(80, 80)
-    thumbWrap.Position = UDim2.new(0, 14, 0.5, -40)
-    thumbWrap.BackgroundColor3 = self._Colors.Bg2
-    thumbWrap.BorderSizePixel = 0
-    Instance.new("UICorner", thumbWrap).CornerRadius = UDim.new(0, 10)
-    
-    local thumbStroke = Instance.new("UIStroke", thumbWrap)
-    thumbStroke.Color = self._Colors.Accent
-    thumbStroke.Thickness = 1
-    thumbStroke.Transparency = 0.5
-
-    local thumbnail = Instance.new("ImageLabel", thumbWrap)
-    thumbnail.Size = UDim2.fromScale(1, 1)
-    thumbnail.BackgroundTransparency = 1
-    thumbnail.ScaleType = Enum.ScaleType.Crop
-    thumbnail.Image = "rbxthumb://type=GameIcon&id=" .. tostring(placeId) .. "&w=512&h=512"
-    Instance.new("UICorner", thumbnail).CornerRadius = UDim.new(0, 10)
-
-    local title = Instance.new("TextLabel", banner)
-    title.Name = "GameName"
-    title.Size = UDim2.new(1, -120, 0, 24)
-    title.Position = UDim2.new(0, 106, 0, 22)
-    title.BackgroundTransparency = 1
-    title.Text = tostring(game.Name ~= "" and game.Name or "Current Experience")
-    title.TextColor3 = self._Colors.Text
-    title.Font = Enum.Font.GothamBold
-    title.TextSize = 16
-    title.TextXAlignment = Enum.TextXAlignment.Left
-    title.TextTruncate = Enum.TextTruncate.AtEnd
-
-    local creator = Instance.new("TextLabel", banner)
-    creator.Name = "GameCreator"
-    creator.Size = UDim2.new(1, -120, 0, 16)
-    creator.Position = UDim2.new(0, 106, 0, 48)
-    creator.BackgroundTransparency = 1
-    creator.Text = "by Unknown Creator"
-    creator.TextColor3 = self._Colors.TextDim
-    creator.Font = Enum.Font.GothamMedium
-    creator.TextSize = 11
-    creator.TextXAlignment = Enum.TextXAlignment.Left
-    creator.TextTruncate = Enum.TextTruncate.AtEnd
-
-    local badges = {}
-    local badgeSpecs = {
-        {name = "PlaceIdBadge", position = 0, text = "ID: " .. tostring(placeId)},
-        {name = "PlayersBadge", position = 1, text = ""},
-        {name = "PingBadge", position = 2, text = "Ping: --"},
-    }
-    for _, spec in ipairs(badgeSpecs) do
-        local badge = Instance.new("TextLabel", banner)
-        badge.Name = spec.name
-        badge.Size = UDim2.new(1 / 3, -12, 0, 24)
-        badge.Position = UDim2.new(spec.position / 3, 12 + spec.position * 4, 0, 88)
-        badge.BackgroundColor3 = self._Colors.Bg2
-        badge.BackgroundTransparency = 0.2
-        badge.BorderSizePixel = 0
-        badge.Text = spec.text
-        badge.TextColor3 = self._Colors.TextDim
-        badge.Font = Enum.Font.GothamBold
-        badge.TextSize = 10
-        badge.TextTruncate = Enum.TextTruncate.AtEnd
-        badge.TextXAlignment = Enum.TextXAlignment.Center
-        Instance.new("UICorner", badge).CornerRadius = UDim.new(0, 8)
-        
-        local bStroke = Instance.new("UIStroke", badge)
-        bStroke.Color = self._Colors.Border
-        bStroke.Thickness = 1
-        bStroke.Transparency = 0.5
-        
-        table.insert(badges, badge)
+    local function GetThaiGreeting()
+        local h = tonumber(os.date("%H")) or 12
+        if h >= 5 and h < 12 then return "อรุณสวัสดิ์"
+        elseif h >= 12 and h < 17 then return "สวัสดีตอนบ่าย"
+        elseif h >= 17 and h < 20 then return "สวัสดีตอนเย็น"
+        else return "ราตรีสวัสดิ์" end
     end
 
-    local function updatePlayerCount()
-        if not banner.Parent then return end
-        badges[2].Text = string.format("Players: %d/%d", #Players:GetPlayers(), Players.MaxPlayers)
-    end
-    local function schedulePlayerCountUpdate()
-        task.defer(updatePlayerCount)
-    end
-    updatePlayerCount()
-    Fn.track(Players.PlayerAdded, schedulePlayerCountUpdate, self)
-    Fn.track(Players.PlayerRemoving, schedulePlayerCountUpdate, self)
+    local PlayerCard = Instance.new("Frame", topContainer)
+    PlayerCard.Name = "PlayerGreetingCard"
+    PlayerCard.LayoutOrder = #topContainer:GetChildren() + 1
+    PlayerCard.Size = UDim2.new(1, 0, 0, 68)
+    PlayerCard.BackgroundColor3 = self._Colors.Card
+    PlayerCard.BorderSizePixel = 0
+    Instance.new("UICorner", PlayerCard).CornerRadius = UDim.new(0, 12)
+    local pcStroke = Instance.new("UIStroke", PlayerCard)
+    pcStroke.Color = self._Colors.Border
+    pcStroke.Thickness = 1
 
-    local pingElapsed = 0
-    Fn.track(RunService.Heartbeat, function(deltaTime)
-        pingElapsed = pingElapsed + deltaTime
-        if pingElapsed < 0.5 then return end
-        pingElapsed = 0
+    local AvatarImg = Instance.new("ImageLabel", PlayerCard)
+    AvatarImg.Size = UDim2.new(0, 46, 0, 46)
+    AvatarImg.Position = UDim2.new(0, 12, 0.5, -23)
+    AvatarImg.BackgroundTransparency = 1
+    AvatarImg.Image = "rbxthumb://type=AvatarHeadShot&id=" .. tostring(LocalPlayer.UserId) .. "&w=150&h=150&filters=circular"
+    Instance.new("UICorner", AvatarImg).CornerRadius = UDim.new(1, 0)
+    local avStroke = Instance.new("UIStroke", AvatarImg)
+    avStroke.Color = self._Colors.Border
+    avStroke.Thickness = 1
 
-        local pingText = "--"
-        local ok, value = pcall(function()
-            local pingStat = Stats.Network.ServerStatsItem["Data Ping"]
-            return pingStat:GetValue()
-        end)
-        if ok and type(value) == "number" then
-            pingText = tostring(math.max(0, math.floor(value + 0.5))) .. " ms"
-        else
-            local stringOk, valueString = pcall(function()
-                return Stats.Network.ServerStatsItem["Data Ping"]:GetValueString()
-            end)
-            if stringOk and type(valueString) == "string" then
-                pingText = valueString
+    local GreetLabel = Instance.new("TextLabel", PlayerCard)
+    GreetLabel.Size = UDim2.new(0.5, -70, 0, 14)
+    GreetLabel.Position = UDim2.new(0, 68, 0, 14)
+    GreetLabel.BackgroundTransparency = 1
+    GreetLabel.Font = Enum.Font.GothamMedium
+    GreetLabel.TextSize = 10.5
+    GreetLabel.TextColor3 = self._Colors.TextDim
+    GreetLabel.TextXAlignment = Enum.TextXAlignment.Left
+    GreetLabel.Text = GetThaiGreeting()
+
+    local NameLabel = Instance.new("TextLabel", PlayerCard)
+    NameLabel.Size = UDim2.new(0.5, -70, 0, 22)
+    NameLabel.Position = UDim2.new(0, 68, 0, 30)
+    NameLabel.BackgroundTransparency = 1
+    NameLabel.Font = Enum.Font.GothamBold
+    NameLabel.TextSize = 16
+    NameLabel.TextColor3 = self._Colors.Text
+    NameLabel.TextXAlignment = Enum.TextXAlignment.Left
+    NameLabel.Text = LocalPlayer.DisplayName or LocalPlayer.Name
+
+    local ClockLabel = Instance.new("TextLabel", PlayerCard)
+    ClockLabel.Size = UDim2.new(0.5, 0, 0, 24)
+    ClockLabel.Position = UDim2.new(0.5, -16, 0, 11)
+    ClockLabel.BackgroundTransparency = 1
+    ClockLabel.Font = Enum.Font.GothamBold
+    ClockLabel.TextSize = 20
+    ClockLabel.TextColor3 = self._Colors.Text
+    ClockLabel.TextXAlignment = Enum.TextXAlignment.Right
+    ClockLabel.Text = os.date("%H:%M:%S")
+
+    local DateLabel = Instance.new("TextLabel", PlayerCard)
+    DateLabel.Size = UDim2.new(0.45, 0, 0, 14)
+    DateLabel.Position = UDim2.new(0.55, -16, 0, 38)
+    DateLabel.BackgroundTransparency = 1
+    DateLabel.Font = Enum.Font.GothamMedium
+    DateLabel.TextSize = 10.5
+    DateLabel.TextColor3 = self._Colors.TextDim
+    DateLabel.TextXAlignment = Enum.TextXAlignment.Right
+    DateLabel.Text = os.date("%d / %m / %Y")
+
+    local placeName = "Roblox Experience"
+    local creatorName = "Roblox Studio"
+    local resolvedGameIcon = ""
+    pcall(function()
+        local info = MarketplaceService:GetProductInfo(game.PlaceId)
+        if info then
+            if info.Name and info.Name ~= "" then placeName = info.Name end
+            if info.Creator and info.Creator.Name and info.Creator.Name ~= "" then creatorName = info.Creator.Name end
+            if info.IconImageAssetId and tonumber(info.IconImageAssetId) and tonumber(info.IconImageAssetId) > 0 then
+                resolvedGameIcon = "rbxassetid://" .. tostring(info.IconImageAssetId)
             end
         end
-        badges[3].Text = "Ping: " .. pingText
-    end, self)
+    end)
+    if resolvedGameIcon == "" then
+        local universeId = (game.GameId and tonumber(game.GameId) and tonumber(game.GameId) > 0) and game.GameId or nil
+        if universeId then
+            resolvedGameIcon = "rbxthumb://type=GameIcon&id=" .. tostring(universeId) .. "&w=150&h=150"
+        else
+            resolvedGameIcon = "rbxthumb://type=Asset&id=" .. tostring(game.PlaceId) .. "&w=150&h=150"
+        end
+    end
+
+    local GameCard = Instance.new("Frame", topContainer)
+    GameCard.Name = "GameServerCard"
+    GameCard.LayoutOrder = #topContainer:GetChildren() + 1
+    GameCard.Size = UDim2.new(1, 0, 0, 86)
+    GameCard.BackgroundColor3 = self._Colors.Card
+    GameCard.BorderSizePixel = 0
+    Instance.new("UICorner", GameCard).CornerRadius = UDim.new(0, 14)
+    local gcStroke = Instance.new("UIStroke", GameCard)
+    gcStroke.Color = self._Colors.Border
+    gcStroke.Thickness = 1
+
+    local BannerImg = Instance.new("ImageLabel", GameCard)
+    BannerImg.Name = "MapBanner"
+    BannerImg.AnchorPoint = Vector2.new(1, 0)
+    BannerImg.Position = UDim2.new(1, 0, 0, 0)
+    BannerImg.Size = UDim2.new(0.65, 0, 1, 0)
+    BannerImg.BackgroundTransparency = 1
+    BannerImg.ScaleType = Enum.ScaleType.Crop
+    BannerImg.Image = resolvedGameIcon
+    BannerImg.ImageTransparency = 0.70
+    BannerImg.ZIndex = 1
+    Instance.new("UICorner", BannerImg).CornerRadius = UDim.new(0, 14)
+
+    local bGrad = Instance.new("UIGradient", BannerImg)
+    bGrad.Transparency = NumberSequence.new({
+        NumberSequenceKeypoint.new(0, 1),
+        NumberSequenceKeypoint.new(0.35, 0.82),
+        NumberSequenceKeypoint.new(1, 0.35)
+    })
+
+    local GameThumb = Instance.new("ImageLabel", GameCard)
+    GameThumb.Size = UDim2.new(0, 60, 0, 60)
+    GameThumb.Position = UDim2.new(0, 12, 0.5, -30)
+    GameThumb.BackgroundColor3 = self._Colors.Bg2
+    GameThumb.BackgroundTransparency = 0.1
+    GameThumb.ScaleType = Enum.ScaleType.Fit
+    GameThumb.Image = resolvedGameIcon
+    GameThumb.ZIndex = 3
+    Instance.new("UICorner", GameThumb).CornerRadius = UDim.new(0, 14)
+    local gtStroke = Instance.new("UIStroke", GameThumb)
+    gtStroke.Color = self._Colors.Border
+    gtStroke.Thickness = 1
+
+    local GameTitleLbl = Instance.new("TextLabel", GameCard)
+    GameTitleLbl.Size = UDim2.new(1, -90, 0, 18)
+    GameTitleLbl.Position = UDim2.new(0, 84, 0, 12)
+    GameTitleLbl.BackgroundTransparency = 1
+    GameTitleLbl.Font = Enum.Font.GothamBold
+    GameTitleLbl.TextSize = 14
+    GameTitleLbl.TextColor3 = self._Colors.Text
+    GameTitleLbl.TextXAlignment = Enum.TextXAlignment.Left
+    GameTitleLbl.Text = placeName
+    GameTitleLbl.ZIndex = 3
+
+    local GameSubLbl = Instance.new("TextLabel", GameCard)
+    GameSubLbl.Size = UDim2.new(1, -90, 0, 14)
+    GameSubLbl.Position = UDim2.new(0, 84, 0, 32)
+    GameSubLbl.BackgroundTransparency = 1
+    GameSubLbl.Font = Enum.Font.Gotham
+    GameSubLbl.TextSize = 9.5
+    GameSubLbl.TextColor3 = self._Colors.TextDim
+    GameSubLbl.TextXAlignment = Enum.TextXAlignment.Left
+    GameSubLbl.Text = "โดย " .. ((creatorName and creatorName ~= "") and creatorName or "Roblox Creator")
+    GameSubLbl.ZIndex = 3
+
+    local PillsRow = Instance.new("Frame", GameCard)
+    PillsRow.Size = UDim2.new(1, -90, 0, 22)
+    PillsRow.Position = UDim2.new(0, 84, 0, 52)
+    PillsRow.BackgroundTransparency = 1
+    PillsRow.ZIndex = 3
+
+    local prLayout = Instance.new("UIListLayout", PillsRow)
+    prLayout.FillDirection = Enum.FillDirection.Horizontal
+    prLayout.Padding = UDim.new(0, 6)
+
+    local function MakePill(text, minW, col)
+        local p = Instance.new("Frame", PillsRow)
+        p.AutomaticSize = Enum.AutomaticSize.X
+        p.Size = UDim2.new(0, minW or 60, 0, 20)
+        p.BackgroundColor3 = self._Colors.Bg2
+        p.BackgroundTransparency = 0.2
+        Instance.new("UICorner", p).CornerRadius = UDim.new(1, 0)
+        local ps = Instance.new("UIStroke", p)
+        ps.Color = self._Colors.Border
+        ps.Thickness = 0.8
+
+        local t = Instance.new("TextLabel", p)
+        t.AutomaticSize = Enum.AutomaticSize.X
+        t.Size = UDim2.new(0, 0, 1, 0)
+        t.Position = UDim2.new(0, 8, 0, 0)
+        t.BackgroundTransparency = 1
+        t.Font = Enum.Font.GothamBold
+        t.TextSize = 8.5
+        t.TextColor3 = col or self._Colors.TextDim
+        t.Text = text
+        local pad = Instance.new("UIPadding", p)
+        pad.PaddingRight = UDim.new(0, 8)
+        return t
+    end
+
+    local pillId = MakePill("ID " .. tostring(game.PlaceId), 90, self._Colors.TextDim)
+    local pillPl = MakePill("ผู้เล่น " .. tostring(#Players:GetPlayers()) .. "/" .. tostring(Players.MaxPlayers), 70, self._Colors.TextDim)
+    local pillPing = MakePill("Ping 35 ms", 60, self._Colors.Green)
 
     task.spawn(function()
-        local ok, productInfo = pcall(function()
-            return MarketplaceService:GetProductInfo(placeId)
-        end)
-        if not banner.Parent then return end
-        if not ok then return end
-        if type(productInfo) == "table" then
-            if type(productInfo.Name) == "string" and productInfo.Name ~= "" then
-                title.Text = productInfo.Name
-            end
-            local creatorInfo = productInfo.Creator
-            if type(creatorInfo) == "table" and type(creatorInfo.Name) == "string"
-                and creatorInfo.Name ~= "" then
-                creator.Text = "by " .. creatorInfo.Name
-            end
+        while task.wait(0.25) do
+            if not PlayerCard or not PlayerCard.Parent then break end
+            ClockLabel.Text = os.date("%H:%M:%S")
+            DateLabel.Text = os.date("%d / %m / %Y")
+            GreetLabel.Text = GetThaiGreeting()
+            pillPl.Text = "ผู้เล่น " .. tostring(#Players:GetPlayers()) .. "/" .. tostring(Players.MaxPlayers)
+            pcall(function()
+                local p = math.floor(Stats.Network.ServerStatsItem["Data Ping"]:GetValue())
+                pillPing.Text = "Ping " .. tostring(p) .. " ms"
+            end)
         end
     end)
 
     self:_registerThemeRefresher(function()
-        if not banner.Parent then return end
-        banner.BackgroundColor3 = self._Colors.Card
-        bgGrad.Color = ColorSequence.new(self._Colors.Accent, self._Colors.Card)
-        stroke.Color = self._Colors.Border
-        thumbWrap.BackgroundColor3 = self._Colors.Bg2
-        thumbStroke.Color = self._Colors.Accent
-        title.TextColor3 = self._Colors.Text
-        creator.TextColor3 = self._Colors.TextDim
-        for _, badge in ipairs(badges) do
-            badge.BackgroundColor3 = self._Colors.Bg2
-            badge.TextColor3 = self._Colors.TextDim
-        end
+        PlayerCard.BackgroundColor3 = self._Colors.Card
+        pcStroke.Color = self._Colors.Border
+        avStroke.Color = self._Colors.Border
+        GreetLabel.TextColor3 = self._Colors.TextDim
+        NameLabel.TextColor3 = self._Colors.Text
+        ClockLabel.TextColor3 = self._Colors.Text
+        DateLabel.TextColor3 = self._Colors.TextDim
+        GameCard.BackgroundColor3 = self._Colors.Card
+        gcStroke.Color = self._Colors.Border
+        GameThumb.BackgroundColor3 = self._Colors.Bg2
+        gtStroke.Color = self._Colors.Border
+        GameTitleLbl.TextColor3 = self._Colors.Text
+        GameSubLbl.TextColor3 = self._Colors.TextDim
+        pillId.Parent.BackgroundColor3 = self._Colors.Bg2
+        pillPl.Parent.BackgroundColor3 = self._Colors.Bg2
+        pillPing.Parent.BackgroundColor3 = self._Colors.Bg2
     end)
 
-    return banner
+    return GameCard
 end
 
 function Library:CreateThemeCustomizer(tabName)
