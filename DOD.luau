@@ -3553,7 +3553,7 @@ function Library:CreateDashboardBanner(tabName)
     thumbnail.Size = UDim2.fromScale(1, 1)
     thumbnail.BackgroundTransparency = 1
     thumbnail.ScaleType = Enum.ScaleType.Crop
-    thumbnail.Image = "rbxthumb://type=GameIcon&id=" .. tostring(placeId) .. "&w=420&h=420"
+    thumbnail.Image = "rbxthumb://type=GameIcon&id=" .. tostring(placeId) .. "&w=512&h=512"
     Instance.new("UICorner", thumbnail).CornerRadius = UDim.new(0, 10)
 
     local title = Instance.new("TextLabel", banner)
@@ -3789,13 +3789,15 @@ function Library:AddToggle(page, text, default, callback)
     end
 
     local lastToggle = 0
-    holder.MouseButton1Click:Connect(function()
-        local now = tick()
-        if now - lastToggle < 0.15 then return end
-        lastToggle = now
-        state = not state
-        updateVisual(true)
-        callback(state)
+    holder.InputBegan:Connect(function(inp)
+        if inp.UserInputType == Enum.UserInputType.MouseButton1 or inp.UserInputType == Enum.UserInputType.Touch then
+            local now = tick()
+            if now - lastToggle < 0.15 then return end
+            lastToggle = now
+            state = not state
+            updateVisual(true)
+            callback(state)
+        end
     end)
 
     holder.MouseEnter:Connect(function()
