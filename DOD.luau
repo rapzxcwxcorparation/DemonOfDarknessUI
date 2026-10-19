@@ -641,6 +641,10 @@ function Library.new(opts)
     self.TabPosition = opts.TabPosition or "Top"
     self.TabWidth    = opts.TabWidth or 130
     self.ToggleKey   = opts.ToggleKey or Enum.KeyCode.RightShift
+    self.CategoryAlign = opts.CategoryAlign or "Center"
+    if self.CategoryAlign ~= "Center" and self.CategoryAlign ~= "Left" and self.CategoryAlign ~= "Right" then
+        self.CategoryAlign = "Center"
+    end
     if typeof(self.ToggleKey) ~= "EnumItem" or self.ToggleKey.EnumType ~= Enum.KeyCode then
         error("[DoD UI] ToggleKey must be an Enum.KeyCode.")
     end
@@ -1180,32 +1184,23 @@ function Library:_initMainGui()
     UI.MainStroke.Thickness = 1.5
 
     self._shadowLayers = {}
-    local shadowConfigs = {
-        {offset = 1, baseTransparency = 0.55},
-        {offset = 2, baseTransparency = 0.7},
-        {offset = 3, baseTransparency = 0.8},
-        {offset = 4, baseTransparency = 0.86},
-        {offset = 5, baseTransparency = 0.9},
-        {offset = 6, baseTransparency = 0.93},
-    }
-    for i, cfg in ipairs(shadowConfigs) do
-        local shadow = Instance.new("Frame", UI.MainGui)
-        shadow.Name = "LibShadow" .. i
-        shadow.AnchorPoint = MC.AnchorPoint
-        shadow.Size = MC.Size
-        shadow.Position = MC.Position
-        shadow.BackgroundColor3 = Color3.new(0, 0, 0)
-        shadow.BackgroundTransparency = cfg.baseTransparency
-        shadow.BorderSizePixel = 0
-        shadow.ZIndex = 10 - i
-        Instance.new("UICorner", shadow).CornerRadius = UDim.new(0, 14)
-        local scale = Instance.new("UIScale", shadow)
-        scale.Scale = 1
-        table.insert(self._shadowLayers, {
-            frame = shadow, offset = cfg.offset, scale = scale,
-            baseTransparency = cfg.baseTransparency,
-        })
-    end
+    local shadow = Instance.new("ImageLabel", UI.MainGui)
+    shadow.Name = "LibShadow"
+    shadow.AnchorPoint = MC.AnchorPoint
+    shadow.Size = UDim2.new(1, 40, 1, 40)
+    shadow.Position = MC.Position
+    shadow.BackgroundTransparency = 1
+    shadow.Image = "rbxassetid://1316045217"
+    shadow.ImageColor3 = Color3.new(0, 0, 0)
+    shadow.ImageTransparency = 0.45
+    shadow.ScaleType = Enum.ScaleType.Slice
+    shadow.SliceCenter = Rect.new(10, 10, 118, 118)
+    shadow.ZIndex = 9
+    local scale = Instance.new("UIScale", shadow)
+    scale.Scale = 1
+    table.insert(self._shadowLayers, {
+        frame = shadow, offset = 0, scale = scale, baseTransparency = 0.45,
+    })
 end
 
 function Library:_initShadowSync()
@@ -2629,6 +2624,11 @@ function Library:_layoutCategoryButtons()
         end
 
         local startX = padding
+        if self.CategoryAlign == "Center" then
+            startX = math.floor((availableWidth - dockWidth) / 2) + padding
+        elseif self.CategoryAlign == "Right" then
+            startX = availableWidth - dockWidth + padding
+        end
         for i, name in ipairs(names) do
             local data = STATE.CategoryButtons[name]
             data.button.Size = UDim2.new(0, buttonWidth, 0, 30)
@@ -3176,44 +3176,58 @@ function Library:CreateDashboardBanner(tabName)
     local banner = Instance.new("Frame", topContainer)
     banner.Name = "GameDashboardBanner"
     banner.LayoutOrder = bannerOrder
-    banner.Size = UDim2.new(1, 0, 0, 116)
+    banner.Size = UDim2.new(1, 0, 0, 124)
     banner.BackgroundColor3 = self._Colors.Card
-    banner.BackgroundTransparency = 0.1
+    banner.BackgroundTransparency = 0.05
     banner.BorderSizePixel = 0
     banner.ClipsDescendants = true
-    Instance.new("UICorner", banner).CornerRadius = UDim.new(0, 12)
+    Instance.new("UICorner", banner).CornerRadius = UDim.new(0, 14)
+
+    local bgGrad = Instance.new("UIGradient", banner)
+    bgGrad.Color = ColorSequence.new(self._Colors.Accent, self._Colors.Card)
+    bgGrad.Transparency = NumberSequence.new({NumberSequenceKeypoint.new(0, 0.95), NumberSequenceKeypoint.new(1, 1)})
+    bgGrad.Rotation = 45
 
     local stroke = Instance.new("UIStroke", banner)
     stroke.Color = self._Colors.Border
     stroke.Thickness = 1
-    stroke.Transparency = 0.18
+    stroke.Transparency = 0.3
 
-    local thumbnail = Instance.new("ImageLabel", banner)
-    thumbnail.Name = "GameThumbnail"
-    thumbnail.Size = UDim2.fromOffset(64, 64)
-    thumbnail.Position = UDim2.new(0, 12, 0, 10)
-    thumbnail.BackgroundColor3 = self._Colors.Bg2
-    thumbnail.BorderSizePixel = 0
+    local thumbWrap = Instance.new("Frame", banner)
+    thumbWrap.Size = UDim2.fromOffset(80, 80)
+    thumbWrap.Position = UDim2.new(0, 14, 0.5, -40)
+    thumbWrap.BackgroundColor3 = self._Colors.Bg2
+    thumbWrap.BorderSizePixel = 0
+    Instance.new("UICorner", thumbWrap).CornerRadius = UDim.new(0, 10)
+    
+    local thumbStroke = Instance.new("UIStroke", thumbWrap)
+    thumbStroke.Color = self._Colors.Accent
+    thumbStroke.Thickness = 1
+    thumbStroke.Transparency = 0.5
+
+    local thumbnail = Instance.new("ImageLabel", thumbWrap)
+    thumbnail.Size = UDim2.fromScale(1, 1)
+    thumbnail.BackgroundTransparency = 1
     thumbnail.ScaleType = Enum.ScaleType.Crop
-    thumbnail.Image = "rbxthumb://type=GameIcon&id=" .. tostring(placeId) .. "&w=150&h=150"
+    thumbnail.Image = "rbxthumb://type=GameIcon&id=" .. tostring(placeId) .. "&w=420&h=420"
     Instance.new("UICorner", thumbnail).CornerRadius = UDim.new(0, 10)
 
     local title = Instance.new("TextLabel", banner)
     title.Name = "GameName"
-    title.Size = UDim2.new(1, -102, 0, 23)
-    title.Position = UDim2.new(0, 88, 0, 16)
+    title.Size = UDim2.new(1, -120, 0, 24)
+    title.Position = UDim2.new(0, 106, 0, 22)
     title.BackgroundTransparency = 1
     title.Text = tostring(game.Name ~= "" and game.Name or "Current Experience")
     title.TextColor3 = self._Colors.Text
     title.Font = Enum.Font.GothamBold
-    title.TextSize = 15
+    title.TextSize = 16
     title.TextXAlignment = Enum.TextXAlignment.Left
     title.TextTruncate = Enum.TextTruncate.AtEnd
 
     local creator = Instance.new("TextLabel", banner)
     creator.Name = "GameCreator"
-    creator.Size = UDim2.new(1, -102, 0, 18)
-    creator.Position = UDim2.new(0, 88, 0, 40)
+    creator.Size = UDim2.new(1, -120, 0, 16)
+    creator.Position = UDim2.new(0, 106, 0, 48)
     creator.BackgroundTransparency = 1
     creator.Text = "by Unknown Creator"
     creator.TextColor3 = self._Colors.TextDim
@@ -3231,18 +3245,24 @@ function Library:CreateDashboardBanner(tabName)
     for _, spec in ipairs(badgeSpecs) do
         local badge = Instance.new("TextLabel", banner)
         badge.Name = spec.name
-        badge.Size = UDim2.new(1 / 3, -12, 0, 22)
-        badge.Position = UDim2.new(spec.position / 3, 12 - spec.position * 6, 0, 84)
+        badge.Size = UDim2.new(1 / 3, -12, 0, 24)
+        badge.Position = UDim2.new(spec.position / 3, 12 + spec.position * 4, 0, 88)
         badge.BackgroundColor3 = self._Colors.Bg2
-        badge.BackgroundTransparency = 0.15
+        badge.BackgroundTransparency = 0.2
         badge.BorderSizePixel = 0
         badge.Text = spec.text
         badge.TextColor3 = self._Colors.TextDim
-        badge.Font = Enum.Font.GothamMedium
-        badge.TextSize = 9
+        badge.Font = Enum.Font.GothamBold
+        badge.TextSize = 10
         badge.TextTruncate = Enum.TextTruncate.AtEnd
         badge.TextXAlignment = Enum.TextXAlignment.Center
-        Instance.new("UICorner", badge).CornerRadius = UDim.new(0, 7)
+        Instance.new("UICorner", badge).CornerRadius = UDim.new(0, 8)
+        
+        local bStroke = Instance.new("UIStroke", badge)
+        bStroke.Color = self._Colors.Border
+        bStroke.Thickness = 1
+        bStroke.Transparency = 0.5
+        
         table.insert(badges, badge)
     end
 
@@ -3302,8 +3322,10 @@ function Library:CreateDashboardBanner(tabName)
     self:_registerThemeRefresher(function()
         if not banner.Parent then return end
         banner.BackgroundColor3 = self._Colors.Card
+        bgGrad.Color = ColorSequence.new(self._Colors.Accent, self._Colors.Card)
         stroke.Color = self._Colors.Border
-        thumbnail.BackgroundColor3 = self._Colors.Bg2
+        thumbWrap.BackgroundColor3 = self._Colors.Bg2
+        thumbStroke.Color = self._Colors.Accent
         title.TextColor3 = self._Colors.Text
         creator.TextColor3 = self._Colors.TextDim
         for _, badge in ipairs(badges) do
@@ -3407,49 +3429,47 @@ function Library:AddToggle(page, text, default, callback)
     knob.BorderSizePixel = 0
     Instance.new("UICorner", knob).CornerRadius = UDim.new(1, 0)
 
-    local stateLabel = Instance.new("TextLabel", holder)
-    stateLabel.Size = UDim2.new(0, 26, 1, 0)
-    stateLabel.Position = UDim2.new(1, -80, 0, 0)
-    stateLabel.BackgroundTransparency = 1
-    stateLabel.Text = default and "ON" or "OFF"
-    stateLabel.TextColor3 = default and self._Colors.Green or self._Colors.TextDim
-    stateLabel.Font = Enum.Font.GothamBlack
-    stateLabel.TextSize = 10
-    stateLabel.TextXAlignment = Enum.TextXAlignment.Right
-
     local state = default
 
-    local function updateVisual()
-        switchBg.BackgroundColor3 = state and self._Colors.Accent or Color3.fromRGB(45, 45, 55)
-        switchStroke.Color = state and self._Colors.Accent or self._Colors.Border
-        knob.Position = state and UDim2.new(1, -18, 0.5, -8) or UDim2.new(0, 2, 0.5, -8)
-        stateLabel.Text = state and "ON" or "OFF"
-        stateLabel.TextColor3 = state and self._Colors.Green or self._Colors.TextDim
+    local function updateVisual(animate)
+        local tInfo = TweenInfo.new(0.2, Enum.EasingStyle.Quart, Enum.EasingDirection.Out)
+        if animate then
+            TweenService:Create(switchBg, tInfo, {BackgroundColor3 = state and self._Colors.Accent or Color3.fromRGB(45, 45, 55)}):Play()
+            TweenService:Create(switchStroke, tInfo, {Color = state and self._Colors.Accent or self._Colors.Border}):Play()
+            TweenService:Create(knob, tInfo, {Position = state and UDim2.new(1, -18, 0.5, -8) or UDim2.new(0, 2, 0.5, -8)}):Play()
+        else
+            switchBg.BackgroundColor3 = state and self._Colors.Accent or Color3.fromRGB(45, 45, 55)
+            switchStroke.Color = state and self._Colors.Accent or self._Colors.Border
+            knob.Position = state and UDim2.new(1, -18, 0.5, -8) or UDim2.new(0, 2, 0.5, -8)
+        end
     end
 
-    local pressPos, lastToggle
-    holder.InputBegan:Connect(function(inp)
-        if inp.UserInputType == Enum.UserInputType.MouseButton1 or inp.UserInputType == Enum.UserInputType.Touch then
-            pressPos = inp.Position
-        end
-    end)
-    holder.InputEnded:Connect(function(inp)
-        if inp.UserInputType ~= Enum.UserInputType.MouseButton1 and inp.UserInputType ~= Enum.UserInputType.Touch then return end
-        if not pressPos then return end
-        if (inp.Position - pressPos).Magnitude > 10 then pressPos = nil; return end
-        pressPos = nil
+    local lastToggle = 0
+    holder.MouseButton1Click:Connect(function()
         local now = tick()
-        if lastToggle and now - lastToggle < 0.15 then return end
+        if now - lastToggle < 0.15 then return end
         lastToggle = now
         state = not state
-        updateVisual()
+        updateVisual(true)
         callback(state)
+    end)
+
+    holder.MouseEnter:Connect(function()
+        if not state then
+            TweenService:Create(switchBg, TweenInfo.new(0.15), {BackgroundColor3 = Color3.fromRGB(60, 60, 70)}):Play()
+        else
+            TweenService:Create(switchBg, TweenInfo.new(0.15), {BackgroundColor3 = self._Colors.Accent:Lerp(Color3.new(1,1,1), 0.15)}):Play()
+        end
+    end)
+    
+    holder.MouseLeave:Connect(function()
+        updateVisual(true)
     end)
 
     self:_registerThemeRefresher(function()
         holder.BackgroundColor3 = self._Colors.Card
         lab.TextColor3 = self._Colors.Text
-        updateVisual()
+        updateVisual(false)
     end)
     self:_bindTooltip(holder, text)
     return self:_registerSearchControl(holder, text)
@@ -3751,20 +3771,29 @@ function Library:AddDropdown(page, text, options, defaultIndex, callback)
     label.TextTruncate = Enum.TextTruncate.AtEnd
 
     local valueChip = Instance.new("TextButton", holder)
-    valueChip.Size = UDim2.new(0.58, -14, 0, 28)
-    valueChip.Position = UDim2.new(0.42, 4, 0.5, -14)
+    valueChip.Size = UDim2.new(0.58, -14, 0, 30)
+    valueChip.Position = UDim2.new(0.42, 4, 0.5, -15)
     valueChip.BackgroundColor3 = self._Colors.Bg2
     valueChip.BackgroundTransparency = 0.2
     valueChip.Text = ""
     valueChip.BorderSizePixel = 0
     valueChip.AutoButtonColor = false
     Fn.bindPressAnimation(valueChip)
-    Instance.new("UICorner", valueChip).CornerRadius = UDim.new(0, 6)
+    Instance.new("UICorner", valueChip).CornerRadius = UDim.new(0, 8)
 
     local chipStroke = Instance.new("UIStroke", valueChip)
     chipStroke.Color = self._Colors.Border
     chipStroke.Thickness = 1
     chipStroke.Transparency = 0.4
+
+    valueChip.MouseEnter:Connect(function()
+        TweenService:Create(chipStroke, TweenInfo.new(0.15), {Color = self._Colors.Accent, Transparency = 0.1}):Play()
+        TweenService:Create(valueChip, TweenInfo.new(0.15), {BackgroundTransparency = 0}):Play()
+    end)
+    valueChip.MouseLeave:Connect(function()
+        TweenService:Create(chipStroke, TweenInfo.new(0.15), {Color = self._Colors.Border, Transparency = 0.4}):Play()
+        TweenService:Create(valueChip, TweenInfo.new(0.15), {BackgroundTransparency = 0.2}):Play()
+    end)
 
     local chipLabel = Instance.new("TextLabel", valueChip)
     chipLabel.Size = UDim2.new(1, -20, 1, 0)
@@ -4203,24 +4232,38 @@ function Library:AddTextbox(page, text, placeholder, callback)
 
     local input = Instance.new("TextBox", holder)
     input.Name = "Input"
-    input.Size = UDim2.new(0.58, -18, 0, 28)
-    input.Position = UDim2.new(0.42, 4, 0.5, -14)
+    input.Size = UDim2.new(0.58, -18, 0, 30)
+    input.Position = UDim2.new(0.42, 4, 0.5, -15)
     input.BackgroundColor3 = self._Colors.Bg2
-    input.BackgroundTransparency = 0.15
+    input.BackgroundTransparency = 0.2
     input.BorderSizePixel = 0
     input.ClearTextOnFocus = false
     input.Text = ""
     input.PlaceholderText = tostring(placeholder or "")
     input.PlaceholderColor3 = self._Colors.TextDim
     input.TextColor3 = self._Colors.Text
-    input.Font = Enum.Font.Gotham
+    input.Font = Enum.Font.GothamMedium
     input.TextSize = 11
     input.TextXAlignment = Enum.TextXAlignment.Left
-    Instance.new("UICorner", input).CornerRadius = UDim.new(0, 6)
+    Instance.new("UICorner", input).CornerRadius = UDim.new(0, 8)
+
+    local inputStroke = Instance.new("UIStroke", input)
+    inputStroke.Color = self._Colors.Border
+    inputStroke.Thickness = 1
+    inputStroke.Transparency = 0.5
 
     local inputPadding = Instance.new("UIPadding", input)
-    inputPadding.PaddingLeft = UDim.new(0, 8)
-    inputPadding.PaddingRight = UDim.new(0, 8)
+    inputPadding.PaddingLeft = UDim.new(0, 10)
+    inputPadding.PaddingRight = UDim.new(0, 10)
+
+    input.Focused:Connect(function()
+        TweenService:Create(inputStroke, TweenInfo.new(0.15), {Color = self._Colors.Accent, Transparency = 0.1}):Play()
+        TweenService:Create(input, TweenInfo.new(0.15), {BackgroundTransparency = 0}):Play()
+    end)
+    input.FocusLost:Connect(function()
+        TweenService:Create(inputStroke, TweenInfo.new(0.15), {Color = self._Colors.Border, Transparency = 0.5}):Play()
+        TweenService:Create(input, TweenInfo.new(0.15), {BackgroundTransparency = 0.2}):Play()
+    end)
 
     input.FocusLost:Connect(function()
         callback(input.Text)
