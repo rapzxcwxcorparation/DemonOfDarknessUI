@@ -1,15 +1,15 @@
 --[[
-    ============================================================
-    DEMON OF DARKNESS UI (DoD UI) v1.2 — DUAL COLUMN & POLISHED
-    Standalone, customizable interface library
+                        _               _              
+  _ __ __ _ _ __  _ __ | |_ ___ _______| |_ _   _  ___ 
+ | '__/ _` | '_ \| '_ \| __/ _ \_  / _ \ __| | | |/ _ \
+ | | | (_| | |_) | |_) | ||  __// /  __/ |_| |_| |  __/
+ |_|  \__,_| .__/| .__/ \__\___/___\___|\__|\__, |\___|
+           |_|   |_|                        |___/      
 
-    New in v1.2:
-      [NEW] True 2-Column Layout for Content Area (Left & Right)
-      [NEW] CreateSection(tab, title, summary, open, "Left" | "Right")
-      [NEW] Polished Section UI (smoother borders, rounded corners)
-      [NEW] Polished Controls (better slider, toggle, and dropdown)
-      [FIX] Auto-scale column height to match max content
-    ============================================================
+		   discord.gg/rapptezetyee
+			t.me/HGithub
+
+
 ]]
 
 local Library = {}
@@ -506,6 +506,20 @@ function SubTabModule:_createSubGroup(mainCategory, subList)
         subElements[i] = btn
         Fn.bindPressAnimation(btn)
 
+        local badge = Instance.new("TextLabel", btn)
+        badge.Name = "Badge"
+        badge.Size = UDim2.fromOffset(20, 12)
+        badge.Position = UDim2.new(1, -24, 0.5, -6)
+        badge.BackgroundColor3 = Color3.fromRGB(255, 100, 100)
+        badge.Text = ""
+        badge.TextColor3 = Color3.new(1, 1, 1)
+        badge.Font = Enum.Font.GothamBold
+        badge.TextSize = 8
+        badge.BorderSizePixel = 0
+        badge.Visible = false
+        Instance.new("UICorner", badge).CornerRadius = UDim.new(1, 0)
+        btn.Badge = badge
+
         btn.MouseEnter:Connect(function()
             if self.ActiveSubIndices[mainCategory] ~= i then
                 TweenService:Create(btn, TweenInfo.new(0.18), {TextColor3 = Color3.fromRGB(200, 200, 215)}):Play()
@@ -972,13 +986,15 @@ function Library:_updateNotifPositions()
     end
 end
 
-function Library:Notify(title, text)
+function Library:Notify(title, text, notifyType)
     local STATE = self._STATE
     if STATE.Destroyed then return end
     title = tostring(title or "")
     text = tostring(text or "")
+    notifyType = tostring(notifyType or "info")
+    
     if STATE.NotifActive >= STATE.NotifMax then
-        table.insert(STATE.NotifQueue, { title = title, text = text })
+        table.insert(STATE.NotifQueue, { title = title, text = text, nType = notifyType })
         return
     end
     STATE.NotifActive = STATE.NotifActive + 1
@@ -990,9 +1006,24 @@ function Library:Notify(title, text)
         end
         local palette = self._Colors or {}
         local accent = palette.Accent or Color3.fromRGB(180, 180, 195)
+        
+        local iconId = GetIcon("info")
+        local color = accent
+        
+        if notifyType == "success" then
+            color = Color3.fromRGB(52, 211, 153)
+            iconId = GetIcon("check-circle")
+        elseif notifyType == "error" then
+            color = Color3.fromRGB(248, 113, 113)
+            iconId = GetIcon("x-circle")
+        elseif notifyType == "warning" then
+            color = Color3.fromRGB(251, 191, 36)
+            iconId = GetIcon("alert-triangle")
+        end
+
         local frame = Instance.new("Frame", self._UI.NotifGui)
-        frame.Size = UDim2.new(0, 260, 0, 55)
-        frame.Position = UDim2.new(1, -275, 0, -70)
+        frame.Size = UDim2.new(0, 280, 0, 56)
+        frame.Position = UDim2.new(1, -295, 0, -70)
         frame.BackgroundColor3 = palette.Bg2 or Color3.fromRGB(14, 14, 20)
         frame.BackgroundTransparency = 1
         frame.BorderSizePixel = 0
@@ -1000,18 +1031,20 @@ function Library:Notify(title, text)
         Instance.new("UICorner", frame).CornerRadius = UDim.new(0, 8)
 
         local frameStroke = Instance.new("UIStroke", frame)
-        frameStroke.Color = accent
+        frameStroke.Color = color
         frameStroke.Thickness = 1
         frameStroke.Transparency = 0.4
 
-        local accentBar = Instance.new("Frame", frame)
-        accentBar.Size = UDim2.new(0, 4, 1, 0)
-        accentBar.BackgroundColor3 = accent
-        accentBar.BorderSizePixel = 0
+        local icon = Instance.new("ImageLabel", frame)
+        icon.Size = UDim2.fromOffset(16, 16)
+        icon.Position = UDim2.new(0, 12, 0, 10)
+        icon.BackgroundTransparency = 1
+        icon.Image = iconId
+        icon.ImageColor3 = color
 
         local titleLabel = Instance.new("TextLabel", frame)
-        titleLabel.Size = UDim2.new(1, -20, 0, 20)
-        titleLabel.Position = UDim2.new(0, 12, 0, 8)
+        titleLabel.Size = UDim2.new(1, -40, 0, 20)
+        titleLabel.Position = UDim2.new(0, 36, 0, 7)
         titleLabel.BackgroundTransparency = 1
         titleLabel.Text = title
         titleLabel.TextColor3 = palette.Text or Color3.fromRGB(220, 220, 230)
@@ -1020,12 +1053,12 @@ function Library:Notify(title, text)
         titleLabel.TextXAlignment = Enum.TextXAlignment.Left
 
         local textLabel = Instance.new("TextLabel", frame)
-        textLabel.Size = UDim2.new(1, -20, 0, 18)
-        textLabel.Position = UDim2.new(0, 12, 0, 28)
+        textLabel.Size = UDim2.new(1, -40, 0, 18)
+        textLabel.Position = UDim2.new(0, 36, 0, 28)
         textLabel.BackgroundTransparency = 1
         textLabel.Text = text
         textLabel.TextColor3 = palette.TextDim or Color3.fromRGB(140, 140, 155)
-        textLabel.Font = Enum.Font.Gotham
+        textLabel.Font = Enum.Font.GothamMedium
         textLabel.TextSize = 11
         textLabel.TextXAlignment = Enum.TextXAlignment.Left
         textLabel.TextTruncate = Enum.TextTruncate.AtEnd
@@ -1033,7 +1066,7 @@ function Library:Notify(title, text)
         local progressBar = Instance.new("Frame", frame)
         progressBar.Size = UDim2.new(1, -4, 0, 2)
         progressBar.Position = UDim2.new(0, 4, 1, -2)
-        progressBar.BackgroundColor3 = accent
+        progressBar.BackgroundColor3 = color
         progressBar.BorderSizePixel = 0
 
         STATE.notifParts[frame] = {
@@ -1068,6 +1101,7 @@ function Library:Notify(title, text)
 
         TweenService:Create(titleLabel, TweenInfo.new(0.2), {TextTransparency = 1}):Play()
         TweenService:Create(textLabel, TweenInfo.new(0.2), {TextTransparency = 1}):Play()
+        TweenService:Create(icon, TweenInfo.new(0.2), {ImageTransparency = 1}):Play()
         TweenService:Create(frameStroke, TweenInfo.new(0.2), {Transparency = 1}):Play()
 
         local out = TweenService:Create(
@@ -1081,7 +1115,7 @@ function Library:Notify(title, text)
         if frame.Parent then frame:Destroy() end
         STATE.NotifActive = math.max(0, STATE.NotifActive - 1)
         local nxt = table.remove(STATE.NotifQueue, 1)
-        if nxt and not STATE.Destroyed then self:Notify(nxt.title, nxt.text) end
+        if nxt and not STATE.Destroyed then self:Notify(nxt.title, nxt.text, nxt.nType) end
     end)
 end
 
@@ -1114,12 +1148,49 @@ function Library:_initMainGui()
     UI.GridPattern.BackgroundTransparency = 1
     UI.GridPattern.ZIndex = 0
 
+    UI.ParticleBG = Instance.new("Frame", UI.MainGui)
+    UI.ParticleBG.Name = "ParticleBG"
+    UI.ParticleBG.Size = UDim2.fromScale(1, 1)
+    UI.ParticleBG.BackgroundTransparency = 1
+    UI.ParticleBG.BorderSizePixel = 0
+    UI.ParticleBG.ZIndex = 5
+    UI.ParticleBG.ClipsDescendants = true
+    UI.ParticleBG.Visible = false
+    
+    local particles = {}
+    for i = 1, 25 do
+        local p = Instance.new("Frame", UI.ParticleBG)
+        p.Size = UDim2.fromOffset(math.random(2, 4), math.random(2, 4))
+        p.Position = UDim2.fromScale(math.random(), math.random())
+        p.BackgroundColor3 = self._Colors.Accent
+        p.BackgroundTransparency = math.random(30, 80) / 100
+        p.BorderSizePixel = 0
+        Instance.new("UICorner", p).CornerRadius = UDim.new(1, 0)
+        table.insert(particles, {
+            obj = p,
+            speedX = (math.random() - 0.5) * 0.005,
+            speedY = -math.random(1, 3) / 1000
+        })
+    end
+    
+    self._particleBGConn = RunService.RenderStepped:Connect(function(dt)
+        if not UI.ParticleBG.Visible then return end
+        for _, data in ipairs(particles) do
+            local pos = data.obj.Position
+            local nx = pos.X.Scale + data.speedX * dt * 10
+            local ny = pos.Y.Scale + data.speedY * dt * 10
+            if nx < 0 then nx = 1 elseif nx > 1 then nx = 0 end
+            if ny < 0 then ny = 1 elseif ny > 1 then ny = 0 end
+            data.obj.Position = UDim2.fromScale(nx, ny)
+        end
+    end)
+
     UI.SnowLayer = Instance.new("Frame", UI.MainGui)
     UI.SnowLayer.Name = "SnowLayer"
     UI.SnowLayer.Size = UDim2.fromScale(1, 1)
     UI.SnowLayer.BackgroundTransparency = 1
     UI.SnowLayer.BorderSizePixel = 0
-    UI.SnowLayer.ZIndex = 2
+    UI.SnowLayer.ZIndex = 4
     UI.SnowLayer.Visible = false
 
     UI.GuiBlur = Lighting:FindFirstChild("DoD_UI_Blur") or Instance.new("BlurEffect")
@@ -2179,9 +2250,32 @@ function Library:_initSearchBar()
     UI.SearchInput.TextXAlignment = Enum.TextXAlignment.Left
     UI.SearchInput.ClearTextOnFocus = false
 
+    local clearBtn = Instance.new("TextButton", UI.SearchBar)
+    clearBtn.Size = UDim2.fromOffset(16, 16)
+    clearBtn.Position = UDim2.new(1, -26, 0.5, -8)
+    clearBtn.BackgroundTransparency = 1
+    clearBtn.Text = ""
+    clearBtn.AutoButtonColor = false
+    clearBtn.Visible = false
+    
+    local clearIcon = Instance.new("ImageLabel", clearBtn)
+    clearIcon.Size = UDim2.fromScale(1, 1)
+    clearIcon.BackgroundTransparency = 1
+    clearIcon.Image = GetIcon("x")
+    clearIcon.ImageColor3 = self._Colors.TextDim
+
+    clearBtn.MouseButton1Click:Connect(function()
+        UI.SearchInput.Text = ""
+    end)
+
     UI.SearchInput:GetPropertyChangedSignal("Text"):Connect(function()
         self._STATE.SearchQuery = UI.SearchInput.Text
-        self:_applySearchFilter()
+        clearBtn.Visible = #UI.SearchInput.Text > 0
+        
+        if self._searchDebounce then task.cancel(self._searchDebounce) end
+        self._searchDebounce = task.delay(0.15, function()
+            self:_applySearchFilter()
+        end)
     end)
 
     UI.SearchInput.Focused:Connect(function()
@@ -2203,6 +2297,7 @@ function Library:_applySearchFilter(tabName)
 
     local query = string.lower(STATE.SearchQuery or ""):match("^%s*(.-)%s*$")
     local searching = query ~= ""
+    local totalMatches = 0
 
     for _, sectionData in ipairs(STATE.SearchSections[tabName] or {}) do
         if searching and not sectionData.searching then
@@ -2225,6 +2320,7 @@ function Library:_applySearchFilter(tabName)
 
         local sectionMatchesResults = not searching or sectionMatches or anyControlMatches
         sectionData.section.Visible = sectionMatchesResults
+        if searching and sectionMatchesResults then totalMatches = totalMatches + 1 end
 
         if searching then
             if sectionData.expanded ~= sectionMatchesResults then
@@ -2246,7 +2342,39 @@ function Library:_applySearchFilter(tabName)
                 local matches = not searching
                     or string.find(string.lower(ctrl.searchText), query, 1, true) ~= nil
                 ctrl.instance.Visible = matches
+                if searching and matches then totalMatches = totalMatches + 1 end
             end
+        end
+    end
+
+    local page = STATE.ContentPages[tabName]
+    if page then
+        local emptyState = page:FindFirstChild("SearchEmptyState")
+        if searching and totalMatches == 0 then
+            if not emptyState then
+                emptyState = Instance.new("Frame", page)
+                emptyState.Name = "SearchEmptyState"
+                emptyState.Size = UDim2.new(1, 0, 0, 100)
+                emptyState.BackgroundTransparency = 1
+                emptyState.LayoutOrder = 999
+                local eIcon = Instance.new("ImageLabel", emptyState)
+                eIcon.Size = UDim2.fromOffset(32, 32)
+                eIcon.Position = UDim2.new(0.5, -16, 0, 10)
+                eIcon.BackgroundTransparency = 1
+                eIcon.Image = GetIcon("search")
+                eIcon.ImageColor3 = self._Colors.TextDim
+                local eText = Instance.new("TextLabel", emptyState)
+                eText.Size = UDim2.new(1, 0, 0, 20)
+                eText.Position = UDim2.new(0, 0, 0, 50)
+                eText.BackgroundTransparency = 1
+                eText.Text = "No results found for '" .. query .. "'"
+                eText.TextColor3 = self._Colors.TextDim
+                eText.Font = Enum.Font.GothamMedium
+                eText.TextSize = 11
+            end
+            emptyState.Visible = true
+        elseif emptyState then
+            emptyState.Visible = false
         end
     end
 end
@@ -2932,6 +3060,28 @@ function Library:SetActiveCategory(categoryName, preferredTab)
         STATE.ActiveSubIndices[categoryName] = targetIdx
         if STATE.ContentPages[targetName] then
             self:SwitchTab(targetName)
+        end
+    end
+end
+
+function Library:SetTabBadge(categoryName, tabName, text, color)
+    if self:_isDead() then return end
+    local STATE = self._STATE
+    if not STATE.SubTabBar then return end
+    local group = STATE.SubTabBar.Groups[categoryName]
+    if not group then return end
+    for _, btn in ipairs(group.Buttons) do
+        if btn.Text == tostring(tabName) then
+            if btn.Badge then
+                if text then
+                    btn.Badge.Text = tostring(text)
+                    btn.Badge.BackgroundColor3 = color or Color3.fromRGB(255, 100, 100)
+                    btn.Badge.Visible = true
+                else
+                    btn.Badge.Visible = false
+                end
+            end
+            return
         end
     end
 end
@@ -4014,8 +4164,32 @@ function Library:AddDropdown(page, text, options, defaultIndex, callback)
     popupStroke.Thickness = 1
     popupStroke.Transparency = 0.3
 
+    local popupSearch = Instance.new("Frame", popup)
+    popupSearch.Size = UDim2.new(1, -10, 0, 24)
+    popupSearch.Position = UDim2.new(0, 5, 0, 5)
+    popupSearch.BackgroundColor3 = self._Colors.Card
+    popupSearch.BackgroundTransparency = 0.5
+    popupSearch.BorderSizePixel = 0
+    popupSearch.ZIndex = 202
+    Instance.new("UICorner", popupSearch).CornerRadius = UDim.new(0, 4)
+    
+    local searchBox = Instance.new("TextBox", popupSearch)
+    searchBox.Size = UDim2.new(1, -16, 1, 0)
+    searchBox.Position = UDim2.new(0, 8, 0, 0)
+    searchBox.BackgroundTransparency = 1
+    searchBox.Text = ""
+    searchBox.PlaceholderText = "Search options..."
+    searchBox.PlaceholderColor3 = self._Colors.TextDim
+    searchBox.TextColor3 = self._Colors.Text
+    searchBox.Font = Enum.Font.GothamMedium
+    searchBox.TextSize = 11
+    searchBox.TextXAlignment = Enum.TextXAlignment.Left
+    searchBox.ClearTextOnFocus = false
+    searchBox.ZIndex = 203
+
     local popupScroll = Instance.new("ScrollingFrame", popup)
-    popupScroll.Size = UDim2.new(1, 0, 1, 0)
+    popupScroll.Size = UDim2.new(1, 0, 1, -34)
+    popupScroll.Position = UDim2.new(0, 0, 0, 34)
     popupScroll.BackgroundTransparency = 1
     popupScroll.BorderSizePixel = 0
     popupScroll.ScrollBarThickness = 3
@@ -4023,6 +4197,14 @@ function Library:AddDropdown(page, text, options, defaultIndex, callback)
     popupScroll.CanvasSize = UDim2.new(0, 0, 0, 0)
     popupScroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
     popupScroll.ZIndex = 201
+
+    searchBox:GetPropertyChangedSignal("Text"):Connect(function()
+        local q = string.lower(searchBox.Text)
+        for _, btn in ipairs(optionButtons) do
+            local text = string.lower(btn:FindFirstChildOfClass("TextLabel").Text)
+            btn.Visible = (q == "" or string.find(text, q, 1, true) ~= nil)
+        end
+    end)
 
     local popupList = Instance.new("UIListLayout", popupScroll)
     popupList.SortOrder = Enum.SortOrder.LayoutOrder
@@ -4088,7 +4270,7 @@ function Library:AddDropdown(page, text, options, defaultIndex, callback)
         if not camera then return end
         local chipPos = valueChip.AbsolutePosition
         local chipSize = valueChip.AbsoluteSize
-        local totalHeight = math.min(#options * 32 + 14, 240)
+        local totalHeight = math.min(#options * 32 + 44, 260)
         local viewport = camera.ViewportSize
         local width = math.min(chipSize.X, math.max(1, viewport.X - 16))
         local x = math.clamp(chipPos.X, 8, math.max(8, viewport.X - width - 8))
@@ -4738,6 +4920,7 @@ function Library:Toggle()
         STATE.GuiTween:Play()
         STATE.GuiTween.Completed:Connect(function()
             UI.MainContainer.Visible = false
+            UI.ParticleBG.Visible = false
             UI.FocusOverlay.Visible = false
             STATE.GuiVisible = false
             STATE.AnimatingGui = false
@@ -4745,6 +4928,7 @@ function Library:Toggle()
         end)
     else
         UI.MainContainer.Visible = true
+        UI.ParticleBG.Visible = true
         STATE.GuiVisible = true
         UI.GuiBlur.Size = 0
         local blurTarget = self.Acrylic and self.AcrylicBlurIntensity or 0
@@ -4791,6 +4975,7 @@ function Library:Destroy()
     pcall(function() if self._UI.NotifGui then self._UI.NotifGui:Destroy() end end)
     pcall(function() if self._UI.TooltipGui then self._UI.TooltipGui:Destroy() end end)
     pcall(function() if self._UI.TooltipGui then self._UI.TooltipGui:Destroy() end end)
+    pcall(function() if self._particleBGConn then self._particleBGConn:Disconnect() end end)
     for _, layer in ipairs(self._shadowLayers or {}) do
         pcall(function() layer.frame:Destroy() end)
     end
