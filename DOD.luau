@@ -640,6 +640,10 @@ function Library.new(opts)
     self.ThemeName   = opts.Theme or "Demon of Darkness"
     self.TabPosition = opts.TabPosition or "Top"
     self.TabWidth    = opts.TabWidth or 130
+    self.ToggleKey   = opts.ToggleKey or Enum.KeyCode.RightShift
+    if typeof(self.ToggleKey) ~= "EnumItem" or self.ToggleKey.EnumType ~= Enum.KeyCode then
+        error("[DoD UI] ToggleKey must be an Enum.KeyCode.")
+    end
     if type(self.TabWidth) ~= "number" or self.TabWidth <= 0
         or self.TabWidth ~= self.TabWidth or self.TabWidth == math.huge then
         error("[DoD UI] TabWidth must be a positive number.")
@@ -740,6 +744,8 @@ function Library.new(opts)
     self:_initMobileToggle()
     self:_initDrag()
     self:_initShadowSync()
+    self:_initTooltip()
+    self:_bindToggleKey()
 
     self:SetTheme(self.ThemeName, true)
     if self.Acrylic then
@@ -1410,6 +1416,160 @@ function Library:_refreshKeybindOverlay()
     end
 end
 
+function Library:_initTooltip()
+    local UI = self._UI
+    local gui = Instance.new("ScreenGui")
+    gui.Name = "DoD_UI_Tooltip"
+    gui.Parent = CoreGui
+    gui.ResetOnSpawn = false
+    gui.DisplayOrder = 9999
+    gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+    gui.IgnoreGuiInset = true
+    UI.TooltipGui = gui
+
+    local frame = Instance.new("Frame", gui)
+    frame.Name = "Tooltip"
+    frame.BackgroundColor3 = self._Colors.Bg2
+    frame.BackgroundTransparency = 0.05
+    frame.BorderSizePixel = 0
+    frame.Size = UDim2.fromOffset(120, 28)
+    frame.Visible = false
+    frame.ZIndex = 100
+    frame.ClipsDescendants = true
+    Instance.new("UICorner", frame).CornerRadius = UDim.new(0, 8)
+
+    local stroke = Instance.new("UIStroke", frame)
+    stroke.Color = self._Colors.Accent
+    stroke.Thickness = 1
+    stroke.Transparency = 0.3
+
+    local glow = Instance.new("Frame", frame)
+    glow.Size = UDim2.new(1, 0, 1, 0)
+    glow.BackgroundColor3 = self._Colors.Accent
+    glow.BackgroundTransparency = 0.92
+    glow.BorderSizePixel = 0
+    glow.ZIndex = 100
+    Instance.new("UICorner", glow).CornerRadius = UDim.new(0, 8)
+
+    local accentBar = Instance.new("Frame", frame)
+    accentBar.Size = UDim2.new(0, 3, 1, -8)
+    accentBar.Position = UDim2.new(0, 4, 0, 4)
+    accentBar.BackgroundColor3 = self._Colors.Accent
+    accentBar.BorderSizePixel = 0
+    accentBar.ZIndex = 102
+    Instance.new("UICorner", accentBar).CornerRadius = UDim.new(1, 0)
+
+    local label = Instance.new("TextLabel", frame)
+    label.Size = UDim2.new(1, -18, 1, 0)
+    label.Position = UDim2.new(0, 12, 0, 0)
+    label.BackgroundTransparency = 1
+    label.Font = Enum.Font.GothamMedium
+    label.TextSize = 12
+    label.TextColor3 = self._Colors.Text
+    label.TextXAlignment = Enum.TextXAlignment.Left
+    label.Text = ""
+    label.ZIndex = 102
+
+    UI.TooltipFrame = frame
+    UI.TooltipLabel = label
+    UI.TooltipStroke = stroke
+    UI.TooltipAccent = accentBar
+    UI.TooltipGlow = glow
+
+    self:_registerThemeRefresher(function()
+        if not frame.Parent then return end
+        frame.BackgroundColor3 = self._Colors.Bg2
+        stroke.Color = self._Colors.Accent
+        accentBar.BackgroundColor3 = self._Colors.Accent
+        glow.BackgroundColor3 = self._Colors.Accent
+        label.TextColor3 = self._Colors.Text
+    end)
+
+    Fn.track(UserInputService.InputChanged, function(input)
+        if input.UserInputType == Enum.UserInputType.MouseMovement then
+            self:_updateTooltipPosition(input.Position)
+        end
+    end, self)
+end
+
+function Library:_updateTooltipPosition(mousePos)
+    local frame = self._UI.TooltipFrame
+    if not frame or not frame.Visible then return end
+    local cam = getCam()
+    if not cam then return end
+    local vp = cam.ViewportSize
+    local fw = frame.AbsoluteSize.X
+    local fh = frame.AbsoluteSize.Y
+    if fw <= 0 then fw = 120 end
+    if fh <= 0 then fh = 28 end
+    local x = mousePos.X + 18
+    local y = mousePos.Y + 22
+    if x + fw > vp.X - 8 then x = mousePos.X - fw - 18 end
+    if y + fh > vp.Y - 8 then y = mousePos.Y - fh - 14 end
+    frame.Position = UDim2.fromOffset(math.max(4, x), math.max(4, y))
+end
+
+function Library:_bindTooltip(element, text)
+    if not text or text == "" then return end
+    element.MouseEnter:Connect(function()
+        local frame = self._UI.TooltipFrame
+        if not frame then return end
+        local lbl = self._UI.TooltipLabel
+        lbl.Text = tostring(text)
+        local charCount = utf8.len(tostring(text)) or #tostring(text)
+        local w = math.clamp(charCount * 7 + 32, 100, 320)
+        frame.Size = UDim2.fromOffset(w, 28)
+        frame.Visible = true
+        frame.BackgroundTransparency = 1
+        self._UI.TooltipStroke.Transparency = 1
+        TweenService:Create(frame, TweenInfo.new(0.15), {BackgroundTransparency = 0.05}):Play()
+        TweenService:Create(self._UI.TooltipStroke, TweenInfo.new(0.15), {Transparency = 0.3}):Play()
+        local mouse = UserInputService:GetMouseLocation()
+        self:_updateTooltipPosition(mouse)
+    end)
+    element.MouseLeave:Connect(function()
+        local frame = self._UI.TooltipFrame
+        if not frame then return end
+        TweenService:Create(frame, TweenInfo.new(0.1), {BackgroundTransparency = 1}):Play()
+        TweenService:Create(self._UI.TooltipStroke, TweenInfo.new(0.1), {Transparency = 1}):Play()
+        task.delay(0.12, function()
+            if frame and frame.BackgroundTransparency >= 0.9 then
+                frame.Visible = false
+            end
+        end)
+    end)
+end
+
+function Library:_bindToggleKey()
+    Fn.track(UserInputService.InputBegan, function(input, gameProcessed)
+        if gameProcessed then return end
+        if input.UserInputType ~= Enum.UserInputType.Keyboard then return end
+        if input.KeyCode == self.ToggleKey then
+            self:Toggle()
+        end
+    end, self)
+end
+
+function Library:SetVersion(text)
+    if self:_isDead() then return end
+    self.Version = tostring(text or "")
+    if self._UI.TitleVersionBadge then
+        self._UI.TitleVersionBadge.Text = self.Version
+    end
+end
+
+function Library:SetToggleKey(key)
+    if self:_isDead() then return end
+    if typeof(key) ~= "EnumItem" or key.EnumType ~= Enum.KeyCode then
+        error("[DoD UI] SetToggleKey expects an Enum.KeyCode.")
+    end
+    self.ToggleKey = key
+    if self._UI.TitleToggleHint then
+        self._UI.TitleToggleHint.Text = "[" .. key.Name .. "]"
+    end
+    self:Notify("KEYBIND", "Toggle GUI: " .. key.Name)
+end
+
 function Library:CreateKeybindOverlay()
     if self:_isDead() then return end
     self:_refreshKeybindOverlay()
@@ -1463,7 +1623,8 @@ function Library:_initTitleBar()
     UI.TitleLabel.TextXAlignment = Enum.TextXAlignment.Left
 
     UI.TitleVersionBadge = Instance.new("TextLabel", UI.TitleBar)
-    UI.TitleVersionBadge.Size = UDim2.new(0, 60, 0, 20)
+    UI.TitleVersionBadge.Size = UDim2.new(0, 0, 0, 20)
+    UI.TitleVersionBadge.AutomaticSize = Enum.AutomaticSize.X
     UI.TitleVersionBadge.Position = UDim2.new(0, 240, 0.5, -10)
     UI.TitleVersionBadge.BackgroundColor3 = self._Colors.Accent
     UI.TitleVersionBadge.BackgroundTransparency = 0.15
@@ -1473,6 +1634,10 @@ function Library:_initTitleBar()
     UI.TitleVersionBadge.TextSize = 11
     UI.TitleVersionBadge.BorderSizePixel = 0
     Instance.new("UICorner", UI.TitleVersionBadge).CornerRadius = UDim.new(0, 6)
+
+    local vPad = Instance.new("UIPadding", UI.TitleVersionBadge)
+    vPad.PaddingLeft = UDim.new(0, 10)
+    vPad.PaddingRight = UDim.new(0, 10)
 
     UI.TitleDiscord = Instance.new("TextLabel", UI.TitleBar)
     UI.TitleDiscord.Size = UDim2.new(0, 150, 1, 0)
@@ -1485,16 +1650,45 @@ function Library:_initTitleBar()
     UI.TitleDiscord.TextSize = 12
     UI.TitleDiscord.TextXAlignment = Enum.TextXAlignment.Right
 
+    UI.TitleToggleHint = Instance.new("TextLabel", UI.TitleBar)
+    UI.TitleToggleHint.Size = UDim2.new(0, 80, 1, 0)
+    UI.TitleToggleHint.Position = UDim2.new(1, -300, 0, 0)
+    UI.TitleToggleHint.BackgroundTransparency = 1
+    UI.TitleToggleHint.Text = "[" .. self.ToggleKey.Name .. "]"
+    UI.TitleToggleHint.TextColor3 = self._Colors.TextDim
+    UI.TitleToggleHint.Font = Enum.Font.GothamMedium
+    UI.TitleToggleHint.TextSize = 10
+    UI.TitleToggleHint.TextXAlignment = Enum.TextXAlignment.Right
+
+    self:_registerThemeRefresher(function()
+        if UI.TitleToggleHint then
+            UI.TitleToggleHint.TextColor3 = self._Colors.TextDim
+        end
+    end)
+
     local function updateTitleLayout()
         local width = UI.MainContainer.AbsoluteSize.X
+        if width <= 0 then width = 640 end
         local titleWidth = math.clamp(width - 400, 80, 200)
         UI.TitleLabel.Size = UDim2.new(0, titleWidth, 1, 0)
-        UI.TitleVersionBadge.Position = UDim2.new(0, titleWidth + 40, 0.5, -10)
-        UI.TitleVersionBadge.Visible = width >= 400
+
+        local badgeW = UI.TitleVersionBadge.AbsoluteSize.X
+        if badgeW <= 0 then badgeW = 60 end
+        local badgeStart = titleWidth + 40
+        local badgeEnd = badgeStart + badgeW
+
+        local hintStart = width - 300
+        local canShowBadge = width >= 400 and (badgeEnd + 12) < hintStart
+
+        UI.TitleVersionBadge.Visible = canShowBadge
+        UI.TitleVersionBadge.Position = UDim2.new(0, badgeStart, 0.5, -10)
         UI.TitleDiscord.Visible = width >= 540
     end
     updateTitleLayout()
+    task.defer(updateTitleLayout)
+    task.delay(0.15, updateTitleLayout)
     Fn.track(UI.MainContainer:GetPropertyChangedSignal("AbsoluteSize"), updateTitleLayout, self)
+    Fn.track(UI.TitleVersionBadge:GetPropertyChangedSignal("AbsoluteSize"), updateTitleLayout, self)
 end
 
 function Library:_initTrafficLights()
@@ -1663,10 +1857,14 @@ function Library:_applyNavigationLayout()
     local UI = self._UI
     if not (UI.CategoryBar and UI.Sidebar and UI.TabBarDivider) then return end
     local position = self.TabPosition
-    local mainWidth = UI.MainContainer.AbsoluteSize.X
-    local sideWidth = math.min(self.TabWidth + 20, math.max(120, mainWidth * 0.36))
+    local mainSize = UI.MainContainer.AbsoluteSize
+    local mainW = mainSize.X
+    local mainH = mainSize.Y
+    local sideWidth = math.min(self.TabWidth + 20, math.max(120, mainW * 0.36))
     local hasSearch  = UI.SearchBar ~= nil
     local hasContent = UI.ContentArea ~= nil
+
+    local BOTTOM_PADDING = 15
 
     if position == "Side" then
         UI.CategoryBar.Size = UDim2.new(0, sideWidth, 1, -62)
@@ -1683,9 +1881,12 @@ function Library:_applyNavigationLayout()
             UI.SearchBar.Position = UDim2.new(0, sideWidth + 20, 0, 88)
         end
         if hasContent then
-            UI.ContentArea.Size = UDim2.new(1, -(sideWidth + 45), 1, -133)
-            UI.ContentArea.Position = UDim2.new(0, sideWidth + 20, 0, 121)
+            local contentTop = 121
+            local contentH = math.max(120, mainH - contentTop - BOTTOM_PADDING)
+            UI.ContentArea.Size = UDim2.new(1, -(sideWidth + 45), 0, contentH)
+            UI.ContentArea.Position = UDim2.new(0, sideWidth + 20, 0, contentTop)
         end
+
     elseif position == "Bottom" then
         UI.CategoryBar.Size = UDim2.new(0, 160, 0, 44)
         UI.CategoryBar.Position = UDim2.new(0.5, -80, 1, -54)
@@ -1703,10 +1904,13 @@ function Library:_applyNavigationLayout()
             UI.SearchBar.Position = UDim2.new(0, 15, 0, 86)
         end
         if hasContent then
-            UI.ContentArea.Size = UDim2.new(1, -30, 1, -177)
-            UI.ContentArea.Position = UDim2.new(0, 15, 0, 119)
+            local contentTop = 119
+            local contentH = math.max(120, mainH - contentTop - 75)
+            UI.ContentArea.Size = UDim2.new(1, -30, 0, contentH)
+            UI.ContentArea.Position = UDim2.new(0, 15, 0, contentTop)
         end
-    else
+
+    else -- Top
         UI.CategoryBar.Size = UDim2.new(1, -20, 0, 46)
         UI.CategoryBar.Position = UDim2.new(0, 10, 0, 42)
         UI.CategoryBar.BackgroundColor3 = self._Colors.Sidebar
@@ -1723,8 +1927,10 @@ function Library:_applyNavigationLayout()
             UI.SearchBar.Position = UDim2.new(0, 15, 0, 129)
         end
         if hasContent then
-            UI.ContentArea.Size = UDim2.new(1, -30, 1, -234)
-            UI.ContentArea.Position = UDim2.new(0, 15, 0, 162)
+            local contentTop = 162
+            local contentH = math.max(150, mainH - contentTop - BOTTOM_PADDING)
+            UI.ContentArea.Size = UDim2.new(1, -30, 0, contentH)
+            UI.ContentArea.Position = UDim2.new(0, 15, 0, contentTop)
         end
     end
 
@@ -2438,30 +2644,45 @@ function Library:SetActiveCategory(categoryName, preferredTab)
     if self:_isDead() then return end
     local STATE = self._STATE
     if not STATE.CategoryButtons or not STATE.CategoryButtons[categoryName] then return end
+    if STATE.ActiveCategory == categoryName and STATE.SubTabBar then
+        if preferredTab and STATE.ContentPages[preferredTab] then
+            self:SwitchTab(preferredTab)
+        end
+        return
+    end
     STATE.ActiveCategory = categoryName
     STATE.ActiveSubIndices = STATE.ActiveSubIndices or {}
 
     for name, data in pairs(STATE.CategoryButtons or {}) do
         local active = (name == categoryName)
-        TweenService:Create(data.button, TweenInfo.new(0.18), {
+        TweenService:Create(data.button, TweenInfo.new(0.22, Enum.EasingStyle.Quart), {
             BackgroundTransparency = active and 0.55 or 1,
         }):Play()
-        TweenService:Create(data.label, TweenInfo.new(0.2), {
+        TweenService:Create(data.label, TweenInfo.new(0.22), {
             TextColor3 = active and Color3.fromRGB(255, 255, 255) or self._Colors.TextDim,
         }):Play()
         data.label.Font = active and Enum.Font.GothamBold or Enum.Font.GothamMedium
-        TweenService:Create(data.icon, TweenInfo.new(0.2), {
+        TweenService:Create(data.icon, TweenInfo.new(0.22), {
             ImageTransparency = active and 0 or 0.45,
         }):Play()
     end
 
-    if STATE.SubTabBar then
-        local curCat = STATE.SubTabBar.CurrentMainCategory
-        if curCat and STATE.SubTabBar.ActiveSubIndices[curCat] then
-            STATE.ActiveSubIndices[curCat] = STATE.SubTabBar.ActiveSubIndices[curCat]
-        end
+    if STATE.SubTabBar and STATE.SubTabBar.Wrapper then
+        local oldWrapper = STATE.SubTabBar.Wrapper
         STATE.SubTabBar:Destroy()
         STATE.SubTabBar = nil
+        if oldWrapper then
+            for _, child in ipairs(oldWrapper:GetDescendants()) do
+                if child:IsA("CanvasGroup") then
+                    TweenService:Create(child, TweenInfo.new(0.12), {GroupTransparency = 1}):Play()
+                elseif child:IsA("TextButton") or child:IsA("TextLabel") then
+                    TweenService:Create(child, TweenInfo.new(0.12), {TextTransparency = 1}):Play()
+                end
+            end
+            task.delay(0.12, function()
+                if oldWrapper and oldWrapper.Parent then oldWrapper:Destroy() end
+            end)
+        end
     end
 
     local tabs = STATE.CategoryTabs[categoryName]
@@ -2643,9 +2864,33 @@ function Library:SwitchTab(tabName)
         return
     end
 
-    for _, p in pairs(STATE.ContentPages) do p.Visible = false end
+    if STATE.ActiveTab == tabName and page.Visible then
+        return
+    end
+
+    for _, p in pairs(STATE.ContentPages) do
+        if p ~= page then p.Visible = false end
+    end
     page.Visible = true
     STATE.ActiveTab = tabName
+
+    local scale = page:FindFirstChildOfClass("UIScale")
+    if not scale then
+        scale = Instance.new("UIScale", page)
+    end
+    scale.Scale = 0.94
+    page.Position = UDim2.new(0, 25, 0, 0)
+    page.BackgroundTransparency = 1
+
+    TweenService:Create(scale,
+        TweenInfo.new(0.24, Enum.EasingStyle.Quart, Enum.EasingDirection.Out),
+        {Scale = 1}
+    ):Play()
+    TweenService:Create(page,
+        TweenInfo.new(0.24, Enum.EasingStyle.Quart, Enum.EasingDirection.Out),
+        {Position = UDim2.new(0, 0, 0, 0)}
+    ):Play()
+
     local saved = STATE.SavedScrollPositions[tabName]
     if saved then
         task.defer(function()
@@ -2655,6 +2900,7 @@ function Library:SwitchTab(tabName)
             end
         end)
     end
+
     self:_applySearchFilter(tabName)
     if STATE.SubTabBar and ownerCat then
         pcall(function() STATE.SubTabBar:SetActiveSub(ownerCat, tabName) end)
@@ -3205,6 +3451,7 @@ function Library:AddToggle(page, text, default, callback)
         lab.TextColor3 = self._Colors.Text
         updateVisual()
     end)
+    self:_bindTooltip(holder, text)
     return self:_registerSearchControl(holder, text)
 end
 
@@ -3238,14 +3485,14 @@ function Library:AddSlider(page, text, minVal, maxVal, default, decimals, callba
     callback = callback or function() end
 
     local holder = Instance.new("Frame", page)
-    holder.Size = UDim2.new(1, 0, 0, 54)
+    holder.Size = UDim2.new(1, 0, 0, 58)
     holder.BackgroundColor3 = self._Colors.Card
     holder.BackgroundTransparency = 0.3
     holder.BorderSizePixel = 0
     Instance.new("UICorner", holder).CornerRadius = UDim.new(0, 8)
 
     local lab = Instance.new("TextLabel", holder)
-    lab.Size = UDim2.new(0.6, -14, 0, 18)
+    lab.Size = UDim2.new(1, -100, 0, 18)
     lab.Position = UDim2.new(0, 14, 0, 6)
     lab.BackgroundTransparency = 1
     lab.Text = text
@@ -3253,21 +3500,31 @@ function Library:AddSlider(page, text, minVal, maxVal, default, decimals, callba
     lab.Font = Enum.Font.GothamMedium
     lab.TextSize = 12
     lab.TextXAlignment = Enum.TextXAlignment.Left
+    lab.TextTruncate = Enum.TextTruncate.AtEnd
 
-    local valLab = Instance.new("TextLabel", holder)
-    valLab.Size = UDim2.new(0.4, -14, 0, 18)
-    valLab.Position = UDim2.new(0.6, 0, 0, 6)
-    valLab.BackgroundTransparency = 1
-    valLab.Text = tostring(default)
-    valLab.TextColor3 = self._Colors.Accent
-    valLab.Font = Enum.Font.GothamBold
-    valLab.TextSize = 12
-    valLab.TextXAlignment = Enum.TextXAlignment.Right
+    local valBox = Instance.new("TextBox", holder)
+    valBox.Size = UDim2.new(0, 72, 0, 22)
+    valBox.Position = UDim2.new(1, -86, 0, 4)
+    valBox.BackgroundColor3 = self._Colors.Bg2
+    valBox.BackgroundTransparency = 0.3
+    valBox.TextColor3 = self._Colors.Accent
+    valBox.Font = Enum.Font.GothamBold
+    valBox.TextSize = 12
+    valBox.Text = tostring(default)
+    valBox.TextXAlignment = Enum.TextXAlignment.Center
+    valBox.ClearTextOnFocus = false
+    valBox.BorderSizePixel = 0
+    Instance.new("UICorner", valBox).CornerRadius = UDim.new(0, 6)
+
+    local valBoxStroke = Instance.new("UIStroke", valBox)
+    valBoxStroke.Color = self._Colors.Border
+    valBoxStroke.Thickness = 1
+    valBoxStroke.Transparency = 0.5
 
     local sliderBg = Instance.new("Frame", holder)
-    sliderBg.Size = UDim2.new(1, -28, 0, 6)
-    sliderBg.Position = UDim2.new(0, 14, 0, 34)
-    sliderBg.BackgroundColor3 = Color3.fromRGB(25, 25, 35)
+    sliderBg.Size = UDim2.new(1, -28, 0, 8)
+    sliderBg.Position = UDim2.new(0, 14, 0, 36)
+    sliderBg.BackgroundColor3 = Color3.fromRGB(22, 22, 30)
     sliderBg.BorderSizePixel = 0
     sliderBg.Active = true
     Instance.new("UICorner", sliderBg).CornerRadius = UDim.new(1, 0)
@@ -3277,66 +3534,145 @@ function Library:AddSlider(page, text, minVal, maxVal, default, decimals, callba
     sliderStroke.Thickness = 1
     sliderStroke.Transparency = 0.5
 
+    for i = 1, 3 do
+        local tick = Instance.new("Frame", sliderBg)
+        tick.Size = UDim2.new(0, 1, 0, 4)
+        tick.Position = UDim2.new(i / 4, 0, 0.5, -2)
+        tick.BackgroundColor3 = Color3.fromRGB(80, 80, 95)
+        tick.BackgroundTransparency = 0.4
+        tick.BorderSizePixel = 0
+        tick.ZIndex = 1
+    end
+
+    local fillGlow = Instance.new("Frame", sliderBg)
+    fillGlow.Size = UDim2.new((default - minVal) / (maxVal - minVal), 0, 1.6, -0.3)
+    fillGlow.Position = UDim2.new(0, 0, 0.5, -6.4)
+    fillGlow.BackgroundColor3 = self._Colors.Accent
+    fillGlow.BackgroundTransparency = 0.7
+    fillGlow.BorderSizePixel = 0
+    fillGlow.ZIndex = 1
+    Instance.new("UICorner", fillGlow).CornerRadius = UDim.new(1, 0)
+
     local fill = Instance.new("Frame", sliderBg)
     fill.Size = UDim2.new((default - minVal) / (maxVal - minVal), 0, 1, 0)
     fill.BackgroundColor3 = self._Colors.Accent
     fill.BorderSizePixel = 0
+    fill.ZIndex = 2
     Instance.new("UICorner", fill).CornerRadius = UDim.new(1, 0)
 
+    local fillGrad = Instance.new("UIGradient", fill)
+    fillGrad.Color = ColorSequence.new(self._Colors.Accent, self._Colors.Accent2 or self._Colors.Accent)
+    fillGrad.Rotation = 0
+
     local knob = Instance.new("Frame", sliderBg)
-    knob.Size = UDim2.new(0, 14, 0, 14)
-    knob.Position = UDim2.new((default - minVal) / (maxVal - minVal), -7, 0.5, -7)
+    knob.Size = UDim2.new(0, 16, 0, 16)
+    knob.Position = UDim2.new((default - minVal) / (maxVal - minVal), -8, 0.5, -8)
     knob.BackgroundColor3 = Color3.new(1, 1, 1)
     knob.BorderSizePixel = 0
+    knob.ZIndex = 3
     Instance.new("UICorner", knob).CornerRadius = UDim.new(1, 0)
 
     local knobStroke = Instance.new("UIStroke", knob)
-    knobStroke.Color = Color3.fromRGB(0, 0, 0)
-    knobStroke.Thickness = 1
-    knobStroke.Transparency = 0.8
+    knobStroke.Color = self._Colors.Accent
+    knobStroke.Thickness = 2
+    knobStroke.Transparency = 0.2
 
-    local val, drag = default, false
+    local knobScale = Instance.new("UIScale", knob)
+    knobScale.Scale = 1
 
-    local function updateVisual(newVal)
-        local rel = (newVal - minVal) / (maxVal - minVal)
-        fill.Size = UDim2.new(rel, 0, 1, 0)
-        knob.Position = UDim2.new(rel, -7, 0.5, -7)
-        valLab.Text = tostring(newVal)
+    local val = default
+    local drag = false
+    local editing = false
+    local originalText = ""
+
+    local function formatValue(v)
+        if decimals == 0 then
+            return tostring(math.floor(v + 0.5))
+        end
+        return string.format("%." .. tostring(decimals) .. "f", v)
+    end
+
+    local function applyValue(newVal, animate)
+        newVal = math.clamp(newVal, minVal, maxVal)
+        local mult = 10 ^ decimals
+        if math.abs(newVal) <= math.huge / mult then
+            if newVal >= 0 then
+                newVal = math.floor(newVal * mult + 0.5) / mult
+            else
+                newVal = math.ceil(newVal * mult - 0.5) / mult
+            end
+        end
+        val = newVal
+        local rel = math.clamp((newVal - minVal) / (maxVal - minVal), 0, 1)
+        if animate then
+            TweenService:Create(fill, TweenInfo.new(0.15, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {Size = UDim2.new(rel, 0, 1, 0)}):Play()
+            TweenService:Create(fillGlow, TweenInfo.new(0.15, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {Size = UDim2.new(rel, 0, 1.6, -0.3)}):Play()
+            TweenService:Create(knob, TweenInfo.new(0.15, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {Position = UDim2.new(rel, -8, 0.5, -8)}):Play()
+        else
+            fill.Size = UDim2.new(rel, 0, 1, 0)
+            fillGlow.Size = UDim2.new(rel, 0, 1.6, -0.3)
+            knob.Position = UDim2.new(rel, -8, 0.5, -8)
+        end
+        if not editing then
+            valBox.Text = formatValue(newVal)
+        end
     end
 
     local function setFromPosition(position)
         local width = sliderBg.AbsoluteSize.X
         if width <= 0 then return end
         local rel = math.clamp((position.X - sliderBg.AbsolutePosition.X) / width, 0, 1)
-        val = minVal + (maxVal - minVal) * rel
-        local mult = 10 ^ decimals
-        local scaled = val * mult
-        if math.abs(val) <= math.huge / mult then
-            if scaled >= 0 then
-                val = math.floor(scaled + 0.5) / mult
-            else
-                val = math.ceil(scaled - 0.5) / mult
-            end
-        end
-        updateVisual(val)
+        local newVal = minVal + (maxVal - minVal) * rel
+        applyValue(newVal, false)
         callback(val)
     end
+
+    valBox.Focused:Connect(function()
+        editing = true
+        originalText = valBox.Text
+        TweenService:Create(valBoxStroke, TweenInfo.new(0.15), {Color = self._Colors.Accent, Transparency = 0}):Play()
+        TweenService:Create(valBox, TweenInfo.new(0.15), {BackgroundTransparency = 0.1}):Play()
+    end)
+
+    valBox.FocusLost:Connect(function(enterPressed)
+        editing = false
+        TweenService:Create(valBoxStroke, TweenInfo.new(0.15), {Color = self._Colors.Border, Transparency = 0.5}):Play()
+        TweenService:Create(valBox, TweenInfo.new(0.15), {BackgroundTransparency = 0.3}):Play()
+        if valBox.Text == originalText then
+            valBox.Text = formatValue(val)
+            return
+        end
+        local parsed = tonumber(valBox.Text)
+        if parsed and parsed == parsed and parsed ~= math.huge and parsed ~= -math.huge then
+            applyValue(parsed, true)
+            callback(val)
+        else
+            valBox.Text = formatValue(val)
+        end
+    end)
 
     knob.InputBegan:Connect(function(inp)
         if inp.UserInputType == Enum.UserInputType.MouseButton1 or inp.UserInputType == Enum.UserInputType.Touch then
             drag = true
+            TweenService:Create(knobScale, TweenInfo.new(0.1), {Scale = 1.2}):Play()
+            TweenService:Create(knobStroke, TweenInfo.new(0.1), {Transparency = 0}):Play()
         end
     end)
 
     sliderBg.InputBegan:Connect(function(inp)
         if inp.UserInputType == Enum.UserInputType.MouseButton1 or inp.UserInputType == Enum.UserInputType.Touch then
             drag = true
+            TweenService:Create(knobScale, TweenInfo.new(0.1), {Scale = 1.2}):Play()
             setFromPosition(inp.Position)
         end
     end)
 
     Fn.track(UserInputService.InputEnded, function(inp)
         if inp.UserInputType == Enum.UserInputType.MouseButton1 or inp.UserInputType == Enum.UserInputType.Touch then
+            if drag then
+                TweenService:Create(knobScale, TweenInfo.new(0.15, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {Scale = 1}):Play()
+                TweenService:Create(knobStroke, TweenInfo.new(0.15), {Transparency = 0.2}):Play()
+            end
             drag = false
         end
     end, self)
@@ -3347,13 +3683,30 @@ function Library:AddSlider(page, text, minVal, maxVal, default, decimals, callba
         end
     end, self)
 
+    holder.MouseEnter:Connect(function()
+        if not drag then
+            TweenService:Create(knobScale, TweenInfo.new(0.15), {Scale = 1.1}):Play()
+        end
+    end)
+    holder.MouseLeave:Connect(function()
+        if not drag then
+            TweenService:Create(knobScale, TweenInfo.new(0.15), {Scale = 1}):Play()
+        end
+    end)
+
     self:_registerThemeRefresher(function()
         holder.BackgroundColor3 = self._Colors.Card
         lab.TextColor3 = self._Colors.Text
-        valLab.TextColor3 = self._Colors.Accent
+        valBox.TextColor3 = self._Colors.Accent
+        valBox.BackgroundColor3 = self._Colors.Bg2
+        valBoxStroke.Color = self._Colors.Border
         fill.BackgroundColor3 = self._Colors.Accent
+        fillGlow.BackgroundColor3 = self._Colors.Accent
+        knobStroke.Color = self._Colors.Accent
         sliderStroke.Color = self._Colors.Border
+        fillGrad.Color = ColorSequence.new(self._Colors.Accent, self._Colors.Accent2 or self._Colors.Accent)
     end)
+    self:_bindTooltip(lab, text .. " [" .. tostring(minVal) .. " - " .. tostring(maxVal) .. "] — click value to type")
     return self:_registerSearchControl(holder, text .. " " .. tostring(minVal) .. " " .. tostring(maxVal))
 end
 
@@ -3577,6 +3930,7 @@ function Library:AddDropdown(page, text, options, defaultIndex, callback)
     for _, option in ipairs(options) do
         table.insert(searchableOptions, tostring(option))
     end
+    self:_bindTooltip(label, text .. " (" .. #options .. " options)")
     return self:_registerSearchControl(holder, text .. " " .. table.concat(searchableOptions, " "))
 end
 
@@ -3700,6 +4054,7 @@ function Library:AddKeybind(page, text, default, callback)
         btn.BackgroundColor3 = self._Colors.Accent
         btn.TextColor3 = Fn.accentTextColor(self._Colors.Accent)
     end)
+    self:_bindTooltip(lab, text .. " — click to rebind")
     return self:_registerSearchControl(holder, text)
 end
 
@@ -3739,6 +4094,7 @@ function Library:AddButton(page, text, callback)
         btn.BackgroundColor3 = self._Colors.Accent
         btn.TextColor3 = Fn.accentTextColor(self._Colors.Accent)
     end)
+    self:_bindTooltip(holder, text .. " (click)")
     return self:_registerSearchControl(holder, text)
 end
 
@@ -3877,6 +4233,7 @@ function Library:AddTextbox(page, text, placeholder, callback)
         input.TextColor3 = self._Colors.Text
         input.PlaceholderColor3 = self._Colors.TextDim
     end)
+    self:_bindTooltip(label, text .. " — press Enter to submit")
     return self:_registerSearchControl(holder, tostring(text) .. " " .. tostring(placeholder or ""))
 end
 
@@ -4118,6 +4475,7 @@ function Library:AddColorPicker(page, text, defaultColor3, callback)
         popupStroke.Color = self._Colors.Border
     end)
 
+    self:_bindTooltip(label, text .. " — click preview to open")
     return self:_registerSearchControl(holder, text)
 end
 
@@ -4195,6 +4553,7 @@ function Library:Destroy()
     pcall(function() if self._UI.GuiBlur then self._UI.GuiBlur:Destroy() end end)
     pcall(function() if self._UI.MainGui then self._UI.MainGui:Destroy() end end)
     pcall(function() if self._UI.NotifGui then self._UI.NotifGui:Destroy() end end)
+    pcall(function() if self._UI.TooltipGui then self._UI.TooltipGui:Destroy() end end)
     pcall(function() if self._UI.TooltipGui then self._UI.TooltipGui:Destroy() end end)
     for _, layer in ipairs(self._shadowLayers or {}) do
         pcall(function() layer.frame:Destroy() end)
