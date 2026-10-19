@@ -873,6 +873,18 @@ function Library:SetTheme(themeName, silent)
             UI.MobileToggle.TextColor3 = self._Colors.Text
         end
         if UI.MobileToggleStroke then UI.MobileToggleStroke.Color = self._Colors.Accent end
+        if UI.KeybindOverlay then
+            UI.KeybindOverlay.BackgroundColor3 = self._Colors.Bg2
+        end
+        if UI.KeybindOverlayStroke then UI.KeybindOverlayStroke.Color = self._Colors.Border end
+        if UI.KeybindOverlayList then UI.KeybindOverlayList.ScrollBarImageColor3 = self._Colors.Accent end
+        if UI.KeybindOverlayEmpty then UI.KeybindOverlayEmpty.TextColor3 = self._Colors.TextDim end
+        if UI.KeybindOverlayToggle then
+            UI.KeybindOverlayToggle.BackgroundColor3 = self._Colors.Card
+        end
+        if UI.KeybindOverlayToggleStroke then UI.KeybindOverlayToggleStroke.Color = self._Colors.Accent end
+        if UI.KeybindOverlayToggleIcon then UI.KeybindOverlayToggleIcon.ImageColor3 = self._Colors.Accent end
+        if UI.KeybindOverlayToggleText then UI.KeybindOverlayToggleText.TextColor3 = self._Colors.Accent end
     end)
     if not ok then
         warn("[DoD UI] Theme UI refresh failed: " .. tostring(err))
@@ -1467,10 +1479,12 @@ function Library:_initKeybindOverlay()
         toggleIcon.ImageColor3 = self._Colors.Accent
         toggleText.TextColor3 = self._Colors.Accent
         for _, row in pairs(self._STATE.KeybindOverlayRows) do
+            if row.frame then row.frame.BackgroundColor3 = self._Colors.Card end
             row.name.TextColor3 = self._Colors.Text
             row.key.BackgroundColor3 = self._Colors.Card
             row.key.TextColor3 = self._Colors.Accent
             if row.icon then row.icon.ImageColor3 = self._Colors.TextDim end
+            if row.keyStroke then row.keyStroke.Color = self._Colors.Border end
         end
     end)
 end
@@ -1531,7 +1545,7 @@ function Library:_refreshKeybindOverlay()
             keyStroke.Thickness = 1
             keyStroke.Transparency = 0.5
 
-            row = {frame = frame, name = name, key = key, icon = icon}
+            row = {frame = frame, name = name, key = key, icon = icon, keyStroke = keyStroke}
             self._STATE.KeybindOverlayRows[listener] = row
         end
         row.frame.LayoutOrder = index
@@ -3184,6 +3198,11 @@ function Library:CreateTab(categoryName, tabName)
     STATE.TabTopContainers[tabName] = topContainer
     STATE.TabColumns[tabName] = { Left = leftCol, Right = rightCol, Container = columnsContainer }
 
+    self:_registerThemeRefresher(function()
+        if page.Parent then
+            page.ScrollBarImageColor3 = self._Colors.Accent
+        end
+    end)
     page:GetPropertyChangedSignal("CanvasPosition"):Connect(function()
         if STATE.ActiveTab == tabName then
             STATE.SavedScrollPositions[tabName] = page.CanvasPosition
@@ -3515,12 +3534,12 @@ function Library:CreateDashboardBanner(tabName)
         error("[DoD UI] Tab '" .. tostring(tabName) .. "' not found. Call :CreateTab first.")
     end
 
-    local function GetThaiGreeting()
+    local function GetGreeting()
         local h = tonumber(os.date("%H")) or 12
-        if h >= 5 and h < 12 then return "อรุณสวัสดิ์"
-        elseif h >= 12 and h < 17 then return "สวัสดีตอนบ่าย"
-        elseif h >= 17 and h < 20 then return "สวัสดีตอนเย็น"
-        else return "ราตรีสวัสดิ์" end
+        if h >= 5 and h < 12 then return "Good Morning"
+        elseif h >= 12 and h < 17 then return "Good Afternoon"
+        elseif h >= 17 and h < 20 then return "Good Evening"
+        else return "Good Night" end
     end
 
     local PlayerCard = Instance.new("Frame", topContainer)
@@ -3552,7 +3571,7 @@ function Library:CreateDashboardBanner(tabName)
     GreetLabel.TextSize = 10.5
     GreetLabel.TextColor3 = self._Colors.TextDim
     GreetLabel.TextXAlignment = Enum.TextXAlignment.Left
-    GreetLabel.Text = GetThaiGreeting()
+    GreetLabel.Text = GetGreeting()
 
     local NameLabel = Instance.new("TextLabel", PlayerCard)
     NameLabel.Size = UDim2.new(0.5, -70, 0, 22)
@@ -3668,7 +3687,7 @@ function Library:CreateDashboardBanner(tabName)
     GameSubLbl.TextSize = 9.5
     GameSubLbl.TextColor3 = self._Colors.TextDim
     GameSubLbl.TextXAlignment = Enum.TextXAlignment.Left
-    GameSubLbl.Text = "โดย " .. ((creatorName and creatorName ~= "") and creatorName or "Roblox Creator")
+    GameSubLbl.Text = "by " .. ((creatorName and creatorName ~= "") and creatorName or "Roblox Creator")
     GameSubLbl.ZIndex = 3
 
     local PillsRow = Instance.new("Frame", GameCard)
@@ -3703,23 +3722,23 @@ function Library:CreateDashboardBanner(tabName)
         t.Text = text
         local pad = Instance.new("UIPadding", p)
         pad.PaddingRight = UDim.new(0, 8)
-        return t
+        return { Frame = p, Stroke = ps, Label = t }
     end
 
     local pillId = MakePill("ID " .. tostring(game.PlaceId), 90, self._Colors.TextDim)
-    local pillPl = MakePill("ผู้เล่น " .. tostring(#Players:GetPlayers()) .. "/" .. tostring(Players.MaxPlayers), 70, self._Colors.TextDim)
-    local pillPing = MakePill("Ping 35 ms", 60, self._Colors.Green)
+    local pillPl = MakePill("Players: " .. tostring(#Players:GetPlayers()) .. "/" .. tostring(Players.MaxPlayers), 70, self._Colors.TextDim)
+    local pillPing = MakePill("Ping 35 ms", 60, self._Colors.Accent)
 
     task.spawn(function()
         while task.wait(0.25) do
             if not PlayerCard or not PlayerCard.Parent then break end
             ClockLabel.Text = os.date("%H:%M:%S")
             DateLabel.Text = os.date("%d / %m / %Y")
-            GreetLabel.Text = GetThaiGreeting()
-            pillPl.Text = "ผู้เล่น " .. tostring(#Players:GetPlayers()) .. "/" .. tostring(Players.MaxPlayers)
+            GreetLabel.Text = GetGreeting()
+            pillPl.Label.Text = "Players: " .. tostring(#Players:GetPlayers()) .. "/" .. tostring(Players.MaxPlayers)
             pcall(function()
                 local p = math.floor(Stats.Network.ServerStatsItem["Data Ping"]:GetValue())
-                pillPing.Text = "Ping " .. tostring(p) .. " ms"
+                pillPing.Label.Text = "Ping " .. tostring(p) .. " ms"
             end)
         end
     end)
@@ -3738,9 +3757,15 @@ function Library:CreateDashboardBanner(tabName)
         gtStroke.Color = self._Colors.Border
         GameTitleLbl.TextColor3 = self._Colors.Text
         GameSubLbl.TextColor3 = self._Colors.TextDim
-        pillId.Parent.BackgroundColor3 = self._Colors.Bg2
-        pillPl.Parent.BackgroundColor3 = self._Colors.Bg2
-        pillPing.Parent.BackgroundColor3 = self._Colors.Bg2
+        for _, pill in ipairs({pillId, pillPl, pillPing}) do
+            pill.Frame.BackgroundColor3 = self._Colors.Bg2
+            pill.Stroke.Color = self._Colors.Border
+            if pill == pillPing then
+                pill.Label.TextColor3 = self._Colors.Accent
+            else
+                pill.Label.TextColor3 = self._Colors.TextDim
+            end
+        end
     end)
 
     return GameCard
@@ -4396,6 +4421,7 @@ function Library:AddDropdown(page, text, options, defaultIndex, callback)
         chipLabel.TextColor3 = self._Colors.Text
         popup.BackgroundColor3 = self._Colors.Bg2
         popupStroke.Color = self._Colors.Accent
+        popupScroll.ScrollBarImageColor3 = self._Colors.Accent
     end)
 
     local searchableOptions = {}
