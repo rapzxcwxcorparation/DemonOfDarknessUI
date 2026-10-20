@@ -59,7 +59,8 @@ local GuiSound = {
     TabSwitch = { id = "rbxassetid://6895079853", pitch = 1.25, vol = 0.40 },
     Dropdown  = { id = "rbxassetid://6895079853", pitch = 1.00, vol = 0.40 },
     Notify    = { id = "rbxassetid://4590662766", pitch = 1.35, vol = 0.55 },
-    Hover     = { id = "rbxassetid://6895079853", pitch = 1.80, vol = 0.12 }
+    Hover     = { id = "rbxassetid://6895079853", pitch = 1.80, vol = 0.12 },
+    Scroll    = { id = "rbxassetid://6895079853", pitch = 1.55, vol = 0.10 }
 }
 
 -- =========================================================
@@ -2168,6 +2169,19 @@ function Library:_initMainGui()
     end)
 
     self._shadowLayers = {}
+
+    task.spawn(function()
+        local seen = {}
+        while not self:_isDead() do
+            for _, sf in ipairs(self._STATE.ScrollFrames or {}) do
+                if sf and sf.Parent and not seen[sf] then
+                    seen[sf] = true
+                    self:_attachScrollSound(sf)
+                end
+            end
+            task.wait(0.4)
+        end
+    end)
 end
 
 function Library:_initKeybindOverlay()
@@ -3546,6 +3560,7 @@ function Library:_initSidebar()
     asPad.PaddingRight = UDim.new(0, 4)
 
     UI.AccordionScroll = accordionScroll
+    self:_attachScrollSound(accordionScroll)
 
     local miniProfile = Instance.new("Frame", UI.CategoryBar)
     miniProfile.Name = "SideProfileMini"
@@ -5527,42 +5542,16 @@ function Library:CreateSection(tabName, title, summary, defaultOpen, columnName,
     indicator.ImageColor3 = defaultOpen and self._Colors.Accent or self._Colors.TextDim
     indicator.ScaleType = Enum.ScaleType.Fit
 
-    local hoverBarWrap = Instance.new("Frame", section)
-    hoverBarWrap.Name = "HoverBarWrap"
-    hoverBarWrap.AnchorPoint = Vector2.new(0, 0.5)
-    hoverBarWrap.Position = UDim2.new(0, 0, 0.5, 0)
-    hoverBarWrap.Size = UDim2.new(0, 4, 0, 0)
-    hoverBarWrap.BackgroundTransparency = 1
-    hoverBarWrap.BorderSizePixel = 0
-    hoverBarWrap.ClipsDescendants = false
-    hoverBarWrap.ZIndex = 5
-
-    local hoverBarGlow = Instance.new("Frame", hoverBarWrap)
-    hoverBarGlow.Name = "HoverBarGlow"
-    hoverBarGlow.Size = UDim2.new(1, 14, 1, 0)
-    hoverBarGlow.Position = UDim2.new(0, -7, 0, 0)
-    hoverBarGlow.BackgroundColor3 = self._Colors.Accent
-    hoverBarGlow.BackgroundTransparency = 1
-    hoverBarGlow.BorderSizePixel = 0
-    hoverBarGlow.ZIndex = 4
-    Instance.new("UICorner", hoverBarGlow).CornerRadius = UDim.new(1, 0)
-
-    local hoverBar = Instance.new("Frame", hoverBarWrap)
+    local hoverBar = Instance.new("Frame", section)
     hoverBar.Name = "HoverBar"
-    hoverBar.Size = UDim2.new(1, 0, 1, 0)
+    hoverBar.AnchorPoint = Vector2.new(0, 0.5)
+    hoverBar.Position = UDim2.new(0, 0, 0.5, 0)
+    hoverBar.Size = UDim2.new(0, 3, 1, -32)
     hoverBar.BackgroundColor3 = self._Colors.Accent
+    hoverBar.BackgroundTransparency = 1
     hoverBar.BorderSizePixel = 0
     hoverBar.ZIndex = 5
     Instance.new("UICorner", hoverBar).CornerRadius = UDim.new(1, 0)
-
-    local hoverBarGradient = Instance.new("UIGradient", hoverBar)
-    hoverBarGradient.Rotation = 90
-    hoverBarGradient.Transparency = NumberSequence.new({
-        NumberSequenceKeypoint.new(0, 1),
-        NumberSequenceKeypoint.new(0.12, 0),
-        NumberSequenceKeypoint.new(0.88, 0),
-        NumberSequenceKeypoint.new(1, 1),
-    })
 
     local separator = Instance.new("Frame", section)
     separator.Size = UDim2.new(1, -32, 0, 1)
@@ -5754,10 +5743,8 @@ function Library:CreateSection(tabName, title, summary, defaultOpen, columnName,
             {BackgroundColor3 = self._Colors.CardHover, BackgroundTransparency = math.max(0, baseTrans - 0.1)}):Play()
         TweenService:Create(cardStroke, TweenInfo.new(0.22),
             {Color = self._Colors.Accent, Transparency = 0.25}):Play()
-        TweenService:Create(hoverBarWrap, TweenInfo.new(0.32, Enum.EasingStyle.Quart, Enum.EasingDirection.Out),
-            {Size = UDim2.new(0, 4, 1, -28)}):Play()
-        TweenService:Create(hoverBarGlow, TweenInfo.new(0.32),
-            {BackgroundTransparency = 0.55}):Play()
+        TweenService:Create(hoverBar, TweenInfo.new(0.22, Enum.EasingStyle.Quart, Enum.EasingDirection.Out),
+            {BackgroundTransparency = 0.15}):Play()
         if sectionIcon then
             TweenService:Create(sectionIcon, TweenInfo.new(0.22),
                 {ImageColor3 = self._Colors.Accent}):Play()
@@ -5769,9 +5756,7 @@ function Library:CreateSection(tabName, title, summary, defaultOpen, columnName,
             {BackgroundColor3 = self._Colors.Card, BackgroundTransparency = baseTrans}):Play()
         TweenService:Create(cardStroke, TweenInfo.new(0.22),
             {Color = self._Colors.Border, Transparency = 0.4}):Play()
-        TweenService:Create(hoverBarWrap, TweenInfo.new(0.22, Enum.EasingStyle.Quart, Enum.EasingDirection.Out),
-            {Size = UDim2.new(0, 4, 0, 0)}):Play()
-        TweenService:Create(hoverBarGlow, TweenInfo.new(0.22),
+        TweenService:Create(hoverBar, TweenInfo.new(0.22, Enum.EasingStyle.Quart, Enum.EasingDirection.Out),
             {BackgroundTransparency = 1}):Play()
         if sectionIcon then
             TweenService:Create(sectionIcon, TweenInfo.new(0.22),
@@ -5807,9 +5792,6 @@ function Library:CreateSection(tabName, title, summary, defaultOpen, columnName,
         separator.BackgroundColor3 = self._Colors.Border
         if hoverBar then
             hoverBar.BackgroundColor3 = self._Colors.Accent
-        end
-        if hoverBarGlow then
-            hoverBarGlow.BackgroundColor3 = self._Colors.Accent
         end
         if scrollTrack then
             scrollTrack.BackgroundColor3 = self._Colors.Border
@@ -9055,6 +9037,22 @@ function Library:Minimize()
             }):Play()
         end
     end)
+end
+
+function Library:_attachScrollSound(frame)
+    if not frame or not frame.Parent then return end
+    if frame:GetAttribute("DoD_ScrollSound") then return end
+    frame:SetAttribute("DoD_ScrollSound", true)
+    local lastPlay = 0
+    Fn.track(frame:GetPropertyChangedSignal("CanvasPosition"), function()
+        if self:_isDead() then return end
+        if not self._STATE.GuiVisible then return end
+        if not self._SoundsEnabled then return end
+        local now = tick()
+        if now - lastPlay < 0.12 then return end
+        lastPlay = now
+        self:PlaySound("Scroll")
+    end, self)
 end
 
 function Library:PlaySound(soundName)
