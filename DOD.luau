@@ -5518,12 +5518,14 @@ function Library:CreateSection(tabName, title, summary, defaultOpen, columnName,
         if not body or not body.Parent then return end
         local innerH = bodyLayout.AbsoluteContentSize.Y
         local contentH = (innerH > 0) and (innerH + 24) or 24
-        local maxH = 340
+        local maxH = 450
         local contentArea = self._UI.ContentArea
         if contentArea and contentArea.AbsoluteSize.Y > 0 then
-            maxH = math.min(340, math.max(180, contentArea.AbsoluteSize.Y - 70))
+            maxH = math.min(450, math.max(240, contentArea.AbsoluteSize.Y - 40))
         end
-        local cappedH = math.min(contentH, maxH)
+        local paddedH = math.min(contentH + 140, 360)
+        local desiredH = math.max(contentH, paddedH)
+        local cappedH = math.min(desiredH, maxH)
         local targetH = expanded and (HEADER_HEIGHT + cappedH) or HEADER_HEIGHT
         if expanded then
             body.Size = UDim2.new(1, 0, 0, cappedH)
