@@ -7,19 +7,29 @@ Just copy your raw GitHub link and load it using this script:
 local Library = loadstring(game:HttpGet("https://raw.githubusercontent.com/rapzxcwxcorparation/DemonOfDarknessUI/refs/heads/main/DOD.luau"))()
 
 local UI = Library({
-    Title             = "DoD UI  |  Showcase",
-    Version           = "v5.0-preview",
-    Author            = "@rapptezetyee",
-    Theme             = "Midnight",
+    Title             = "daemon.wtf | Blade Ball",
+    Version           = "v2.0",
+    Author            = "rapptezetzee",
+    TitleIcon         = "drama",
+    Theme             = "Monochrome",
     TabPosition       = "Side",
     CategoryAlign     = "Center",
     ToggleKey         = Enum.KeyCode.LeftControl,
     Acrylic           = true,
-    AcrylicBlur       = 10,
-    FocusOverlay      = true,
-    FocusOverlayType  = "Grid",
-    Weather           = { Enabled = false, Type = "Stars", Intensity = 50 },
+    AcrylicBlur       = 24,
+    Weather           = { Enabled = true, Type = "Snow", Intensity = 50 },
     Size              = UDim2.fromOffset(900, 580),
+    Wallpaper         = "https://raw.githubusercontent.com/rapzxcwxcorparation/DemonOfDarknessUI/refs/heads/main/wallpaperdod/kawaii-cat-girl-3840x2160-26545.png",
+    WallpaperTransparency = 0.35,
+    SoundsEnabled       = true,
+    SoundVolume         = 0.8,
+    ReducedMotion       = false,
+    LayoutDensity       = "Normal",
+    SectionTransparency = 0.15,
+    NotificationPosition = "TopRight",
+    Tooltip             = true,
+    TooltipTransparency = 0.15,
+    ThemeAutoLoad       = false,   -- ← matiin auto-load biar opts gak ke-override
 })
 ```
 
