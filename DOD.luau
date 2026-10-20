@@ -1440,7 +1440,7 @@ function Library:_initMainGui()
     UI.CustomCursor.BackgroundTransparency = 1
     UI.CustomCursor.Image = GetIcon("mouse-pointer-2")
     UI.CustomCursor.ImageColor3 = self._Colors.Accent
-    UI.CustomCursor.ZIndex = 99999
+    UI.CustomCursor.ZIndex = 100000
     UI.CustomCursor.Visible = false
 
     Fn.track(RunService.RenderStepped, function()
@@ -1514,14 +1514,14 @@ function Library:_initMainGui()
                     
                     local trail = Instance.new("Frame")
                     trail.Name = "CursorTrail"
-                    trail.Size = UDim2.fromOffset(10, 10)
+                    trail.Size = UDim2.fromOffset(8, 8)
                     trail.AnchorPoint = Vector2.new(0.5, 0.5)
                     trail.Position = UDim2.fromOffset(mouse.X, mouse.Y)
                     trail.BackgroundColor3 = self._Colors.Accent
                     trail.BackgroundTransparency = 0.4
                     trail.BorderSizePixel = 0
-                    trail.ZIndex = 99998
-                    Instance.new("UICorner", trail).CornerRadius = UDim.new(1, 0)
+                    trail.ZIndex = 99997
+                    Instance.new("UICorner", trail).CornerRadius = UDim.new(0, 2)
                     trail.Parent = UI.MainGui
                     
                     local tw = TweenService:Create(trail, TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
