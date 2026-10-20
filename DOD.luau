@@ -816,7 +816,6 @@ function Library.new(opts)
     self:_initMobileToggle()
     self:_initDrag()
     self:_initResize()
-    self:_initShadowSync()
     self:_initTooltip()
     self:_bindToggleKey()
 
@@ -1797,10 +1796,6 @@ function Library:_initMainGui()
         minText.TextColor3 = self._Colors.Accent
     end)
 
-    self._shadowLayers = {}
-end
-
-function Library:_initShadowSync()
     self._shadowLayers = {}
 end
 
@@ -3171,15 +3166,6 @@ function Library:_applyNavigationLayout()
     self:_resizeSubTabs()
 end
 
-function Library:_toggleCategoryAccordion(categoryName)
-    if self:_isDead() then return end
-    local STATE = self._STATE
-    local data = STATE.CategoryButtons and STATE.CategoryButtons[categoryName]
-    if not data or not data.isAccordion then return end
-    local current = STATE.AccordionExpanded[categoryName]
-    self:_setAccordionState(categoryName, not current)
-end
-
 function Library:_setAccordionState(categoryName, expanded)
     if self:_isDead() then return end
     local STATE = self._STATE
@@ -3354,12 +3340,23 @@ function Library:_applySearchFilter(tabName)
             local matches = not searching
                 or sectionMatches
                 or string.find(string.lower(control.searchText), query, 1, true) ~= nil
-            control.instance.Visible = matches
-            if matches then anyControlMatches = true end
+            if matches then
+                if control.instance.Parent == nil and control.parent and control.parent.Parent then
+                    control.instance.Parent = control.parent
+                end
+                anyControlMatches = true
+            else
+                control.instance.Parent = nil
+            end
         end
 
         local sectionMatchesResults = not searching or sectionMatches or anyControlMatches
         sectionData.section.Visible = sectionMatchesResults
+        if searching and not sectionMatchesResults then
+            sectionData.section.Parent = nil
+        elseif sectionData.section.Parent == nil and sectionData.parentColumn and sectionData.parentColumn.Parent then
+            sectionData.section.Parent = sectionData.parentColumn
+        end
         if searching and sectionMatchesResults then totalMatches = totalMatches + 1 end
 
         if searching then
@@ -3378,11 +3375,15 @@ function Library:_applySearchFilter(tabName)
     local pool = STATE.SearchTopLevel and STATE.SearchTopLevel[tabName]
     if pool then
         for _, ctrl in ipairs(pool) do
-            if ctrl.instance.Parent then
-                local matches = not searching
-                    or string.find(string.lower(ctrl.searchText), query, 1, true) ~= nil
-                ctrl.instance.Visible = matches
-                if searching and matches then totalMatches = totalMatches + 1 end
+            local matches = not searching
+                or string.find(string.lower(ctrl.searchText), query, 1, true) ~= nil
+            if matches then
+                if ctrl.instance.Parent == nil and ctrl.parent and ctrl.parent.Parent then
+                    ctrl.instance.Parent = ctrl.parent
+                end
+                if searching then totalMatches = totalMatches + 1 end
+            else
+                ctrl.instance.Parent = nil
             end
         end
     end
@@ -3413,8 +3414,10 @@ function Library:_applySearchFilter(tabName)
                 eText.TextSize = 11
             end
             emptyState.Visible = true
+            emptyState.Size = UDim2.new(1, 0, 0, 100)
         elseif emptyState then
             emptyState.Visible = false
+            emptyState.Size = UDim2.new(0, 0, 0, 0)
         end
     end
 end
@@ -3444,6 +3447,7 @@ function Library:_registerSearchControl(instance, searchText)
             table.insert(self._STATE.SearchTopLevel[tabName], {
                 instance = instance,
                 searchText = tostring(searchText or ""),
+                parent = instance.Parent,
             })
             self:_applySearchFilter(tabName)
         end
@@ -3453,6 +3457,7 @@ function Library:_registerSearchControl(instance, searchText)
     table.insert(sectionData.controls, {
         instance = instance,
         searchText = tostring(searchText or ""),
+        parent = instance.Parent,
     })
     self:_applySearchFilter(sectionData.tabName)
     return instance
@@ -3991,7 +3996,6 @@ function Library:_initResize()
         if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
             if resizing then
                 resizing = false
-                self:SetVersion(self.Version)
             end
         end
     end, self)
@@ -4001,6 +4005,7 @@ function Library:_initDrag()
     local UI = self._UI
     local dragging, dragStart, dragStartPos
 
+    UI.TitleBar.Active = true
     UI.TitleBar.InputBegan:Connect(function(inp)
         if inp.UserInputType == Enum.UserInputType.MouseButton1 or inp.UserInputType == Enum.UserInputType.Touch then
             dragging = true
@@ -4008,11 +4013,6 @@ function Library:_initDrag()
             dragStartPos = UI.MainContainer.Position
         end
     end)
-    
-    -- Support drag dari mana saja di TitleBar untuk Mobile
-    if self._isMobile then
-        UI.TitleBar.Active = true
-    end
 
     Fn.track(UserInputService.InputChanged, function(inp)
         if dragging and (inp.UserInputType == Enum.UserInputType.MouseMovement or inp.UserInputType == Enum.UserInputType.Touch) then
@@ -4844,6 +4844,7 @@ function Library:CreateSection(tabName, title, summary, defaultOpen, columnName)
         title = title,
         summary = summary or "",
         section = section,
+        parentColumn = parentCol,
         controls = {},
         expanded = expanded,
         searching = false,
@@ -6040,6 +6041,7 @@ function Library:AddDropdown(page, text, options, defaultIndex, callback)
             Instance.new("UICorner", optBtn).CornerRadius = UDim.new(0, 5)
 
             local optLabel = Instance.new("TextLabel", optBtn)
+            optLabel.Name = "OptLabel"
             optLabel.Size = UDim2.new(1, -36, 1, 0)
             optLabel.Position = UDim2.new(0, 12, 0, 0)
             optLabel.BackgroundTransparency = 1
@@ -6050,6 +6052,7 @@ function Library:AddDropdown(page, text, options, defaultIndex, callback)
             optLabel.TextXAlignment = Enum.TextXAlignment.Left
 
             local check = Instance.new("TextLabel", optBtn)
+            check.Name = "Check"
             check.Size = UDim2.new(0, 24, 1, 0)
             check.Position = UDim2.new(1, -28, 0, 0)
             check.BackgroundTransparency = 1
@@ -6161,15 +6164,10 @@ function Library:AddDropdown(page, text, options, defaultIndex, callback)
         searchBox.PlaceholderColor3 = self._Colors.TextDim
         for _, btn in ipairs(optionButtons) do
             btn.BackgroundColor3 = self._Colors.Card
-            for _, child in ipairs(btn:GetChildren()) do
-                if child:IsA("TextLabel") then
-                    if child.Size.X.Offset == 24 and child.Size.X.Scale == 0 then
-                        child.TextColor3 = self._Colors.Accent
-                    else
-                        child.TextColor3 = self._Colors.Text
-                    end
-                end
-            end
+            local checkLbl = btn:FindFirstChild("Check")
+            if checkLbl then checkLbl.TextColor3 = self._Colors.Accent end
+            local optLbl = btn:FindFirstChild("OptLabel")
+            if optLbl then optLbl.TextColor3 = self._Colors.Text end
         end
     end)
 
@@ -6334,6 +6332,7 @@ function Library:AddMultiDropdown(page, text, options, defaults, callback)
             Instance.new("UICorner", optBtn).CornerRadius = UDim.new(0, 5)
 
             local box = Instance.new("Frame", optBtn)
+            box.Name = "CheckBox"
             box.Size = UDim2.fromOffset(16, 16)
             box.Position = UDim2.new(0, 10, 0.5, -8)
             box.BackgroundColor3 = selected[i] and self._Colors.Accent or self._Colors.Bg
@@ -6346,6 +6345,7 @@ function Library:AddMultiDropdown(page, text, options, defaults, callback)
             boxStroke.Thickness = 1
 
             local check = Instance.new("TextLabel", box)
+            check.Name = "CheckMark"
             check.Size = UDim2.fromScale(1, 1)
             check.BackgroundTransparency = 1
             check.Text = "✓"
@@ -6356,6 +6356,7 @@ function Library:AddMultiDropdown(page, text, options, defaults, callback)
             check.ZIndex = 204
 
             local optLabel = Instance.new("TextLabel", optBtn)
+            optLabel.Name = "MultiLabel"
             optLabel.Size = UDim2.new(1, -50, 1, 0)
             optLabel.Position = UDim2.new(0, 34, 0, 0)
             optLabel.BackgroundTransparency = 1
@@ -6369,7 +6370,11 @@ function Library:AddMultiDropdown(page, text, options, defaults, callback)
             optBtn.MouseEnter:Connect(function() optBtn.BackgroundTransparency = 0.4 end)
             optBtn.MouseLeave:Connect(function() optBtn.BackgroundTransparency = 1 end)
             optBtn.MouseButton1Click:Connect(function()
-                selected[i] = not selected[i] or nil
+                if selected[i] then
+                    selected[i] = nil
+                else
+                    selected[i] = true
+                end
                 box.BackgroundColor3 = selected[i] and self._Colors.Accent or self._Colors.Bg
                 boxStroke.Color = selected[i] and self._Colors.Accent or self._Colors.Border
                 check.Visible = selected[i] and true or false
@@ -6469,6 +6474,20 @@ function Library:AddMultiDropdown(page, text, options, defaults, callback)
         popup.BackgroundColor3 = self._Colors.Bg2
         popupStroke.Color = self._Colors.Accent
         popupScroll.ScrollBarImageColor3 = self._Colors.Accent
+        for _, btn in ipairs(optionButtons) do
+            btn.BackgroundColor3 = self._Colors.Card
+            local box = btn:FindFirstChild("CheckBox")
+            if box then
+                local chk = box:FindFirstChild("CheckMark")
+                local isSel = chk and chk.Visible
+                box.BackgroundColor3 = isSel and self._Colors.Accent or self._Colors.Bg
+                local stroke = box:FindFirstChildOfClass("UIStroke")
+                if stroke then stroke.Color = isSel and self._Colors.Accent or self._Colors.Border end
+                if chk then chk.TextColor3 = Fn.accentTextColor(self._Colors.Accent) end
+            end
+            local optLbl = btn:FindFirstChild("MultiLabel")
+            if optLbl then optLbl.TextColor3 = self._Colors.Text end
+        end
     end)
 
     local searchableOptions = {}
@@ -6645,6 +6664,7 @@ function Library:AddConfigList(page, onLoad)
             nameLbl.ZIndex = 4
 
             local dateLbl = Instance.new("TextLabel", row)
+            dateLbl.Name = "Date"
             dateLbl.Size = UDim2.new(1, -150, 0, 12)
             dateLbl.Position = UDim2.new(0, 28, 0, 18)
             dateLbl.BackgroundTransparency = 1
@@ -6660,6 +6680,7 @@ function Library:AddConfigList(page, onLoad)
             dateLbl.ZIndex = 4
 
             local loadBtn = Instance.new("TextButton", row)
+            loadBtn.Name = "LoadBtn"
             loadBtn.Size = UDim2.fromOffset(48, 22)
             loadBtn.Position = UDim2.new(1, -108, 0.5, -11)
             loadBtn.BackgroundColor3 = self._Colors.Accent
@@ -7244,7 +7265,7 @@ function Library:AddTextbox(page, text, placeholder, callback)
         input.TextColor3 = self._Colors.Text
         input.PlaceholderColor3 = self._Colors.TextDim
     end)
-    self:_bindTooltip(label, text .. " — press Enter to submit")
+    self:_bindTooltip(label, text .. " — press Enter or click outside to submit")
     return self:_registerSearchControl(holder, tostring(text) .. " " .. tostring(placeholder or ""))
 end
 
@@ -7429,6 +7450,8 @@ function Library:AddColorPicker(page, text, defaultColor3, callback)
         end
     end
 
+    updateColor(false)
+
     hexBox.Focused:Connect(function()
         TweenService:Create(hexStroke, TweenInfo.new(0.15), {Color = self._Colors.Accent, Transparency = 0}):Play()
     end)
@@ -7551,6 +7574,9 @@ function Library:AddColorPicker(page, text, defaultColor3, callback)
         previewStroke.Color = self._Colors.Border
         popup.BackgroundColor3 = self._Colors.Bg2
         popupStroke.Color = self._Colors.Border
+        hexBox.BackgroundColor3 = self._Colors.Bg
+        hexBox.TextColor3 = self._Colors.Text
+        hexStroke.Color = self._Colors.Border
     end)
 
     self:_bindTooltip(label, text .. " — click preview to open")
@@ -7632,6 +7658,7 @@ function Library:Minimize()
     st:Play()
     
     st.Completed:Connect(function()
+        if STATE.Destroyed then return end
         UI.MainContainer.Visible = false
         UI.ParticleBG.Visible = false
         UI.FocusOverlay.Visible = false
@@ -7778,7 +7805,6 @@ function Library:Destroy()
     pcall(function() if self._UI.GuiBlur then self._UI.GuiBlur:Destroy() end end)
     pcall(function() if self._UI.MainGui then self._UI.MainGui:Destroy() end end)
     pcall(function() if self._UI.NotifGui then self._UI.NotifGui:Destroy() end end)
-    pcall(function() if self._UI.TooltipGui then self._UI.TooltipGui:Destroy() end end)
     pcall(function() if self._UI.TooltipGui then self._UI.TooltipGui:Destroy() end end)
     pcall(function() if self._particleBGConn then self._particleBGConn:Disconnect() end end)
     for _, layer in ipairs(self._shadowLayers or {}) do
