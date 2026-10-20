@@ -824,14 +824,7 @@ function Library.new(opts)
         self:_applyNavigationLayout()
     end, self)
 
-    -- Force initial mouse state on load
-    if self._STATE.GuiVisible then
-        if not self._isMobile then
-            UserInputService.MouseIconEnabled = false
-            if self._UI.CustomCursor then self._UI.CustomCursor.Visible = true end
-        end
-        UserInputService.MouseBehavior = Enum.MouseBehavior.Default
-    end
+    -- Mouse state will be handled purely by RenderStepped based on hover
 
     return self
 end
@@ -1079,7 +1072,7 @@ end
 
 function Library:ExportConfig()
     if self:_isDead() then return {} end
-    local out = { _version = self.Version, _theme = self.ThemeName, _controls = {} }
+    local out = { _version = self.Version, _theme = self.ThemeName, _controls = {}, _timestamp = os.time() }
     for id, entry in pairs(self._STATE.ConfigRegistry or {}) do
         local ok, val = pcall(entry.get)
         if ok and val ~= nil then
@@ -1107,6 +1100,49 @@ function Library:ImportConfig(config, silent)
     if not silent then
         self:Notify("CONFIG", "Imported " .. applied .. "/" .. total .. " settings", "success")
     end
+end
+
+function Library:GetConfigs()
+    local configs = {}
+    local prefix = "DoD_UI_"
+    local suffix = ".json"
+    
+    pcall(function()
+        if listfiles and type(listfiles) == "function" then
+            for _, file in ipairs(listfiles()) do
+                if string.sub(file, 1, #prefix) == prefix and string.sub(file, -#suffix) == suffix then
+                    local ok, content = pcall(readfile, file)
+                    local timestamp = 0
+                    if ok and content then
+                        local ok2, data = pcall(function() return game:GetService("HttpService"):JSONDecode(content) end)
+                        if ok2 and data and data._timestamp then
+                            timestamp = data._timestamp
+                        end
+                    end
+                    local name = string.sub(file, #prefix + 1, #file - #suffix)
+                    table.insert(configs, { name = name, file = file, time = timestamp })
+                end
+            end
+        else
+            local g = (getgenv and getgenv()) or _G
+            if g.__DoDConfigs then
+                for name, json in pairs(g.__DoDConfigs) do
+                    local timestamp = 0
+                    local ok, data = pcall(function() return game:GetService("HttpService"):JSONDecode(json) end)
+                    if ok and data and data._timestamp then
+                        timestamp = data._timestamp
+                    end
+                    table.insert(configs, { name = name, file = nil, time = timestamp })
+                end
+            end
+        end
+    end)
+
+    table.sort(configs, function(a, b)
+        return (a.time or 0) > (b.time or 0)
+    end)
+
+    return configs
 end
 
 function Library:SaveConfig(name, silent)
@@ -1349,19 +1385,58 @@ function Library:_initMainGui()
     UI.CustomCursor.Visible = false
 
     Fn.track(RunService.RenderStepped, function()
-        if self._STATE and self._STATE.GuiVisible then
+        if not self._STATE or not self._STATE.GuiVisible then
+            if UI.CustomCursor and UI.CustomCursor.Visible then
+                UI.CustomCursor.Visible = false
+            end
+            if not self._isMobile and not UserInputService.MouseIconEnabled then
+                UserInputService.MouseIconEnabled = true
+            end
+            return
+        end
+
+        local mouse = UserInputService:GetMouseLocation()
+        local overGui = false
+        
+        local function checkBounds(frame)
+            if frame and frame.Visible then
+                local pos, size = frame.AbsolutePosition, frame.AbsoluteSize
+                if mouse.X >= pos.X and mouse.X <= pos.X + size.X and
+                   mouse.Y >= pos.Y and mouse.Y <= pos.Y + size.Y then
+                    return true
+                end
+            end
+            return false
+        end
+
+        if checkBounds(UI.MainContainer) or checkBounds(UI.KeybindOverlay) or checkBounds(UI.MinimizeButton) then
+            overGui = true
+        end
+
+        if overGui then
             if UserInputService.MouseBehavior ~= Enum.MouseBehavior.Default then
                 UserInputService.MouseBehavior = Enum.MouseBehavior.Default
             end
-            if not self._isMobile and UserInputService.MouseIconEnabled then
-                UserInputService.MouseIconEnabled = false
+            if not self._isMobile then
+                if UserInputService.MouseIconEnabled then
+                    UserInputService.MouseIconEnabled = false
+                end
+                if UI.CustomCursor and not UI.CustomCursor.Visible then
+                    UI.CustomCursor.Visible = true
+                end
             end
-            if UI.CustomCursor and not UI.CustomCursor.Visible and not self._isMobile then
-                UI.CustomCursor.Visible = true
+        else
+            if not self._isMobile then
+                if not UserInputService.MouseIconEnabled then
+                    UserInputService.MouseIconEnabled = true
+                end
+                if UI.CustomCursor and UI.CustomCursor.Visible then
+                    UI.CustomCursor.Visible = false
+                end
             end
         end
-        if UI.CustomCursor.Visible then
-            local mouse = UserInputService:GetMouseLocation()
+        
+        if UI.CustomCursor and UI.CustomCursor.Visible then
             UI.CustomCursor.Position = UDim2.fromOffset(mouse.X, mouse.Y)
         end
     end, self)
@@ -4520,6 +4595,9 @@ function Library:CreateSection(tabName, title, summary, defaultOpen, columnName)
         indicator.Image = GetIcon(expanded and "arrow-up" or "arrow-down")
         indicator.ImageColor3 = expanded and self._Colors.Accent or self._Colors.TextDim
         separator.BackgroundColor3 = self._Colors.Border
+        if hoverBar then
+            hoverBar.BackgroundColor3 = self._Colors.Accent
+        end
     end)
 
     self:_applySearchFilter(tabName)
@@ -4733,45 +4811,88 @@ function Library:CreateDashboardBanner(tabName)
     prLayout.FillDirection = Enum.FillDirection.Horizontal
     prLayout.Padding = UDim.new(0, 6)
 
-    local function MakePill(text, minW, col)
+    local function MakePill(iconName, initialText, minW)
         local p = Instance.new("Frame", PillsRow)
         p.AutomaticSize = Enum.AutomaticSize.X
-        p.Size = UDim2.new(0, minW or 60, 0, 20)
+        p.Size = UDim2.new(0, minW or 70, 0, 22)
         p.BackgroundColor3 = self._Colors.Bg2
-        p.BackgroundTransparency = 0.2
+        p.BackgroundTransparency = 0.3
         Instance.new("UICorner", p).CornerRadius = UDim.new(1, 0)
+
         local ps = Instance.new("UIStroke", p)
         ps.Color = self._Colors.Border
-        ps.Thickness = 0.8
+        ps.Thickness = 1
+        ps.Transparency = 0.6
+
+        local gradient = Instance.new("UIGradient", p)
+        gradient.Rotation = 90
+        gradient.Color = ColorSequence.new(self._Colors.Bg2, self._Colors.Bg)
+
+        local layout = Instance.new("UIListLayout", p)
+        layout.FillDirection = Enum.FillDirection.Horizontal
+        layout.SortOrder = Enum.SortOrder.LayoutOrder
+        layout.Padding = UDim.new(0, 6)
+        layout.VerticalAlignment = Enum.VerticalAlignment.Center
+
+        local pad = Instance.new("UIPadding", p)
+        pad.PaddingLeft = UDim.new(0, 8)
+        pad.PaddingRight = UDim.new(0, 10)
+        pad.PaddingTop = UDim.new(0, 2)
+        pad.PaddingBottom = UDim.new(0, 2)
+
+        local icon = Instance.new("ImageLabel", p)
+        icon.LayoutOrder = 1
+        icon.Size = UDim2.fromOffset(12, 12)
+        icon.BackgroundTransparency = 1
+        icon.Image = GetIcon(iconName)
+        icon.ImageColor3 = self._Colors.Accent
+        icon.ScaleType = Enum.ScaleType.Fit
 
         local t = Instance.new("TextLabel", p)
+        t.LayoutOrder = 2
         t.AutomaticSize = Enum.AutomaticSize.X
         t.Size = UDim2.new(0, 0, 1, 0)
-        t.Position = UDim2.new(0, 8, 0, 0)
         t.BackgroundTransparency = 1
         t.Font = Enum.Font.GothamBold
-        t.TextSize = 8.5
-        t.TextColor3 = col or self._Colors.TextDim
-        t.Text = text
-        local pad = Instance.new("UIPadding", p)
-        pad.PaddingRight = UDim.new(0, 8)
-        return { Frame = p, Stroke = ps, Label = t }
+        t.TextSize = 9
+        t.TextColor3 = self._Colors.Text
+        t.Text = initialText
+        t.TextXAlignment = Enum.TextXAlignment.Left
+
+        return { Frame = p, Stroke = ps, Label = t, Icon = icon, Gradient = gradient }
     end
 
-    local pillId = MakePill("ID " .. tostring(game.PlaceId), 90, self._Colors.TextDim)
-    local pillPl = MakePill("Players: " .. tostring(#Players:GetPlayers()) .. "/" .. tostring(Players.MaxPlayers), 70, self._Colors.TextDim)
-    local pillPing = MakePill("Ping 35 ms", 60, self._Colors.Accent)
+    local pillId = MakePill("id-card", "ID " .. tostring(game.PlaceId), 90)
+    local pillPl = MakePill("users", tostring(#Players:GetPlayers()) .. "/" .. tostring(Players.MaxPlayers), 60)
+    local pillPing = MakePill("wifi", "35 ms", 55)
+    local pillFps = MakePill("zap", "60 FPS", 65)
 
     task.spawn(function()
+        local frames = 0
+        local timeElapsed = 0
+        local fpsConn = RunService.RenderStepped:Connect(function(dt)
+            frames = frames + 1
+            timeElapsed = timeElapsed + dt
+            if timeElapsed >= 0.5 then
+                local fps = math.floor(frames / timeElapsed + 0.5)
+                pillFps.Label.Text = tostring(fps) .. " FPS"
+                frames = 0
+                timeElapsed = 0
+            end
+        end)
+
         while task.wait(0.25) do
-            if not PlayerCard or not PlayerCard.Parent then break end
+            if not PlayerCard or not PlayerCard.Parent then
+                fpsConn:Disconnect()
+                break
+            end
             ClockLabel.Text = os.date("%H:%M:%S")
             DateLabel.Text = os.date("%d / %m / %Y")
             GreetLabel.Text = GetGreeting()
-            pillPl.Label.Text = "Players: " .. tostring(#Players:GetPlayers()) .. "/" .. tostring(Players.MaxPlayers)
+            pillPl.Label.Text = tostring(#Players:GetPlayers()) .. "/" .. tostring(Players.MaxPlayers)
             pcall(function()
                 local p = math.floor(Stats.Network.ServerStatsItem["Data Ping"]:GetValue())
-                pillPing.Label.Text = "Ping " .. tostring(p) .. " ms"
+                pillPing.Label.Text = tostring(p) .. " ms"
             end)
         end
     end)
@@ -4790,13 +4911,15 @@ function Library:CreateDashboardBanner(tabName)
         gtStroke.Color = self._Colors.Border
         GameTitleLbl.TextColor3 = self._Colors.Text
         GameSubLbl.TextColor3 = self._Colors.TextDim
-        for _, pill in ipairs({pillId, pillPl, pillPing}) do
+        for _, pill in ipairs({pillId, pillPl, pillPing, pillFps}) do
             pill.Frame.BackgroundColor3 = self._Colors.Bg2
             pill.Stroke.Color = self._Colors.Border
-            if pill == pillPing then
-                pill.Label.TextColor3 = self._Colors.Accent
-            else
-                pill.Label.TextColor3 = self._Colors.TextDim
+            pill.Label.TextColor3 = self._Colors.Text
+            if pill.Icon then
+                pill.Icon.ImageColor3 = self._Colors.Accent
+            end
+            if pill.Gradient then
+                pill.Gradient.Color = ColorSequence.new(self._Colors.Bg2, self._Colors.Bg)
             end
         end
     end)
@@ -4838,9 +4961,10 @@ function Library:CreateThemeCustomizer(tabName)
     self:AddDropdown(section, "Weather effect", D.WeatherTypes,
         table.find(D.WeatherTypes, self._STATE.WeatherType) or 1,
         function(_, weatherType)
-            self._STATE.WeatherType = weatherType
             if self._STATE.WeatherEnabled then
                 self:SetWeather(true, weatherType, self._STATE.WeatherIntensity)
+            else
+                self._STATE.WeatherType = weatherType
             end
         end
     )
@@ -5950,6 +6074,235 @@ function Library:AddMultiDropdown(page, text, options, defaults, callback)
     return self:_registerSearchControl(holder, text .. " " .. table.concat(searchableOptions, " "))
 end
 
+function Library:AddConfigList(page, onLoad)
+    if self:_isDead() then return end
+    local holder = Instance.new("Frame", page)
+    holder.Name = "ConfigList"
+    holder.Size = UDim2.new(1, 0, 0, 220)
+    holder.BackgroundColor3 = self._Colors.Card
+    holder.BackgroundTransparency = 0.3
+    holder.BorderSizePixel = 0
+    Instance.new("UICorner", holder).CornerRadius = UDim.new(0, 8)
+
+    local topBar = Instance.new("Frame", holder)
+    topBar.Size = UDim2.new(1, 0, 0, 30)
+    topBar.BackgroundTransparency = 1
+    topBar.ZIndex = 2
+
+    local title = Instance.new("TextLabel", topBar)
+    title.Size = UDim2.new(1, -40, 1, 0)
+    title.Position = UDim2.new(0, 12, 0, 0)
+    title.BackgroundTransparency = 1
+    title.Text = "SAVED CONFIGS"
+    title.TextColor3 = self._Colors.Text
+    title.Font = Enum.Font.GothamBold
+    title.TextSize = 11
+    title.TextXAlignment = Enum.TextXAlignment.Left
+
+    local refreshBtn = Instance.new("TextButton", topBar)
+    refreshBtn.Size = UDim2.fromOffset(24, 24)
+    refreshBtn.Position = UDim2.new(1, -32, 0.5, -12)
+    refreshBtn.BackgroundTransparency = 1
+    refreshBtn.Text = ""
+    refreshBtn.AutoButtonColor = false
+
+    local refreshIcon = Instance.new("ImageLabel", refreshBtn)
+    refreshIcon.Size = UDim2.fromScale(1, 1)
+    refreshIcon.BackgroundTransparency = 1
+    refreshIcon.Image = GetIcon("refresh-cw")
+    refreshIcon.ImageColor3 = self._Colors.TextDim
+
+    local scroll = Instance.new("ScrollingFrame", holder)
+    scroll.Size = UDim2.new(1, -16, 1, -38)
+    scroll.Position = UDim2.new(0, 8, 0, 34)
+    scroll.BackgroundTransparency = 1
+    scroll.BorderSizePixel = 0
+    scroll.ScrollBarThickness = 2
+    scroll.ScrollBarImageColor3 = self._Colors.Accent
+    scroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
+    scroll.CanvasSize = UDim2.new(0, 0, 0, 0)
+    scroll.ZIndex = 2
+
+    local list = Instance.new("UIListLayout", scroll)
+    list.SortOrder = Enum.SortOrder.LayoutOrder
+    list.Padding = UDim.new(0, 4)
+
+    local emptyLabel = Instance.new("TextLabel", scroll)
+    emptyLabel.Size = UDim2.new(1, 0, 0, 30)
+    emptyLabel.BackgroundTransparency = 1
+    emptyLabel.Text = "No configs found."
+    emptyLabel.TextColor3 = self._Colors.TextDim
+    emptyLabel.Font = Enum.Font.GothamMedium
+    emptyLabel.TextSize = 10
+    emptyLabel.ZIndex = 2
+
+    local function refreshList()
+        for _, child in ipairs(scroll:GetChildren()) do
+            if child:IsA("TextButton") then child:Destroy() end
+        end
+        
+        local configs = self:GetConfigs()
+        emptyLabel.Visible = (#configs == 0)
+        
+        for i, cfg in ipairs(configs) do
+            local row = Instance.new("TextButton", scroll)
+            row.Size = UDim2.new(1, 0, 0, 36)
+            row.BackgroundColor3 = self._Colors.Bg2
+            row.BackgroundTransparency = 1
+            row.Text = ""
+            row.AutoButtonColor = false
+            row.BorderSizePixel = 0
+            row.ZIndex = 3
+            Instance.new("UICorner", row).CornerRadius = UDim.new(0, 6)
+
+            local hoverStroke = Instance.new("UIStroke", row)
+            hoverStroke.Color = self._Colors.Border
+            hoverStroke.Transparency = 1
+            hoverStroke.Thickness = 1
+
+            local icon = Instance.new("ImageLabel", row)
+            icon.Size = UDim2.fromOffset(14, 14)
+            icon.Position = UDim2.new(0, 8, 0.5, -7)
+            icon.BackgroundTransparency = 1
+            icon.Image = GetIcon("file-clock")
+            icon.ImageColor3 = self._Colors.Accent
+            icon.ZIndex = 4
+
+            local nameLbl = Instance.new("TextLabel", row)
+            nameLbl.Size = UDim2.new(1, -150, 0, 14)
+            nameLbl.Position = UDim2.new(0, 28, 0, 4)
+            nameLbl.BackgroundTransparency = 1
+            nameLbl.Text = cfg.name
+            nameLbl.TextColor3 = self._Colors.Text
+            nameLbl.Font = Enum.Font.GothamBold
+            nameLbl.TextSize = 11
+            nameLbl.TextXAlignment = Enum.TextXAlignment.Left
+            nameLbl.TextTruncate = Enum.TextTruncate.AtEnd
+            nameLbl.ZIndex = 4
+
+            local dateLbl = Instance.new("TextLabel", row)
+            dateLbl.Size = UDim2.new(1, -150, 0, 12)
+            dateLbl.Position = UDim2.new(0, 28, 0, 18)
+            dateLbl.BackgroundTransparency = 1
+            if cfg.time and cfg.time > 0 then
+                dateLbl.Text = os.date("%d %b %Y, %H:%M", cfg.time)
+            else
+                dateLbl.Text = "Unknown Date"
+            end
+            dateLbl.TextColor3 = self._Colors.TextDim
+            dateLbl.Font = Enum.Font.GothamMedium
+            dateLbl.TextSize = 9
+            dateLbl.TextXAlignment = Enum.TextXAlignment.Left
+            dateLbl.ZIndex = 4
+
+            local loadBtn = Instance.new("TextButton", row)
+            loadBtn.Size = UDim2.fromOffset(48, 22)
+            loadBtn.Position = UDim2.new(1, -108, 0.5, -11)
+            loadBtn.BackgroundColor3 = self._Colors.Accent
+            loadBtn.BackgroundTransparency = 0.8
+            loadBtn.Text = "Load"
+            loadBtn.TextColor3 = self._Colors.Accent
+            loadBtn.Font = Enum.Font.GothamBold
+            loadBtn.TextSize = 10
+            loadBtn.AutoButtonColor = false
+            loadBtn.ZIndex = 4
+            Instance.new("UICorner", loadBtn).CornerRadius = UDim.new(0, 4)
+
+            local delBtn = Instance.new("TextButton", row)
+            delBtn.Size = UDim2.fromOffset(22, 22)
+            delBtn.Position = UDim2.new(1, -54, 0.5, -11)
+            delBtn.BackgroundColor3 = self._Colors.Red
+            delBtn.BackgroundTransparency = 0.8
+            delBtn.Text = ""
+            delBtn.AutoButtonColor = false
+            delBtn.ZIndex = 4
+            Instance.new("UICorner", delBtn).CornerRadius = UDim.new(0, 4)
+            
+            local delIcon = Instance.new("ImageLabel", delBtn)
+            delIcon.Size = UDim2.fromOffset(12, 12)
+            delIcon.Position = UDim2.new(0.5, -6, 0.5, -6)
+            delIcon.BackgroundTransparency = 1
+            delIcon.Image = GetIcon("trash-2")
+            delIcon.ImageColor3 = self._Colors.Red
+            delIcon.ZIndex = 5
+
+            row.MouseEnter:Connect(function()
+                TweenService:Create(row, TweenInfo.new(0.15), {BackgroundTransparency = 0.85}):Play()
+                TweenService:Create(hoverStroke, TweenInfo.new(0.15), {Transparency = 0.7}):Play()
+            end)
+            row.MouseLeave:Connect(function()
+                TweenService:Create(row, TweenInfo.new(0.15), {BackgroundTransparency = 1}):Play()
+                TweenService:Create(hoverStroke, TweenInfo.new(0.15), {Transparency = 1}):Play()
+            end)
+
+            loadBtn.MouseEnter:Connect(function() TweenService:Create(loadBtn, TweenInfo.new(0.15), {BackgroundTransparency = 0.5}):Play() end)
+            loadBtn.MouseLeave:Connect(function() TweenService:Create(loadBtn, TweenInfo.new(0.15), {BackgroundTransparency = 0.8}):Play() end)
+            loadBtn.MouseButton1Click:Connect(function()
+                self:PlaySound("Click")
+                self:LoadConfig(cfg.name)
+                if onLoad then onLoad(cfg.name) end
+            end)
+
+            delBtn.MouseEnter:Connect(function() TweenService:Create(delBtn, TweenInfo.new(0.15), {BackgroundTransparency = 0.5}):Play() end)
+            delBtn.MouseLeave:Connect(function() TweenService:Create(delBtn, TweenInfo.new(0.15), {BackgroundTransparency = 0.8}):Play() end)
+            delBtn.MouseButton1Click:Connect(function()
+                self:PlaySound("Click")
+                pcall(function()
+                    if delfile and cfg.file then
+                        delfile(cfg.file)
+                    else
+                        local g = (getgenv and getgenv()) or _G
+                        if g.__DoDConfigs then g.__DoDConfigs[cfg.name] = nil end
+                    end
+                end)
+                refreshList()
+            end)
+        end
+    end
+
+    refreshBtn.MouseEnter:Connect(function()
+        TweenService:Create(refreshIcon, TweenInfo.new(0.2), {Rotation = 180}):Play()
+        refreshIcon.ImageColor3 = self._Colors.Text
+    end)
+    refreshBtn.MouseLeave:Connect(function()
+        TweenService:Create(refreshIcon, TweenInfo.new(0.2), {Rotation = 0}):Play()
+        refreshIcon.ImageColor3 = self._Colors.TextDim
+    end)
+    refreshBtn.MouseButton1Click:Connect(function()
+        self:PlaySound("Click")
+        refreshList()
+    end)
+
+    refreshList()
+
+    self:_registerThemeRefresher(function()
+        holder.BackgroundColor3 = self._Colors.Card
+        title.TextColor3 = self._Colors.Text
+        emptyLabel.TextColor3 = self._Colors.TextDim
+        scroll.ScrollBarImageColor3 = self._Colors.Accent
+        refreshIcon.ImageColor3 = self._Colors.TextDim
+        hoverStroke.Color = self._Colors.Border
+        for _, child in ipairs(scroll:GetChildren()) do
+            if child:IsA("TextButton") then
+                child.BackgroundColor3 = self._Colors.Bg2
+                local nameLbl = child:FindFirstChildOfClass("TextLabel")
+                if nameLbl then nameLbl.TextColor3 = self._Colors.Text end
+                local dateLbl = child:FindFirstChild("Date")
+                if dateLbl then dateLbl.TextColor3 = self._Colors.TextDim end
+                local icon = child:FindFirstChildOfClass("ImageLabel")
+                if icon then icon.ImageColor3 = self._Colors.Accent end
+                local loadB = child:FindFirstChild("LoadBtn")
+                if loadB then
+                    loadB.BackgroundColor3 = self._Colors.Accent
+                    loadB.TextColor3 = self._Colors.Accent
+                end
+            end
+        end
+    end)
+
+    return holder
+end
+
 function Library:AddKeybind(page, text, default, callback)
     if self:_isDead() then return end
     local function _normSpec(spec)
@@ -6207,28 +6560,43 @@ function Library:AddButton(page, text, callback)
     end
     callback = callback or function() end
     local holder = Instance.new("Frame", page)
-    holder.Size = UDim2.new(1, 0, 0, 36)
+    holder.Size = UDim2.new(1, 0, 0, 42)
     holder.BackgroundColor3 = self._Colors.Card
     holder.BackgroundTransparency = 0.3
     holder.BorderSizePixel = 0
     Instance.new("UICorner", holder).CornerRadius = UDim.new(0, 8)
 
     local btn = Instance.new("TextButton", holder)
-    btn.Size = UDim2.new(1, -20, 0, 28)
-    btn.Position = UDim2.new(0, 10, 0, 4)
+    btn.Size = UDim2.new(1, -24, 0, 32)
+    btn.Position = UDim2.new(0, 12, 0, 5)
     btn.Text = text
     btn.BackgroundColor3 = self._Colors.Accent
     btn.BackgroundTransparency = 0.15
     btn.TextColor3 = Fn.accentTextColor(self._Colors.Accent)
     btn.Font = Enum.Font.GothamBold
-    btn.TextSize = 11
+    btn.TextSize = 12
     btn.BorderSizePixel = 0
     btn.AutoButtonColor = false
     Fn.bindPressAnimation(btn)
-    Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 14)
+    Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 8)
 
-    btn.MouseEnter:Connect(function() btn.BackgroundTransparency = 0 end)
-    btn.MouseLeave:Connect(function() btn.BackgroundTransparency = 0.15 end)
+    local btnGrad = Instance.new("UIGradient", btn)
+    btnGrad.Color = ColorSequence.new(self._Colors.Accent, self._Colors.Accent2 or self._Colors.Accent)
+    btnGrad.Rotation = 90
+
+    local btnStroke = Instance.new("UIStroke", btn)
+    btnStroke.Color = self._Colors.Accent
+    btnStroke.Thickness = 1
+    btnStroke.Transparency = 0.5
+
+    btn.MouseEnter:Connect(function()
+        TweenService:Create(btn, TweenInfo.new(0.15), {BackgroundTransparency = 0}):Play()
+        TweenService:Create(btnStroke, TweenInfo.new(0.15), {Transparency = 0.1}):Play()
+    end)
+    btn.MouseLeave:Connect(function()
+        TweenService:Create(btn, TweenInfo.new(0.15), {BackgroundTransparency = 0.15}):Play()
+        TweenService:Create(btnStroke, TweenInfo.new(0.15), {Transparency = 0.5}):Play()
+    end)
     btn.MouseButton1Click:Connect(function()
         self:PlaySound("Click")
         callback()
@@ -6238,6 +6606,8 @@ function Library:AddButton(page, text, callback)
         holder.BackgroundColor3 = self._Colors.Card
         btn.BackgroundColor3 = self._Colors.Accent
         btn.TextColor3 = Fn.accentTextColor(self._Colors.Accent)
+        btnStroke.Color = self._Colors.Accent
+        btnGrad.Color = ColorSequence.new(self._Colors.Accent, self._Colors.Accent2 or self._Colors.Accent)
     end)
     self:_bindTooltip(holder, text .. " (click)")
     return self:_registerSearchControl(holder, text)
