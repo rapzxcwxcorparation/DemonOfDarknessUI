@@ -831,6 +831,14 @@ function Library.new(opts)
 
     -- Mouse state will be handled purely by RenderStepped based on hover
 
+    local g = (getgenv and getgenv()) or _G
+    if g.DoD_LastConfig then
+        task.spawn(function()
+            task.wait(0.1)
+            self:LoadConfig(g.DoD_LastConfig, true)
+        end)
+    end
+
     return self
 end
 
@@ -1195,6 +1203,10 @@ end
 function Library:SaveConfig(name, silent)
     if self:_isDead() then return end
     if type(name) ~= "string" or name == "" then return end
+    
+    local g = (getgenv and getgenv()) or _G
+    g.DoD_LastConfig = name
+
     local data = self:ExportConfig()
     local ok, json = pcall(function()
         return game:GetService("HttpService"):JSONEncode(data)
@@ -2242,23 +2254,31 @@ end
 
 function Library:_bindTooltip(element, text)
     if not text or text == "" then return end
+    local showThread
     element.MouseEnter:Connect(function()
-        local frame = self._UI.TooltipFrame
-        if not frame then return end
-        local lbl = self._UI.TooltipLabel
-        lbl.Text = tostring(text)
-        local charCount = utf8.len(tostring(text)) or #tostring(text)
-        local w = math.clamp(charCount * 7 + 32, 100, 320)
-        frame.Size = UDim2.fromOffset(w, 28)
-        frame.Visible = true
-        frame.BackgroundTransparency = 1
-        self._UI.TooltipStroke.Transparency = 1
-        TweenService:Create(frame, TweenInfo.new(0.15), {BackgroundTransparency = 0.05}):Play()
-        TweenService:Create(self._UI.TooltipStroke, TweenInfo.new(0.15), {Transparency = 0.3}):Play()
-        local mouse = UserInputService:GetMouseLocation()
-        self:_updateTooltipPosition(mouse)
+        if showThread then task.cancel(showThread) end
+        showThread = task.delay(0.3, function()
+            local frame = self._UI.TooltipFrame
+            if not frame then return end
+            local lbl = self._UI.TooltipLabel
+            lbl.Text = tostring(text)
+            local charCount = utf8.len(tostring(text)) or #tostring(text)
+            local w = math.clamp(charCount * 7 + 32, 100, 320)
+            frame.Size = UDim2.fromOffset(w, 28)
+            frame.Visible = true
+            frame.BackgroundTransparency = 1
+            self._UI.TooltipStroke.Transparency = 1
+            TweenService:Create(frame, TweenInfo.new(0.15), {BackgroundTransparency = 0.05}):Play()
+            TweenService:Create(self._UI.TooltipStroke, TweenInfo.new(0.15), {Transparency = 0.3}):Play()
+            local mouse = UserInputService:GetMouseLocation()
+            self:_updateTooltipPosition(mouse)
+        end)
     end)
     element.MouseLeave:Connect(function()
+        if showThread then
+            task.cancel(showThread)
+            showThread = nil
+        end
         local frame = self._UI.TooltipFrame
         if not frame then return end
         TweenService:Create(frame, TweenInfo.new(0.1), {BackgroundTransparency = 1}):Play()
@@ -7227,11 +7247,32 @@ function Library:AddColorPicker(page, text, defaultColor3, callback)
     local currentPreview = Instance.new("Frame", popup)
     currentPreview.Name = "CurrentColor"
     currentPreview.Position = UDim2.new(0, 10, 1, -28)
-    currentPreview.Size = UDim2.new(1, -20, 0, 18)
+    currentPreview.Size = UDim2.new(0.55, -12, 0, 18)
     currentPreview.BackgroundColor3 = currentColor
     currentPreview.BorderSizePixel = 0
     currentPreview.ZIndex = 211
     Instance.new("UICorner", currentPreview).CornerRadius = UDim.new(0, 5)
+
+    local hexBox = Instance.new("TextBox", popup)
+    hexBox.Name = "HexInput"
+    hexBox.Position = UDim2.new(0.55, 2, 1, -28)
+    hexBox.Size = UDim2.new(0.45, -12, 0, 18)
+    hexBox.BackgroundColor3 = self._Colors.Bg
+    hexBox.TextColor3 = self._Colors.Text
+    hexBox.Font = Enum.Font.RobotoMono
+    hexBox.TextSize = 10
+    hexBox.PlaceholderText = "#FFFFFF"
+    hexBox.Text = "#FFFFFF"
+    hexBox.ClearTextOnFocus = false
+    hexBox.TextXAlignment = Enum.TextXAlignment.Center
+    hexBox.BorderSizePixel = 0
+    hexBox.ZIndex = 211
+    Instance.new("UICorner", hexBox).CornerRadius = UDim.new(0, 4)
+
+    local hexStroke = Instance.new("UIStroke", hexBox)
+    hexStroke.Color = self._Colors.Border
+    hexStroke.Thickness = 1
+    hexStroke.ZIndex = 211
 
     local dragMode
 
@@ -7241,11 +7282,40 @@ function Library:AddColorPicker(page, text, defaultColor3, callback)
         selector.Position = UDim2.new(saturation, 0, 1 - value, 0)
         preview.BackgroundColor3 = currentColor
         currentPreview.BackgroundColor3 = currentColor
+        
+        if hexBox then
+            hexBox.Text = string.format("#%02X%02X%02X", 
+                math.floor(currentColor.R * 255 + 0.5), 
+                math.floor(currentColor.G * 255 + 0.5), 
+                math.floor(currentColor.B * 255 + 0.5)
+            )
+        end
+
         if notify then
             callback(currentColor)
             self:_triggerAutoSave()
         end
     end
+
+    hexBox.Focused:Connect(function()
+        TweenService:Create(hexStroke, TweenInfo.new(0.15), {Color = self._Colors.Accent, Transparency = 0}):Play()
+    end)
+    
+    hexBox.FocusLost:Connect(function()
+        TweenService:Create(hexStroke, TweenInfo.new(0.15), {Color = self._Colors.Border, Transparency = 0.5}):Play()
+        local hex = hexBox.Text:gsub("#", "")
+        if #hex == 6 then
+            local r = tonumber("0x" .. hex:sub(1, 2))
+            local g = tonumber("0x" .. hex:sub(3, 4))
+            local b = tonumber("0x" .. hex:sub(5, 6))
+            if r and g and b then
+                hue, saturation, value = Color3.new(r/255, g/255, b/255):ToHSV()
+                updateColor(true)
+                return
+            end
+        end
+        updateColor(false)
+    end)
 
     self:_registerConfigState(self:_getConfigId("colorpicker", text),
         function() return { currentColor.R, currentColor.G, currentColor.B } end,
