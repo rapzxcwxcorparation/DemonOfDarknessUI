@@ -756,6 +756,9 @@ function Library.new(opts)
         SnowConnection      = nil,
         WeatherClock        = 0,
         AccordionExpanded   = {},
+        ConfigRegistry      = {},
+        ConfigCounter       = {},
+        ConfigAutoSave      = nil,
     }
 
     self:_initNotifications()
@@ -976,6 +979,36 @@ function Library:_registerThemeRefresher(fn)
     table.insert(self._STATE.ThemeRefreshers, fn)
 end
 
+function Library:_getConfigId(controlType, label)
+    if type(label) ~= "string" then label = tostring(label or "") end
+    local key = tostring(controlType) .. ":" .. label
+    local counter = self._STATE.ConfigCounter
+    counter[key] = (counter[key] or 0) + 1
+    local n = counter[key]
+    if n > 1 then return key .. "#" .. n end
+    return key
+end
+
+function Library:_registerConfigState(id, getter, setter)
+    if self:_isDead() then return id end
+    self._STATE.ConfigRegistry[id] = { get = getter, set = setter }
+    return id
+end
+
+function Library:_triggerAutoSave()
+    if self:_isDead() then return end
+    local auto = self._STATE.ConfigAutoSave
+    if not auto or not auto.name then return end
+    if self._autoSavePending then return end
+    self._autoSavePending = true
+    task.delay(0.6, function()
+        self._autoSavePending = false
+        if not self:_isDead() then
+            self:SaveConfig(auto.name, true)
+        end
+    end)
+end
+
 -- =========================================================
 -- NOTIFICATIONS
 -- =========================================================
@@ -998,6 +1031,110 @@ function Library:_updateNotifPositions()
             {Position = UDim2.new(1, -275, 0, targetY)}
         ):Play()
     end
+end
+
+function Library:ExportConfig()
+    if self:_isDead() then return {} end
+    local out = { _version = self.Version, _theme = self.ThemeName, _controls = {} }
+    for id, entry in pairs(self._STATE.ConfigRegistry or {}) do
+        local ok, val = pcall(entry.get)
+        if ok and val ~= nil then
+            out._controls[id] = val
+        end
+    end
+    return out
+end
+
+function Library:ImportConfig(config, silent)
+    if self:_isDead() then return end
+    if type(config) ~= "table" then return end
+    if config._theme and D.Themes[config._theme] then
+        self:SetTheme(config._theme, true)
+    end
+    local applied, total = 0, 0
+    for id, val in pairs(config._controls or {}) do
+        total = total + 1
+        local entry = self._STATE.ConfigRegistry and self._STATE.ConfigRegistry[id]
+        if entry and entry.set then
+            local ok = pcall(entry.set, val, true)
+            if ok then applied = applied + 1 end
+        end
+    end
+    if not silent then
+        self:Notify("CONFIG", "Imported " .. applied .. "/" .. total .. " settings", "success")
+    end
+end
+
+function Library:SaveConfig(name, silent)
+    if self:_isDead() then return end
+    if type(name) ~= "string" or name == "" then return end
+    local data = self:ExportConfig()
+    local ok, json = pcall(function()
+        return game:GetService("HttpService"):JSONEncode(data)
+    end)
+    if not ok or type(json) ~= "string" then
+        if not silent then self:Notify("CONFIG", "JSON encode failed", "error") end
+        return
+    end
+    local path = "DoD_UI_" .. name .. ".json"
+    local saved = false
+    pcall(function()
+        if writefile and type(writefile) == "function" then
+            writefile(path, json)
+            saved = true
+        end
+    end)
+    if not saved then
+        local g = (getgenv and getgenv()) or _G
+        g.__DoDConfigs = g.__DoDConfigs or {}
+        g.__DoDConfigs[name] = json
+        saved = true
+    end
+    if saved and not silent then
+        self:Notify("CONFIG", "Saved: " .. name, "success")
+    end
+end
+
+function Library:LoadConfig(name, silent)
+    if self:_isDead() then return end
+    if type(name) ~= "string" or name == "" then return end
+    local path = "DoD_UI_" .. name .. ".json"
+    local json = nil
+    pcall(function()
+        if isfile and type(isfile) == "function" and readfile and type(readfile) == "function" then
+            if isfile(path) then json = readfile(path) end
+        end
+    end)
+    if not json then
+        local g = (getgenv and getgenv()) or _G
+        if g.__DoDConfigs and g.__DoDConfigs[name] then
+            json = g.__DoDConfigs[name]
+        end
+    end
+    if type(json) ~= "string" then
+        if not silent then self:Notify("CONFIG", "Not found: " .. name, "warning") end
+        return
+    end
+    local ok, data = pcall(function()
+        return game:GetService("HttpService"):JSONDecode(json)
+    end)
+    if not ok or type(data) ~= "table" then
+        if not silent then self:Notify("CONFIG", "Decode failed", "error") end
+        return
+    end
+    self:ImportConfig(data, silent)
+end
+
+function Library:EnableAutoSave(name)
+    if self:_isDead() then return end
+    if type(name) ~= "string" or name == "" then return end
+    self._STATE.ConfigAutoSave = { name = name }
+    self:SaveConfig(name, true)
+end
+
+function Library:DisableAutoSave()
+    if self:_isDead() then return end
+    self._STATE.ConfigAutoSave = nil
 end
 
 function Library:Notify(title, text, notifyType)
@@ -2197,10 +2334,10 @@ function Library:_initSidebar()
 
     local miniProfile = Instance.new("Frame", UI.CategoryBar)
     miniProfile.Name = "SideProfileMini"
-    miniProfile.Size = UDim2.new(1, -16, 0, 32)
-    miniProfile.Position = UDim2.new(0, 8, 1, -42)
+    miniProfile.Size = UDim2.new(1, -16, 0, 36)
+    miniProfile.Position = UDim2.new(0, 8, 1, -44)
     miniProfile.BackgroundColor3 = self._Colors.Card
-    miniProfile.BackgroundTransparency = 0.4
+    miniProfile.BackgroundTransparency = 0.5
     miniProfile.BorderSizePixel = 0
     miniProfile.Visible = false
     miniProfile.ZIndex = 10
@@ -2209,43 +2346,100 @@ function Library:_initSidebar()
     local spStroke = Instance.new("UIStroke", miniProfile)
     spStroke.Color = self._Colors.Border
     spStroke.Thickness = 1
-    spStroke.Transparency = 0.4
+    spStroke.Transparency = 0.5
 
     local spAvatar = Instance.new("ImageLabel", miniProfile)
-    spAvatar.Size = UDim2.fromOffset(20, 20)
-    spAvatar.Position = UDim2.new(0, 6, 0.5, -10)
+    spAvatar.Name = "Avatar"
+    spAvatar.Size = UDim2.fromOffset(22, 22)
+    spAvatar.Position = UDim2.new(0, 8, 0.5, -11)
     spAvatar.BackgroundColor3 = self._Colors.Bg2
     spAvatar.BorderSizePixel = 0
     spAvatar.ZIndex = 11
+    spAvatar.Image = "rbxthumb://type=AvatarHeadShot&id=" .. tostring(LocalPlayer.UserId) .. "&w=150&h=150&filters=circular"
     Instance.new("UICorner", spAvatar).CornerRadius = UDim.new(1, 0)
-    task.spawn(function()
-        local ok, content = pcall(function()
-            return Players:GetUserThumbnailAsync(LocalPlayer.UserId, Enum.ThumbnailType.HeadShot, Enum.ThumbnailSize.Size100x100)
-        end)
-        if ok and content and spAvatar and spAvatar.Parent then
-            spAvatar.Image = content
-        end
-    end)
 
-    local spName = Instance.new("TextLabel", miniProfile)
-    spName.Size = UDim2.new(1, -38, 1, 0)
-    spName.Position = UDim2.new(0, 32, 0, 0)
+    local spTextRow = Instance.new("Frame", miniProfile)
+    spTextRow.Name = "TextRow"
+    spTextRow.Size = UDim2.new(1, -44, 1, 0)
+    spTextRow.Position = UDim2.new(0, 36, 0, 0)
+    spTextRow.BackgroundTransparency = 1
+    spTextRow.ClipsDescendants = true
+    spTextRow.ZIndex = 11
+
+    local spRowLayout = Instance.new("UIListLayout", spTextRow)
+    spRowLayout.FillDirection = Enum.FillDirection.Horizontal
+    spRowLayout.SortOrder = Enum.SortOrder.LayoutOrder
+    spRowLayout.VerticalAlignment = Enum.VerticalAlignment.Center
+    spRowLayout.Padding = UDim.new(0, 6)
+
+    local spName = Instance.new("TextLabel", spTextRow)
+    spName.Name = "Name"
+    spName.LayoutOrder = 1
+    spName.AutomaticSize = Enum.AutomaticSize.X
+    spName.Size = UDim2.new(0, 0, 1, 0)
     spName.BackgroundTransparency = 1
-    spName.Text = "@" .. LocalPlayer.Name
-    spName.TextColor3 = self._Colors.TextDim
-    spName.Font = Enum.Font.GothamMedium
+    spName.Text = LocalPlayer.Name
+    spName.TextColor3 = self._Colors.Text
+    spName.Font = Enum.Font.GothamBold
     spName.TextSize = 11
     spName.TextXAlignment = Enum.TextXAlignment.Left
-    spName.TextTruncate = Enum.TextTruncate.AtEnd
     spName.ZIndex = 11
 
+    local spDash = Instance.new("TextLabel", spTextRow)
+    spDash.Name = "Dash"
+    spDash.LayoutOrder = 2
+    spDash.AutomaticSize = Enum.AutomaticSize.X
+    spDash.Size = UDim2.new(0, 0, 1, 0)
+    spDash.BackgroundTransparency = 1
+    spDash.Text = "-"
+    spDash.TextColor3 = self._Colors.TextDim
+    spDash.Font = Enum.Font.GothamMedium
+    spDash.TextSize = 11
+    spDash.TextXAlignment = Enum.TextXAlignment.Center
+    spDash.ZIndex = 11
+
+    local spDisplay = Instance.new("TextLabel", spTextRow)
+    spDisplay.Name = "Display"
+    spDisplay.LayoutOrder = 3
+    spDisplay.AutomaticSize = Enum.AutomaticSize.X
+    spDisplay.Size = UDim2.new(0, 0, 1, 0)
+    spDisplay.BackgroundTransparency = 1
+    spDisplay.TextColor3 = self._Colors.TextDim
+    spDisplay.Font = Enum.Font.GothamMedium
+    spDisplay.TextSize = 11
+    spDisplay.TextXAlignment = Enum.TextXAlignment.Left
+    spDisplay.ZIndex = 11
+
+    local function _syncProfileText()
+        local user = LocalPlayer.Name
+        local display = LocalPlayer.DisplayName or ""
+        spName.Text = user
+        if display ~= "" and display ~= user then
+            spDisplay.Text = display
+            spDisplay.Visible = true
+            spDash.Visible = true
+        else
+            spDisplay.Visible = false
+            spDash.Visible = false
+        end
+    end
+    _syncProfileText()
+
     UI.SideProfileMini = miniProfile
+    UI.SideProfileAvatar = spAvatar
+    UI.SideProfileName = spName
+    UI.SideProfileDisplay = spDisplay
+    UI.SideProfileDash = spDash
+    UI.SideProfileStroke = spStroke
+    UI._syncProfileText = _syncProfileText
 
     self:_registerThemeRefresher(function()
         if not miniProfile.Parent then return end
         miniProfile.BackgroundColor3 = self._Colors.Card
         spStroke.Color = self._Colors.Border
-        spName.TextColor3 = self._Colors.TextDim
+        spName.TextColor3 = self._Colors.Text
+        spDash.TextColor3 = self._Colors.TextDim
+        spDisplay.TextColor3 = self._Colors.TextDim
         spAvatar.BackgroundColor3 = self._Colors.Bg2
         if accordionScroll and accordionScroll.Parent then
             accordionScroll.ScrollBarImageColor3 = self._Colors.Accent
@@ -3879,6 +4073,15 @@ function Library:CreateSection(tabName, title, summary, defaultOpen, columnName)
     indicator.ImageColor3 = defaultOpen and self._Colors.Accent or self._Colors.TextDim
     indicator.ScaleType = Enum.ScaleType.Fit
 
+    local hoverBar = Instance.new("Frame", header)
+    hoverBar.Name = "HoverBar"
+    hoverBar.Size = UDim2.new(0, 0, 0, 22)
+    hoverBar.Position = UDim2.new(0, 0, 0.5, -11)
+    hoverBar.BackgroundColor3 = self._Colors.Accent
+    hoverBar.BorderSizePixel = 0
+    hoverBar.ZIndex = 5
+    Instance.new("UICorner", hoverBar).CornerRadius = UDim.new(1, 0)
+
     local separator = Instance.new("Frame", section)
     separator.Size = UDim2.new(1, -32, 0, 1)
     separator.Position = UDim2.new(0, 16, 0, HEADER_HEIGHT)
@@ -3980,6 +4183,8 @@ function Library:CreateSection(tabName, title, summary, defaultOpen, columnName)
             {BackgroundColor3 = self._Colors.CardHover, BackgroundTransparency = 0.05}):Play()
         TweenService:Create(cardStroke, TweenInfo.new(0.18),
             {Transparency = 0, Color = self._Colors.Accent, Thickness = 1.2}):Play()
+        TweenService:Create(hoverBar, TweenInfo.new(0.2, Enum.EasingStyle.Quart, Enum.EasingDirection.Out),
+            {Size = UDim2.new(0, 3, 0, 22)}):Play()
         if not expanded then
             TweenService:Create(indicator, TweenInfo.new(0.18),
                 {TextColor3 = self._Colors.Accent}):Play()
@@ -3990,6 +4195,8 @@ function Library:CreateSection(tabName, title, summary, defaultOpen, columnName)
             {BackgroundColor3 = self._Colors.Card, BackgroundTransparency = 0.15}):Play()
         TweenService:Create(cardStroke, TweenInfo.new(0.18),
             {Transparency = 0.4, Color = self._Colors.Border, Thickness = 1}):Play()
+        TweenService:Create(hoverBar, TweenInfo.new(0.18, Enum.EasingStyle.Quart, Enum.EasingDirection.Out),
+            {Size = UDim2.new(0, 0, 0, 22)}):Play()
         if not expanded then
             TweenService:Create(indicator, TweenInfo.new(0.18),
                 {TextColor3 = self._Colors.TextDim}):Play()
@@ -4429,8 +4636,23 @@ function Library:AddToggle(page, text, default, callback)
             state = not state
             updateVisual(true)
             callback(state)
+            self:_triggerAutoSave()
         end
     end)
+
+    self:_registerConfigState(self:_getConfigId("toggle", text),
+        function() return state end,
+        function(v, silent)
+            if type(v) ~= "boolean" then return end
+            if state == v then return end
+            state = v
+            updateVisual(false)
+            if not silent then
+                callback(state)
+                self:_triggerAutoSave()
+            end
+        end
+    )
 
     holder.MouseEnter:Connect(function()
         if not state then
@@ -4567,6 +4789,17 @@ function Library:AddSlider(page, text, minVal, maxVal, default, decimals, callba
     fillGrad.Color = ColorSequence.new(self._Colors.Accent, self._Colors.Accent2 or self._Colors.Accent)
     fillGrad.Rotation = 0
 
+    local knobHalo = Instance.new("Frame", sliderBg)
+    knobHalo.Name = "KnobHalo"
+    knobHalo.AnchorPoint = Vector2.new(0.5, 0.5)
+    knobHalo.Size = UDim2.fromOffset(24, 24)
+    knobHalo.Position = UDim2.new((default - minVal) / (maxVal - minVal), 0, 0.5, 0)
+    knobHalo.BackgroundColor3 = self._Colors.Accent
+    knobHalo.BackgroundTransparency = 1
+    knobHalo.BorderSizePixel = 0
+    knobHalo.ZIndex = 2
+    Instance.new("UICorner", knobHalo).CornerRadius = UDim.new(1, 0)
+
     local knob = Instance.new("Frame", sliderBg)
     knob.Size = UDim2.new(0, 16, 0, 16)
     knob.Position = UDim2.new((default - minVal) / (maxVal - minVal), -8, 0.5, -8)
@@ -4611,10 +4844,12 @@ function Library:AddSlider(page, text, minVal, maxVal, default, decimals, callba
             TweenService:Create(fill, TweenInfo.new(0.15, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {Size = UDim2.new(rel, 0, 1, 0)}):Play()
             TweenService:Create(fillGlow, TweenInfo.new(0.15, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {Size = UDim2.new(rel, 0, 1.6, -0.3)}):Play()
             TweenService:Create(knob, TweenInfo.new(0.15, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {Position = UDim2.new(rel, -8, 0.5, -8)}):Play()
+            TweenService:Create(knobHalo, TweenInfo.new(0.15, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {Position = UDim2.new(rel, 0, 0.5, 0)}):Play()
         else
             fill.Size = UDim2.new(rel, 0, 1, 0)
             fillGlow.Size = UDim2.new(rel, 0, 1.6, -0.3)
             knob.Position = UDim2.new(rel, -8, 0.5, -8)
+            knobHalo.Position = UDim2.new(rel, 0, 0.5, 0)
         end
         if not editing then
             valBox.Text = formatValue(newVal)
@@ -4628,6 +4863,7 @@ function Library:AddSlider(page, text, minVal, maxVal, default, decimals, callba
         local newVal = minVal + (maxVal - minVal) * rel
         applyValue(newVal, false)
         callback(val)
+        self:_triggerAutoSave()
     end
 
     valBox.Focused:Connect(function()
@@ -4662,6 +4898,7 @@ function Library:AddSlider(page, text, minVal, maxVal, default, decimals, callba
         if parsed and parsed == parsed and parsed ~= math.huge and parsed ~= -math.huge then
             applyValue(parsed, true)
             callback(val)
+            self:_triggerAutoSave()
         else
             valBox.Text = formatValue(val)
         end
@@ -4699,14 +4936,28 @@ function Library:AddSlider(page, text, minVal, maxVal, default, decimals, callba
         end
     end, self)
 
+    self:_registerConfigState(self:_getConfigId("slider", text),
+        function() return val end,
+        function(v, silent)
+            if type(v) ~= "number" or v ~= v then return end
+            applyValue(v, false)
+            if not silent then
+                callback(val)
+                self:_triggerAutoSave()
+            end
+        end
+    )
+
     holder.MouseEnter:Connect(function()
         if not drag then
             TweenService:Create(knobScale, TweenInfo.new(0.15), {Scale = 1.1}):Play()
+            TweenService:Create(knobHalo, TweenInfo.new(0.18), {BackgroundTransparency = 0.82}):Play()
         end
     end)
     holder.MouseLeave:Connect(function()
         if not drag then
             TweenService:Create(knobScale, TweenInfo.new(0.15), {Scale = 1}):Play()
+            TweenService:Create(knobHalo, TweenInfo.new(0.2), {BackgroundTransparency = 1}):Play()
         end
     end)
 
@@ -4719,6 +4970,7 @@ function Library:AddSlider(page, text, minVal, maxVal, default, decimals, callba
         fill.BackgroundColor3 = self._Colors.Accent
         fillGlow.BackgroundColor3 = self._Colors.Accent
         knobStroke.Color = self._Colors.Accent
+        knobHalo.BackgroundColor3 = self._Colors.Accent
         sliderStroke.Color = self._Colors.Border
         fillGrad.Color = ColorSequence.new(self._Colors.Accent, self._Colors.Accent2 or self._Colors.Accent)
     end)
@@ -4916,10 +5168,25 @@ function Library:AddDropdown(page, text, options, defaultIndex, callback)
                 chipLabel.Text = tostring(options[i])
                 popup.Visible = false
                 callback(i, options[i])
+                self:_triggerAutoSave()
             end)
             table.insert(optionButtons, optBtn)
         end
     end
+
+    self:_registerConfigState(self:_getConfigId("dropdown", text),
+        function() return currentIndex end,
+        function(v, silent)
+            if type(v) ~= "number" or v < 1 or v > #options then return end
+            if v == currentIndex then return end
+            currentIndex = v
+            chipLabel.Text = tostring(options[v])
+            if not silent then
+                callback(v, options[v])
+                self:_triggerAutoSave()
+            end
+        end
+    )
 
     local function updatePopupPosition()
         local camera = getCam()
@@ -4949,8 +5216,13 @@ function Library:AddDropdown(page, text, options, defaultIndex, callback)
             refreshOptions()
             updatePopupPosition()
             popup.Visible = true
+            local targetPos = popup.Position
+            popup.Position = UDim2.new(targetPos.X.Scale, targetPos.X.Offset, targetPos.Y.Scale, targetPos.Y.Offset + 4)
+            TweenService:Create(popup, TweenInfo.new(0.12, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+                Position = targetPos,
+            }):Play()
         end
-    end)
+    )
 
     table.insert(STATE.activeDropdownPopups, {
         popup = popup,
@@ -5010,13 +5282,328 @@ function Library:AddDropdown(page, text, options, defaultIndex, callback)
     return self:_registerSearchControl(holder, text .. " " .. table.concat(searchableOptions, " "))
 end
 
+function Library:AddMultiDropdown(page, text, options, defaults, callback)
+    if self:_isDead() then return end
+    if type(options) ~= "table" or #options == 0 then
+        error("[DoD UI] AddMultiDropdown options must be a non-empty array.")
+    end
+    if callback ~= nil and type(callback) ~= "function" then
+        error("[DoD UI] AddMultiDropdown callback must be a function.")
+    end
+    callback = callback or function() end
+    local selected = {}
+    if type(defaults) == "table" then
+        for _, idx in ipairs(defaults) do
+            if type(idx) == "number" and idx >= 1 and idx <= #options then
+                selected[idx] = true
+            end
+        end
+    end
+
+    local STATE = self._STATE
+    local holder = Instance.new("Frame", page)
+    holder.Size = UDim2.new(1, 0, 0, 40)
+    holder.BackgroundColor3 = self._Colors.Card
+    holder.BackgroundTransparency = 0.3
+    holder.BorderSizePixel = 0
+    Instance.new("UICorner", holder).CornerRadius = UDim.new(0, 8)
+
+    local holderStroke = Instance.new("UIStroke", holder)
+    holderStroke.Color = self._Colors.Border
+    holderStroke.Thickness = 1
+    holderStroke.Transparency = 0.5
+
+    local label = Instance.new("TextLabel", holder)
+    label.Size = UDim2.new(0.42, -20, 1, 0)
+    label.Position = UDim2.new(0, 14, 0, 0)
+    label.BackgroundTransparency = 1
+    label.Text = text
+    label.TextColor3 = self._Colors.Text
+    label.Font = Enum.Font.GothamBold
+    label.TextSize = 12
+    label.TextXAlignment = Enum.TextXAlignment.Left
+    label.TextTruncate = Enum.TextTruncate.AtEnd
+
+    local valueChip = Instance.new("TextButton", holder)
+    valueChip.Size = UDim2.new(0.58, -14, 0, 30)
+    valueChip.Position = UDim2.new(0.42, 4, 0.5, -15)
+    valueChip.BackgroundColor3 = self._Colors.Bg2
+    valueChip.BackgroundTransparency = 0.2
+    valueChip.Text = ""
+    valueChip.BorderSizePixel = 0
+    valueChip.AutoButtonColor = false
+    Fn.bindPressAnimation(valueChip)
+    Instance.new("UICorner", valueChip).CornerRadius = UDim.new(0, 8)
+
+    local chipStroke = Instance.new("UIStroke", valueChip)
+    chipStroke.Color = self._Colors.Border
+    chipStroke.Thickness = 1
+    chipStroke.Transparency = 0.4
+
+    local chipLabel = Instance.new("TextLabel", valueChip)
+    chipLabel.Size = UDim2.new(1, -20, 1, 0)
+    chipLabel.Position = UDim2.new(0, 12, 0, 0)
+    chipLabel.BackgroundTransparency = 1
+    chipLabel.TextColor3 = self._Colors.Text
+    chipLabel.Font = Enum.Font.GothamBold
+    chipLabel.TextSize = 11
+    chipLabel.TextXAlignment = Enum.TextXAlignment.Left
+    chipLabel.TextTruncate = Enum.TextTruncate.AtEnd
+
+    local function getSelectedIndices()
+        local out = {}
+        for i = 1, #options do
+            if selected[i] then table.insert(out, i) end
+        end
+        return out
+    end
+
+    local function getSelectedValues()
+        local out = {}
+        for i = 1, #options do
+            if selected[i] then table.insert(out, options[i]) end
+        end
+        return out
+    end
+
+    local function updateChipLabel()
+        local indices = getSelectedIndices()
+        if #indices == 0 then
+            chipLabel.Text = "None"
+            chipLabel.TextColor3 = self._Colors.TextDim
+        elseif #indices == 1 then
+            chipLabel.Text = tostring(options[indices[1]])
+            chipLabel.TextColor3 = self._Colors.Text
+        else
+            chipLabel.Text = tostring(#indices) .. " selected"
+            chipLabel.TextColor3 = self._Colors.Text
+        end
+    end
+    updateChipLabel()
+
+    local popup = Instance.new("Frame", self._UI.MainGui)
+    popup.Name = "MultiDropdownPopup"
+    popup.BackgroundColor3 = self._Colors.Bg2
+    popup.BorderSizePixel = 0
+    popup.Visible = false
+    popup.ZIndex = 200
+    popup.ClipsDescendants = true
+    Instance.new("UICorner", popup).CornerRadius = UDim.new(0, 8)
+
+    local popupStroke = Instance.new("UIStroke", popup)
+    popupStroke.Color = self._Colors.Accent
+    popupStroke.Thickness = 1
+    popupStroke.Transparency = 0.3
+
+    local popupScroll = Instance.new("ScrollingFrame", popup)
+    popupScroll.Size = UDim2.new(1, 0, 1, -10)
+    popupScroll.Position = UDim2.new(0, 0, 0, 5)
+    popupScroll.BackgroundTransparency = 1
+    popupScroll.BorderSizePixel = 0
+    popupScroll.ScrollBarThickness = 3
+    popupScroll.ScrollBarImageColor3 = self._Colors.Accent
+    popupScroll.CanvasSize = UDim2.new(0, 0, 0, 0)
+    popupScroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
+    popupScroll.ZIndex = 201
+
+    local popupList = Instance.new("UIListLayout", popupScroll)
+    popupList.SortOrder = Enum.SortOrder.LayoutOrder
+    popupList.Padding = UDim.new(0, 2)
+
+    local popupPad = Instance.new("UIPadding", popupScroll)
+    popupPad.PaddingTop = UDim.new(0, 5)
+    popupPad.PaddingBottom = UDim.new(0, 5)
+    popupPad.PaddingLeft = UDim.new(0, 5)
+    popupPad.PaddingRight = UDim.new(0, 5)
+
+    local optionButtons = {}
+
+    local function refreshOptions()
+        for _, b in ipairs(optionButtons) do b:Destroy() end
+        table.clear(optionButtons)
+        for i, opt in ipairs(options) do
+            local optBtn = Instance.new("TextButton", popupScroll)
+            optBtn.Size = UDim2.new(1, 0, 0, 30)
+            optBtn.BackgroundColor3 = self._Colors.Card
+            optBtn.BackgroundTransparency = 1
+            optBtn.Text = ""
+            optBtn.BorderSizePixel = 0
+            optBtn.AutoButtonColor = false
+            optBtn.ZIndex = 202
+            Fn.bindPressAnimation(optBtn)
+            Instance.new("UICorner", optBtn).CornerRadius = UDim.new(0, 5)
+
+            local box = Instance.new("Frame", optBtn)
+            box.Size = UDim2.fromOffset(16, 16)
+            box.Position = UDim2.new(0, 10, 0.5, -8)
+            box.BackgroundColor3 = selected[i] and self._Colors.Accent or self._Colors.Bg
+            box.BorderSizePixel = 0
+            box.ZIndex = 203
+            Instance.new("UICorner", box).CornerRadius = UDim.new(0, 4)
+
+            local boxStroke = Instance.new("UIStroke", box)
+            boxStroke.Color = selected[i] and self._Colors.Accent or self._Colors.Border
+            boxStroke.Thickness = 1
+
+            local check = Instance.new("TextLabel", box)
+            check.Size = UDim2.fromScale(1, 1)
+            check.BackgroundTransparency = 1
+            check.Text = "✓"
+            check.TextColor3 = Fn.accentTextColor(self._Colors.Accent)
+            check.Font = Enum.Font.GothamBlack
+            check.TextSize = 11
+            check.Visible = selected[i] and true or false
+            check.ZIndex = 204
+
+            local optLabel = Instance.new("TextLabel", optBtn)
+            optLabel.Size = UDim2.new(1, -50, 1, 0)
+            optLabel.Position = UDim2.new(0, 34, 0, 0)
+            optLabel.BackgroundTransparency = 1
+            optLabel.Text = tostring(opt)
+            optLabel.TextColor3 = self._Colors.Text
+            optLabel.Font = Enum.Font.GothamBold
+            optLabel.TextSize = 12
+            optLabel.TextXAlignment = Enum.TextXAlignment.Left
+            optLabel.ZIndex = 203
+
+            optBtn.MouseEnter:Connect(function() optBtn.BackgroundTransparency = 0.4 end)
+            optBtn.MouseLeave:Connect(function() optBtn.BackgroundTransparency = 1 end)
+            optBtn.MouseButton1Click:Connect(function()
+                selected[i] = not selected[i] or nil
+                box.BackgroundColor3 = selected[i] and self._Colors.Accent or self._Colors.Bg
+                boxStroke.Color = selected[i] and self._Colors.Accent or self._Colors.Border
+                check.Visible = selected[i] and true or false
+                updateChipLabel()
+                callback(getSelectedIndices(), getSelectedValues())
+                self:_triggerAutoSave()
+            end)
+            table.insert(optionButtons, optBtn)
+        end
+    end
+
+    local function updatePopupPosition()
+        local camera = getCam()
+        if not camera then return end
+        local chipPos = valueChip.AbsolutePosition
+        local chipSize = valueChip.AbsoluteSize
+        local totalHeight = math.min(#options * 32 + 12, 260)
+        local viewport = camera.ViewportSize
+        local width = math.min(chipSize.X, math.max(1, viewport.X - 16))
+        local x = math.clamp(chipPos.X, 8, math.max(8, viewport.X - width - 8))
+        local y = chipPos.Y + chipSize.Y + 6
+        if y + totalHeight > viewport.Y - 8 then
+            y = chipPos.Y - totalHeight - 6
+        end
+        y = math.clamp(y, 8, math.max(8, viewport.Y - totalHeight - 8))
+        popup.Size = UDim2.fromOffset(width, totalHeight)
+        popup.Position = UDim2.fromOffset(x, y)
+    end
+
+    valueChip.MouseButton1Click:Connect(function()
+        if popup.Visible then
+            popup.Visible = false
+        else
+            for _, other in ipairs(STATE.activeDropdownPopups) do
+                if other.popup ~= popup then other.close() end
+            end
+            refreshOptions()
+            updatePopupPosition()
+            popup.Visible = true
+            local targetPos = popup.Position
+            popup.Position = UDim2.new(targetPos.X.Scale, targetPos.X.Offset, targetPos.Y.Scale, targetPos.Y.Offset + 4)
+            TweenService:Create(popup, TweenInfo.new(0.12, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+                Position = targetPos,
+            }):Play()
+        end
+    )
+
+    table.insert(STATE.activeDropdownPopups, {
+        popup = popup,
+        close = function() popup.Visible = false end,
+    })
+
+    Fn.track(UserInputService.InputBegan, function(inp)
+        if not popup.Visible then return end
+        if inp.UserInputType ~= Enum.UserInputType.MouseButton1 and inp.UserInputType ~= Enum.UserInputType.Touch then return end
+        local mp = inp.Position
+        local pp, ps = popup.AbsolutePosition, popup.AbsoluteSize
+        local bp, bs = valueChip.AbsolutePosition, valueChip.AbsoluteSize
+        local inPopup = mp.X >= pp.X and mp.X <= pp.X + ps.X and mp.Y >= pp.Y and mp.Y <= pp.Y + ps.Y
+        local inBtn = mp.X >= bp.X and mp.X <= bp.X + bs.X and mp.Y >= bp.Y and mp.Y <= bp.Y + bs.Y
+        if not inPopup and not inBtn then popup.Visible = false end
+    end, self)
+
+    task.spawn(function()
+        while popup.Parent do
+            if popup.Visible then updatePopupPosition() end
+            task.wait(0.1)
+        end
+    end)
+
+    self:_registerConfigState(self:_getConfigId("multi_dropdown", text),
+        function() return getSelectedIndices() end,
+        function(v, silent)
+            if type(v) ~= "table" then return end
+            table.clear(selected)
+            for _, idx in ipairs(v) do
+                if type(idx) == "number" and idx >= 1 and idx <= #options then
+                    selected[idx] = true
+                end
+            end
+            updateChipLabel()
+            if not silent then
+                callback(getSelectedIndices(), getSelectedValues())
+                self:_triggerAutoSave()
+            end
+        end
+    )
+
+    self:_registerThemeRefresher(function()
+        holder.BackgroundColor3 = self._Colors.Card
+        holderStroke.Color = self._Colors.Border
+        label.TextColor3 = self._Colors.Text
+        valueChip.BackgroundColor3 = self._Colors.Bg2
+        chipStroke.Color = self._Colors.Border
+        updateChipLabel()
+        popup.BackgroundColor3 = self._Colors.Bg2
+        popupStroke.Color = self._Colors.Accent
+        popupScroll.ScrollBarImageColor3 = self._Colors.Accent
+    end)
+
+    local searchableOptions = {}
+    for _, option in ipairs(options) do
+        table.insert(searchableOptions, tostring(option))
+    end
+    self:_bindTooltip(label, text .. " (" .. #options .. " options)")
+    return self:_registerSearchControl(holder, text .. " " .. table.concat(searchableOptions, " "))
+end
+
 function Library:AddKeybind(page, text, default, callback)
     if self:_isDead() then return end
+    local function _normSpec(spec)
+        if spec == nil then return nil, {} end
+        if typeof(spec) == "EnumItem" and spec.EnumType == Enum.KeyCode then
+            return spec, {}
+        end
+        if spec == "LClick" or spec == "RClick" then
+            return spec, {}
+        end
+        if type(spec) == "table" then
+            local mods = spec.Modifiers or spec.mods or {}
+            if type(mods) ~= "table" then mods = {} end
+            local key = spec.Key or spec.key
+            if key == nil then return nil, {} end
+            return key, mods
+        end
+        return nil, {}
+    end
+    local _initKey, _initMods = _normSpec(default)
     if default ~= nil and not (
         (typeof(default) == "EnumItem" and default.EnumType == Enum.KeyCode)
         or default == "LClick" or default == "RClick"
+        or (type(default) == "table" and (default.Key ~= nil or default.key ~= nil))
     ) then
-        error("[DoD UI] AddKeybind default must be an Enum.KeyCode, LClick, RClick, or nil.")
+        error("[DoD UI] AddKeybind default must be Enum.KeyCode, LClick, RClick, table, or nil.")
     end
     if callback ~= nil and type(callback) ~= "function" then
         error("[DoD UI] AddKeybind callback must be a function.")
@@ -5077,26 +5664,34 @@ function Library:AddKeybind(page, text, default, callback)
     btnText.TextXAlignment = Enum.TextXAlignment.Left
 
     local listener
-    local function setLabel(k)
-        local keyName
+    local function _formatKeyName(k)
         if typeof(k) == "EnumItem" then
-            keyName = string.upper(k.Name)
+            return string.upper(k.Name)
         elseif k == nil then
-            keyName = "NONE"
+            return "NONE"
         else
-            keyName = string.upper(tostring(k))
+            return string.upper(tostring(k))
+        end
+    end
+    local function setLabel(k, mods)
+        mods = mods or {}
+        local baseName = _formatKeyName(k)
+        local keyName = baseName
+        if #mods > 0 then
+            keyName = table.concat(mods, "+") .. "+" .. baseName
         end
         btnText.Text = keyName
-        btnIcon.ImageColor3 = self._Colors.Accent
+        btnIcon.ImageColor3 = (k ~= nil) and self._Colors.Accent or self._Colors.TextDim
         TweenService:Create(btnStroke, TweenInfo.new(0.15), {Color = self._Colors.Border, Transparency = 0.5}):Play()
         TweenService:Create(btn, TweenInfo.new(0.15), {BackgroundTransparency = 0.2}):Play()
         if listener then
             listener.key = k
+            listener.mods = mods
             listener.keyName = keyName
             self:_refreshKeybindOverlay()
         end
     end
-    setLabel(default)
+    setLabel(_initKey, _initMods)
 
     btn.MouseEnter:Connect(function()
         TweenService:Create(btnStroke, TweenInfo.new(0.15), {Color = self._Colors.Accent, Transparency = 0.1}):Play()
@@ -5117,7 +5712,8 @@ function Library:AddKeybind(page, text, default, callback)
         btnIcon = btnIcon,
         callback = callback or function() end,
         name = tostring(text),
-        key = default,
+        key = _initKey,
+        mods = _initMods,
         keyName = btnText.Text,
         setKey = setLabel,
     }
@@ -5149,6 +5745,28 @@ function Library:AddKeybind(page, text, default, callback)
 
     if not STATE._kbListenerInstalled then
         STATE._kbListenerInstalled = true
+        local function getMods()
+            local m = {}
+            if UserInputService:IsKeyDown(Enum.KeyCode.LeftControl) or UserInputService:IsKeyDown(Enum.KeyCode.RightControl) then
+                table.insert(m, "Ctrl")
+            end
+            if UserInputService:IsKeyDown(Enum.KeyCode.LeftShift) or UserInputService:IsKeyDown(Enum.KeyCode.RightShift) then
+                table.insert(m, "Shift")
+            end
+            if UserInputService:IsKeyDown(Enum.KeyCode.LeftAlt) or UserInputService:IsKeyDown(Enum.KeyCode.RightAlt) then
+                table.insert(m, "Alt")
+            end
+            return m
+        end
+        local function modsMatch(stored, current)
+            stored = stored or {}
+            current = current or {}
+            if #stored ~= #current then return false end
+            for _, v in ipairs(stored) do
+                if not table.find(current, v) then return false end
+            end
+            return true
+        end
         Fn.track(UserInputService.InputBegan, function(inp, proc)
             if proc then return end
             for _, l in ipairs(STATE.activeKeybindListeners) do
@@ -5159,24 +5777,35 @@ function Library:AddKeybind(page, text, default, callback)
                 if l.active then
                     if not onClickBtn then
                         l.active = false
+                        local capturedMods = getMods()
                         if inp.UserInputType == Enum.UserInputType.Keyboard then
-                            l.setKey(inp.KeyCode)
-                            l.callback(inp.KeyCode)
+                            l.setKey(inp.KeyCode, capturedMods)
+                            l.callback(inp.KeyCode, capturedMods)
                         elseif inp.UserInputType == Enum.UserInputType.MouseButton1 then
-                            l.setKey("LClick")
-                            l.callback(Enum.UserInputType.MouseButton1)
+                            l.setKey("LClick", capturedMods)
+                            l.callback(Enum.UserInputType.MouseButton1, capturedMods)
                         elseif inp.UserInputType == Enum.UserInputType.MouseButton2 then
-                            l.setKey("RClick")
-                            l.callback(Enum.UserInputType.MouseButton2)
+                            l.setKey("RClick", capturedMods)
+                            l.callback(Enum.UserInputType.MouseButton2, capturedMods)
                         end
                     end
                 elseif l.key ~= nil and not onClickBtn then
+                    local currentMods = getMods()
+                    local matched = false
+                    local firedKey = nil
                     if inp.UserInputType == Enum.UserInputType.Keyboard and inp.KeyCode == l.key then
-                        l.callback(l.key)
+                        matched = true
+                        firedKey = l.key
                     elseif inp.UserInputType == Enum.UserInputType.MouseButton1 and l.key == "LClick" then
-                        l.callback(Enum.UserInputType.MouseButton1)
+                        matched = true
+                        firedKey = Enum.UserInputType.MouseButton1
                     elseif inp.UserInputType == Enum.UserInputType.MouseButton2 and l.key == "RClick" then
-                        l.callback(Enum.UserInputType.MouseButton2)
+                        matched = true
+                        firedKey = Enum.UserInputType.MouseButton2
+                    end
+                    if matched and modsMatch(l.mods, currentMods) then
+                        l.callback(firedKey, l.mods)
+                        self:_triggerAutoSave()
                     end
                 end
             end
@@ -5378,7 +6007,21 @@ function Library:AddTextbox(page, text, placeholder, callback)
 
     input.FocusLost:Connect(function()
         callback(input.Text)
+        self:_triggerAutoSave()
     end)
+
+    self:_registerConfigState(self:_getConfigId("textbox", text),
+        function() return input.Text end,
+        function(v, silent)
+            if type(v) ~= "string" then return end
+            if input.Text == v then return end
+            input.Text = v
+            if not silent then
+                callback(v)
+                self:_triggerAutoSave()
+            end
+        end
+    )
 
     self:_registerThemeRefresher(function()
         holder.BackgroundColor3 = self._Colors.Card
@@ -5536,8 +6179,25 @@ function Library:AddColorPicker(page, text, defaultColor3, callback)
         selector.Position = UDim2.new(saturation, 0, 1 - value, 0)
         preview.BackgroundColor3 = currentColor
         currentPreview.BackgroundColor3 = currentColor
-        if notify then callback(currentColor) end
+        if notify then
+            callback(currentColor)
+            self:_triggerAutoSave()
+        end
     end
+
+    self:_registerConfigState(self:_getConfigId("colorpicker", text),
+        function() return { currentColor.R, currentColor.G, currentColor.B } end,
+        function(v, silent)
+            if type(v) ~= "table" or type(v[1]) ~= "number" or type(v[2]) ~= "number" or type(v[3]) ~= "number" then return end
+            local newColor = Color3.new(v[1], v[2], v[3])
+            hue, saturation, value = Color3.toHSV(newColor)
+            updateColor(false)
+            if not silent then
+                callback(currentColor)
+                self:_triggerAutoSave()
+            end
+        end
+    )
 
     local function pickFromPosition(mode, position)
         if mode == "SV" then
