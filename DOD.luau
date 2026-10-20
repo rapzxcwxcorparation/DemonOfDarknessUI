@@ -2358,73 +2358,27 @@ function Library:_initKeybindOverlay()
         TweenService:Create(toggleStroke, TweenInfo.new(0.15), {Transparency = 0.6, Color = self._Colors.Border}):Play()
     end)
 
-    local isDragging = false
-    local dragStart = Vector2.zero
-    local startPos = UDim2.new()
-    
-    heading.Active = true
-    heading.InputBegan:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-            isDragging = true
-            dragStart = input.Position
-            startPos = overlay.Position
-        end
-    end)
-    
-    Fn.track(UserInputService.InputChanged, function(input)
-        if isDragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
-            local camera = getCam()
-            if not camera then return end
-            local vp = camera.ViewportSize
-            local sz = overlay.AbsoluteSize
-            
-            local delta = input.Position - dragStart
-            local scaleX = startPos.X.Scale * vp.X
-            local scaleY = startPos.Y.Scale * vp.Y
-            local absX = scaleX + startPos.X.Offset + delta.X
-            local absY = scaleY + startPos.Y.Offset + delta.Y
-            
-            -- Batas layar (anchor 1,1)
-            absX = math.clamp(absX, sz.X + 8, vp.X - 8)
-            absY = math.clamp(absY, sz.Y + 8, vp.Y - 8)
-            
-            overlay.Position = UDim2.new(
-                startPos.X.Scale, absX - scaleX,
-                startPos.Y.Scale, absY - scaleY
-            )
-        end
-    end, self)
-    
-    Fn.track(UserInputService.InputEnded, function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-            isDragging = false
-        end
-    end, self)
-
     local overlayAnimating = false
     local function toggleOverlay()
         if overlayAnimating then return end
         overlayAnimating = true
         
         if overlay.Visible then
-            local curPos = overlay.Position
             local tw = TweenService:Create(overlay, TweenInfo.new(0.15, Enum.EasingStyle.Quart, Enum.EasingDirection.In), {
-                Position = UDim2.new(curPos.X.Scale, curPos.X.Offset, curPos.Y.Scale, curPos.Y.Offset + 15),
+                Position = UDim2.new(1, -18, 1, -48),
                 BackgroundTransparency = 1
             })
             tw:Play()
             tw.Completed:Connect(function()
                 overlay.Visible = false
-                overlay.Position = curPos
                 overlayAnimating = false
             end)
         else
             overlay.Visible = true
-            local curPos = overlay.Position
-            overlay.Position = UDim2.new(curPos.X.Scale, curPos.X.Offset, curPos.Y.Scale, curPos.Y.Offset + 15)
+            overlay.Position = UDim2.new(1, -18, 1, -48)
             overlay.BackgroundTransparency = 1
             TweenService:Create(overlay, TweenInfo.new(0.2, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {
-                Position = curPos,
+                Position = UDim2.new(1, -18, 1, -58),
                 BackgroundTransparency = 0.15
             }):Play()
             task.delay(0.2, function() overlayAnimating = false end)
@@ -2725,7 +2679,7 @@ function Library:_bindTooltip(element, text)
                 lbl.Size = UDim2.new(1, -18, 0, 16)
                 lbl.Position = UDim2.new(0, 12, 0, 6)
                 if hint then
-                    hint.Text = "Right-click ★ untuk favorit"
+                    hint.Text = "RightClick Mouse "★" For Favorite"
                     hint.Visible = true
                 end
             else
@@ -2773,7 +2727,7 @@ function Library:_bindToggleKey()
     end, self)
     Fn.track(UserInputService.InputBegan, function(input, gameProcessed)
         if input.UserInputType ~= Enum.UserInputType.MouseButton2 then return end
-        local mp = Vector2.new(input.Position.X, input.Position.Y)
+        local mp = UserInputService:GetMouseLocation()
         for configId, holder in pairs(self._STATE.FavoriteHolders or {}) do
             if holder and holder.Parent then
                 local p, s = holder.AbsolutePosition, holder.AbsoluteSize
@@ -3866,7 +3820,8 @@ function Library:_initSearchBar()
     UI.SearchInput.Text = ""
     UI.SearchInput.PlaceholderText = "Search settings..."
     UI.SearchInput.PlaceholderColor3 = self._Colors.TextDim
-    UI.SearchInput.TextColor3 = self._Colors.Text
+    UI.SearchInput.TextColor3 = Color3.fromRGB(255, 255, 255)
+    UI.SearchInput.TextStrokeTransparency = 1
     UI.SearchInput.Font = Enum.Font.GothamMedium
     UI.SearchInput.TextSize = 12
     UI.SearchInput.TextXAlignment = Enum.TextXAlignment.Left
@@ -4135,15 +4090,9 @@ function Library:_updateFavoriteStar(configId)
     if not star or not star.Parent then return end
     local isFav = self._STATE.Favorites[configId] == true
     local hovering = star:GetAttribute("DoD_Hover") == true
-    local targetTrans
-    if isFav then
-        targetTrans = hovering and 0 or 0.2
-    else
-        targetTrans = hovering and 0 or 1
-    end
     TweenService:Create(star, TweenInfo.new(0.15, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
         ImageColor3 = isFav and self._Colors.Accent or self._Colors.TextDim,
-        ImageTransparency = targetTrans,
+        ImageTransparency = isFav and (hovering and 0 or 0.15) or (hovering and 0.25 or 0.55),
     }):Play()
 end
 
@@ -4154,15 +4103,14 @@ function Library:_attachFavorite(holder, configId, starPos)
     self._STATE.FavoriteHolders[configId] = holder
     self._STATE.FavoriteStars = self._STATE.FavoriteStars or {}
 
-    local star = Instance.new("ImageButton", holder)
+    local star = Instance.new("ImageLabel", holder)
     star.Name = "FavoriteStar"
     star.Size = UDim2.fromOffset(11, 11)
-    star.AutoButtonColor = false
     star.Position = starPos or UDim2.new(1, -14, 0, 2)
     star.BackgroundTransparency = 1
     star.Image = GetIcon("star")
     star.ImageColor3 = self._STATE.Favorites[configId] and self._Colors.Accent or self._Colors.TextDim
-    star.ImageTransparency = self._STATE.Favorites[configId] and 0.2 or 1
+    star.ImageTransparency = self._STATE.Favorites[configId] and 0 or 0.55
     star.ZIndex = 10
     self._STATE.FavoriteStars[configId] = star
 
@@ -4183,19 +4131,7 @@ function Library:_attachFavorite(holder, configId, starPos)
         self:_updateFavoriteStar(configId)
     end)
 
-    local function toggleFav()
-        if self._STATE.Favorites[configId] then
-            self._STATE.Favorites[configId] = nil
-        else
-            self._STATE.Favorites[configId] = true
-        end
-        self:_updateFavoriteStar(configId)
-        self:_applySearchFilter()
-        self:_triggerAutoSave()
-    end
-
-    star.MouseButton1Click:Connect(toggleFav)
-    star.MouseButton2Click:Connect(toggleFav)
+    -- Left click on star is intentionally ignored (handled by row)
 
     self:_registerThemeRefresher(function()
         if star and star.Parent then
@@ -4753,32 +4689,29 @@ function Library:_initDrag()
             dragging = true
             dragStart = inp.Position
             dragStartPos = UI.MainContainer.Position
-            for _, entry in ipairs(self._STATE.activeDropdownPopups) do
-                if entry.popup and entry.popup.Visible then
-                    entry.close()
-                end
-            end
         end
     end)
 
-    Fn.track(UserInputService.InputChanged, function(inp)
-        if dragging and (inp.UserInputType == Enum.UserInputType.MouseMovement or inp.UserInputType == Enum.UserInputType.Touch) then
-            local camera = getCam()
-            if not camera then return end
-            local vp = camera.ViewportSize
-            local sz = UI.MainContainer.AbsoluteSize
-            local delta = inp.Position - dragStart
-            local scaleX = dragStartPos.X.Scale * vp.X
-            local scaleY = dragStartPos.Y.Scale * vp.Y
-            local absX = scaleX + dragStartPos.X.Offset + delta.X
-            local absY = scaleY + dragStartPos.Y.Offset + delta.Y
-            absX = math.clamp(absX, sz.X * 0.5 + 8, vp.X - sz.X * 0.5 - 8)
-            absY = math.clamp(absY, sz.Y * 0.5 + 8, vp.Y - sz.Y * 0.5 - 8)
-            UI.MainContainer.Position = UDim2.new(
-                dragStartPos.X.Scale, absX - scaleX,
-                dragStartPos.Y.Scale, absY - scaleY
-            )
-        end
+    Fn.track(RunService.RenderStepped, function(dt)
+        if not dragging then return end
+        local camera = getCam()
+        if not camera then return end
+        local vp = camera.ViewportSize
+        local sz = UI.MainContainer.AbsoluteSize
+        local mouse = UserInputService:GetMouseLocation()
+        local scaleX = dragStartPos.X.Scale * vp.X
+        local scaleY = dragStartPos.Y.Scale * vp.Y
+        local absX = scaleX + dragStartPos.X.Offset + (mouse.X - dragStart.X)
+        local absY = scaleY + dragStartPos.Y.Offset + (mouse.Y - dragStart.Y)
+        absX = math.clamp(absX, sz.X * 0.5 + 8, vp.X - sz.X * 0.5 - 8)
+        absY = math.clamp(absY, sz.Y * 0.5 + 8, vp.Y - sz.Y * 0.5 - 8)
+        local targetX = absX - scaleX
+        local targetY = absY - scaleY
+        local cur = UI.MainContainer.Position
+        local smooth = math.min(1, dt * 30)
+        local newX = cur.X.Offset + (targetX - cur.X.Offset) * smooth
+        local newY = cur.Y.Offset + (targetY - cur.Y.Offset) * smooth
+        UI.MainContainer.Position = UDim2.new(cur.X.Scale, newX, cur.Y.Scale, newY)
     end, self)
 
     Fn.track(UserInputService.InputEnded, function(inp)
@@ -5565,10 +5498,11 @@ function Library:CreateSection(tabName, title, summary, defaultOpen, columnName,
     indicator.ImageColor3 = defaultOpen and self._Colors.Accent or self._Colors.TextDim
     indicator.ScaleType = Enum.ScaleType.Fit
 
-    local hoverBar = Instance.new("Frame", header)
+    local hoverBar = Instance.new("Frame", section)
     hoverBar.Name = "HoverBar"
-    hoverBar.Size = UDim2.new(0, 0, 0, 22)
-    hoverBar.Position = UDim2.new(0, 0, 0.5, -11)
+    hoverBar.AnchorPoint = Vector2.new(0, 0.5)
+    hoverBar.Position = UDim2.new(0, 0, 0.5, 0)
+    hoverBar.Size = UDim2.new(0, 3, 0, 0)
     hoverBar.BackgroundColor3 = self._Colors.Accent
     hoverBar.BorderSizePixel = 0
     hoverBar.ZIndex = 5
@@ -5682,9 +5616,7 @@ function Library:CreateSection(tabName, title, summary, defaultOpen, columnName,
         if contentArea and contentArea.AbsoluteSize.Y > 0 then
             maxH = math.min(450, math.max(240, contentArea.AbsoluteSize.Y - 40))
         end
-        local paddedH = math.min(contentH + 140, 360)
-        local desiredH = math.max(contentH, paddedH)
-        local cappedH = math.min(desiredH, maxH)
+        local cappedH = math.min(contentH, maxH)
         local targetH = expanded and (HEADER_HEIGHT + cappedH) or HEADER_HEIGHT
         if expanded then
             body.Size = UDim2.new(1, 0, 0, cappedH)
@@ -5758,27 +5690,15 @@ function Library:CreateSection(tabName, title, summary, defaultOpen, columnName,
         local baseTrans = self._STATE.SectionTransparency or 0.15
         TweenService:Create(section, TweenInfo.new(0.18),
             {BackgroundColor3 = self._Colors.CardHover, BackgroundTransparency = math.max(0, baseTrans - 0.1)}):Play()
-        TweenService:Create(cardStroke, TweenInfo.new(0.18),
-            {Transparency = 0, Color = self._Colors.Accent, Thickness = 1.2}):Play()
-        TweenService:Create(hoverBar, TweenInfo.new(0.2, Enum.EasingStyle.Quart, Enum.EasingDirection.Out),
-            {Size = UDim2.new(0, 3, 0, 22)}):Play()
-        if not expanded then
-            TweenService:Create(indicator, TweenInfo.new(0.18),
-                {TextColor3 = self._Colors.Accent}):Play()
-        end
+        TweenService:Create(hoverBar, TweenInfo.new(0.28, Enum.EasingStyle.Quart, Enum.EasingDirection.Out),
+            {Size = UDim2.new(0, 3, 1, -24)}):Play()
     end)
     header.MouseLeave:Connect(function()
         local baseTrans = self._STATE.SectionTransparency or 0.15
         TweenService:Create(section, TweenInfo.new(0.18),
             {BackgroundColor3 = self._Colors.Card, BackgroundTransparency = baseTrans}):Play()
-        TweenService:Create(cardStroke, TweenInfo.new(0.18),
-            {Transparency = 0.4, Color = self._Colors.Border, Thickness = 1}):Play()
-        TweenService:Create(hoverBar, TweenInfo.new(0.18, Enum.EasingStyle.Quart, Enum.EasingDirection.Out),
-            {Size = UDim2.new(0, 0, 0, 22)}):Play()
-        if not expanded then
-            TweenService:Create(indicator, TweenInfo.new(0.18),
-                {TextColor3 = self._Colors.TextDim}):Play()
-        end
+        TweenService:Create(hoverBar, TweenInfo.new(0.22, Enum.EasingStyle.Quart, Enum.EasingDirection.Out),
+            {Size = UDim2.new(0, 3, 0, 0)}):Play()
     end)
 
     local lastToggleTime = 0
@@ -6303,6 +6223,330 @@ function Library:CreateThemeCustomizer(tabName)
     return section
 end
 
+function Library:CreateQuickDashboard(tabName, columnName)
+    if self:_isDead() then return end
+    columnName = columnName or "Right"
+
+    local TeleportService = game:GetService("TeleportService")
+    local HttpService = game:GetService("HttpService")
+    local LocalPlayer = Players.LocalPlayer
+
+    local QuickBox = self:CreateSection(tabName, "QUICK INSTANCE CONTROL", "Manage your session and community", true, columnName, "refresh-cw")
+
+    local function CreateActionRow(title, desc, iconName, callback)
+        local holder = Instance.new("TextButton", QuickBox)
+        holder.Size = UDim2.new(1, 0, 0, 54)
+        holder.BackgroundColor3 = self._Colors.Card
+        holder.BackgroundTransparency = 0.3
+        holder.Text = ""
+        holder.AutoButtonColor = false
+        holder.BorderSizePixel = 0
+        Instance.new("UICorner", holder).CornerRadius = UDim.new(0, 8)
+
+        local stroke = Instance.new("UIStroke", holder)
+        stroke.Color = self._Colors.Border
+        stroke.Thickness = 1
+        stroke.Transparency = 0.5
+
+        local iconBg = Instance.new("Frame", holder)
+        iconBg.Size = UDim2.fromOffset(34, 34)
+        iconBg.Position = UDim2.new(0, 10, 0.5, -17)
+        iconBg.BackgroundColor3 = self._Colors.Bg2
+        iconBg.BorderSizePixel = 0
+        Instance.new("UICorner", iconBg).CornerRadius = UDim.new(0, 6)
+
+        local icon = Instance.new("ImageLabel", iconBg)
+        icon.Size = UDim2.fromOffset(18, 18)
+        icon.Position = UDim2.new(0.5, -9, 0.5, -9)
+        icon.BackgroundTransparency = 1
+        icon.Image = GetIcon(iconName)
+        icon.ImageColor3 = self._Colors.Accent
+
+        local titleLbl = Instance.new("TextLabel", holder)
+        titleLbl.Size = UDim2.new(1, -70, 0, 18)
+        titleLbl.Position = UDim2.new(0, 54, 0, 10)
+        titleLbl.BackgroundTransparency = 1
+        titleLbl.Text = title
+        titleLbl.TextColor3 = self._Colors.Text
+        titleLbl.Font = Enum.Font.GothamBold
+        titleLbl.TextSize = 13
+        titleLbl.TextXAlignment = Enum.TextXAlignment.Left
+
+        local descLbl = Instance.new("TextLabel", holder)
+        descLbl.Size = UDim2.new(1, -70, 0, 14)
+        descLbl.Position = UDim2.new(0, 54, 0, 28)
+        descLbl.BackgroundTransparency = 1
+        descLbl.Text = desc
+        descLbl.TextColor3 = self._Colors.TextDim
+        descLbl.Font = Enum.Font.GothamMedium
+        descLbl.TextSize = 10
+        descLbl.TextXAlignment = Enum.TextXAlignment.Left
+        descLbl.TextTruncate = Enum.TextTruncate.AtEnd
+
+        holder.MouseEnter:Connect(function()
+            self:PlaySound("Hover")
+            TweenService:Create(stroke, TweenInfo.new(0.15), {Color = self._Colors.Accent, Transparency = 0.1}):Play()
+            TweenService:Create(holder, TweenInfo.new(0.15), {BackgroundTransparency = 0.1}):Play()
+        end)
+        holder.MouseLeave:Connect(function()
+            TweenService:Create(stroke, TweenInfo.new(0.15), {Color = self._Colors.Border, Transparency = 0.5}):Play()
+            TweenService:Create(holder, TweenInfo.new(0.15), {BackgroundTransparency = 0.3}):Play()
+        end)
+        holder.MouseButton1Click:Connect(function()
+            self:PlaySound("Click")
+            callback()
+        end)
+        
+        self:_registerThemeRefresher(function()
+            holder.BackgroundColor3 = self._Colors.Card
+            stroke.Color = self._Colors.Border
+            iconBg.BackgroundColor3 = self._Colors.Bg2
+            icon.ImageColor3 = self._Colors.Accent
+            titleLbl.TextColor3 = self._Colors.Text
+            descLbl.TextColor3 = self._Colors.TextDim
+        end)
+        self:_registerSearchControl(holder, title .. " " .. desc)
+        return holder
+    end
+
+    CreateActionRow("Reconnect Instance", "Rejoin current place server directly", "refresh-cw", function()
+        self:Notify("TELEPORT", "Reconnecting to server...", "info")
+        task.wait(1)
+        TeleportService:Teleport(game.PlaceId, LocalPlayer)
+    end)
+
+    CreateActionRow("Server Hop", "Relocate to lowest ping active instance", "server", function()
+        self:Notify("SERVER HOP", "Routing to optimal cluster instance...", "info")
+        task.spawn(function()
+            local success, err = pcall(function()
+                local url = string.format("https://games.roblox.com/v1/games/%d/servers/Public?sortOrder=Asc&limit=100", game.PlaceId)
+                local response = HttpService:JSONDecode(game:HttpGet(url))
+                if response and response.data and #response.data > 0 then
+                    local server = response.data[1]
+                    TeleportService:TeleportToPlaceInstance(game.PlaceId, server.id, LocalPlayer)
+                else
+                    TeleportService:Teleport(game.PlaceId, LocalPlayer)
+                end
+            end)
+            if not success then
+                self:Notify("ERROR", "Server hop failed, rejoining instead...", "error")
+                TeleportService:Teleport(game.PlaceId, LocalPlayer)
+            end
+        end)
+    end)
+
+    CreateActionRow("Discord Community", "Copy encrypted access link to clipboard", "message-circle", function()
+        local discordLink = "https://discord.gg/rapptezetyee"
+        if setclipboard then
+            setclipboard(discordLink)
+            self:Notify("DISCORD", "Link copied to clipboard!", "success")
+        else
+            self:Notify("DISCORD", "Executor doesn't support clipboard", "error")
+        end
+    end)
+    return QuickBox
+end
+
+function Library:CreatePerformanceDashboard(tabName, columnName)
+    if self:_isDead() then return end
+    columnName = columnName or "Left"
+
+    local PerfBox = self:CreateSection(tabName, "SYSTEM PERFORMANCE", "Realtime hardware and network stats", true, columnName, "activity")
+
+    -- 1. Container for Metrics (Grid Layout)
+    local metricsContainer = Instance.new("Frame", PerfBox)
+    metricsContainer.Size = UDim2.new(1, 0, 0, 120)
+    metricsContainer.BackgroundTransparency = 1
+    metricsContainer.LayoutOrder = 1
+
+    local grid = Instance.new("UIGridLayout", metricsContainer)
+    grid.CellSize = UDim2.new(0.5, -4, 0.5, -4)
+    grid.CellPadding = UDim2.new(0, 8, 0, 8)
+    grid.SortOrder = Enum.SortOrder.LayoutOrder
+
+    -- Helper: MakeMetric Card
+    local function MakeMetric(label, defaultVal, sub, order)
+        local card = Instance.new("Frame", metricsContainer)
+        card.LayoutOrder = order
+        card.BackgroundColor3 = self._Colors.Bg2
+        card.BackgroundTransparency = 0.2
+        card.BorderSizePixel = 0
+        Instance.new("UICorner", card).CornerRadius = UDim.new(0, 8)
+
+        local stroke = Instance.new("UIStroke", card)
+        stroke.Color = self._Colors.Border
+        stroke.Thickness = 1
+        stroke.Transparency = 0.5
+
+        local lbl = Instance.new("TextLabel", card)
+        lbl.Size = UDim2.new(1, -16, 0, 14)
+        lbl.Position = UDim2.new(0, 8, 0, 8)
+        lbl.BackgroundTransparency = 1
+        lbl.Font = Enum.Font.GothamBold
+        lbl.TextSize = 9
+        lbl.TextColor3 = self._Colors.TextDim
+        lbl.TextXAlignment = Enum.TextXAlignment.Left
+        lbl.Text = string.upper(label)
+
+        local valLbl = Instance.new("TextLabel", card)
+        valLbl.Size = UDim2.new(1, -16, 0, 22)
+        valLbl.Position = UDim2.new(0, 8, 0, 22)
+        valLbl.BackgroundTransparency = 1
+        valLbl.Font = Enum.Font.GothamBlack
+        valLbl.TextSize = 18
+        valLbl.TextColor3 = self._Colors.Accent
+        valLbl.TextXAlignment = Enum.TextXAlignment.Left
+        valLbl.Text = defaultVal
+
+        local subLbl = Instance.new("TextLabel", card)
+        subLbl.Size = UDim2.new(1, -16, 0, 12)
+        subLbl.Position = UDim2.new(0, 8, 0, 44)
+        subLbl.BackgroundTransparency = 1
+        subLbl.Font = Enum.Font.GothamMedium
+        subLbl.TextSize = 9
+        subLbl.TextColor3 = self._Colors.TextDim
+        subLbl.TextXAlignment = Enum.TextXAlignment.Left
+        subLbl.Text = sub
+
+        self:_registerThemeRefresher(function()
+            card.BackgroundColor3 = self._Colors.Bg2
+            stroke.Color = self._Colors.Border
+            lbl.TextColor3 = self._Colors.TextDim
+            valLbl.TextColor3 = self._Colors.Accent
+            subLbl.TextColor3 = self._Colors.TextDim
+        end)
+
+        return valLbl
+    end
+
+    local fpsM = MakeMetric("FRAMERATE", "60.0", "FPS", 1)
+    local pingM = MakeMetric("LATENCY", "35 ms", "OPTIMAL", 2)
+    local plM = MakeMetric("PLAYERS", tostring(#Players:GetPlayers()) .. " / " .. tostring(Players.MaxPlayers), "ONLINE", 3)
+    local sessM = MakeMetric("SESSION", "00:00", "ACTIVE", 4)
+
+    -- 2. Graph (Framebuffer Activity)
+    local WaveBox = Instance.new("Frame", PerfBox)
+    WaveBox.Size = UDim2.new(1, 0, 0, 72)
+    WaveBox.BackgroundColor3 = self._Colors.Bg2
+    WaveBox.BackgroundTransparency = 0.2
+    WaveBox.BorderSizePixel = 0
+    WaveBox.LayoutOrder = 2
+    Instance.new("UICorner", WaveBox).CornerRadius = UDim.new(0, 8)
+
+    local wStroke = Instance.new("UIStroke", WaveBox)
+    wStroke.Color = self._Colors.Border
+    wStroke.Thickness = 1
+    wStroke.Transparency = 0.5
+
+    local wTitle = Instance.new("TextLabel", WaveBox)
+    wTitle.Size = UDim2.new(0.5, -10, 0, 14)
+    wTitle.Position = UDim2.new(0, 12, 0, 8)
+    wTitle.BackgroundTransparency = 1
+    wTitle.Font = Enum.Font.GothamBold
+    wTitle.TextSize = 9
+    wTitle.TextColor3 = self._Colors.TextDim
+    wTitle.TextXAlignment = Enum.TextXAlignment.Left
+    wTitle.Text = "FRAMEBUFFER ACTIVITY"
+
+    local wSub = Instance.new("TextLabel", WaveBox)
+    wSub.Size = UDim2.new(0.5, -10, 0, 14)
+    wSub.Position = UDim2.new(0.5, 0, 0, 8)
+    wSub.BackgroundTransparency = 1
+    wSub.Font = Enum.Font.GothamBold
+    wSub.TextSize = 9
+    wSub.TextColor3 = self._Colors.Accent
+    wSub.TextXAlignment = Enum.TextXAlignment.Right
+    wSub.Text = "REALTIME | 60 FPS"
+
+    local barBox = Instance.new("Frame", WaveBox)
+    barBox.Size = UDim2.new(1, -24, 0, 32)
+    barBox.Position = UDim2.new(0, 12, 0, 28)
+    barBox.BackgroundTransparency = 1
+    barBox.ClipsDescendants = true
+
+    local bLayout = Instance.new("UIListLayout", barBox)
+    bLayout.FillDirection = Enum.FillDirection.Horizontal
+    bLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+    bLayout.VerticalAlignment = Enum.VerticalAlignment.Bottom
+    bLayout.Padding = UDim.new(0, 3)
+
+    local graphBars = {}
+    for i = 1, 20 do
+        local b = Instance.new("Frame", barBox)
+        b.Size = UDim2.new(0, 4, 0.6, 0)
+        b.BackgroundColor3 = self._Colors.Accent
+        b.BorderSizePixel = 0
+        Instance.new("UICorner", b).CornerRadius = UDim.new(1, 0)
+        table.insert(graphBars, b)
+    end
+
+    local fpsHistory = {}
+    for i = 1, 20 do
+        fpsHistory[i] = 60
+    end
+
+    self:_registerThemeRefresher(function()
+        WaveBox.BackgroundColor3 = self._Colors.Bg2
+        wStroke.Color = self._Colors.Border
+        wTitle.TextColor3 = self._Colors.TextDim
+        wSub.TextColor3 = self._Colors.Accent
+        for _, b in ipairs(graphBars) do
+            b.BackgroundColor3 = self._Colors.Accent
+        end
+    end)
+
+    -- 3. Live Logic
+    local currentFPS = 60
+    local frameCount = 0
+    local lastCheck = tick()
+    local startTime = tick()
+    local maxObservedFPS = 60
+
+    Fn.track(RunService.RenderStepped, function()
+        if not WaveBox.Parent then return end
+        frameCount = frameCount + 1
+        local now = tick()
+        local elapsed = now - lastCheck
+        if elapsed >= 0.2 then
+            currentFPS = math.clamp(math.floor((frameCount / elapsed) + 0.5), 1, 360)
+            fpsM.Text = string.format("%.1f", currentFPS)
+            wSub.Text = "REALTIME | " .. tostring(currentFPS) .. " FPS"
+            frameCount = 0
+            lastCheck = now
+
+            if currentFPS > maxObservedFPS then
+                maxObservedFPS = math.max(60, currentFPS)
+            end
+
+            table.remove(fpsHistory, 1)
+            table.insert(fpsHistory, currentFPS)
+
+            for i, bar in ipairs(graphBars) do
+                local sample = fpsHistory[i] or 60
+                local targetHeight = math.clamp(sample / maxObservedFPS, 0.1, 0.95)
+                TweenService:Create(bar, TweenInfo.new(0.15, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+                    Size = UDim2.new(0, 4, targetHeight, 0)
+                }):Play()
+            end
+        end
+    end, self)
+
+    task.spawn(function()
+        while task.wait(0.5) do
+            if not WaveBox.Parent then break end
+            local elapsed = math.floor(tick() - startTime)
+            sessM.Text = string.format("%02d:%02d", math.floor(elapsed / 60), elapsed % 60)
+            plM.Text = tostring(#Players:GetPlayers()) .. " / " .. tostring(Players.MaxPlayers)
+            pcall(function()
+                local p = math.floor(Stats.Network.ServerStatsItem["Data Ping"]:GetValue())
+                pingM.Text = tostring(p) .. " ms"
+            end)
+        end
+    end)
+
+    return PerfBox
+end
+
 -- =========================================================
 -- CONTROLS
 -- =========================================================
@@ -6493,7 +6737,8 @@ function Library:AddSlider(page, text, minVal, maxVal, default, decimals, callba
     valBox.Position = UDim2.new(1, -84, 0, 3)
     valBox.BackgroundColor3 = self._Colors.Bg2
     valBox.BackgroundTransparency = 0.5
-    valBox.TextColor3 = self._Colors.Text
+    valBox.TextColor3 = Color3.fromRGB(255, 255, 255)
+    valBox.TextStrokeTransparency = 1
     valBox.Font = Enum.Font.GothamBold
     valBox.TextSize = 12
     valBox.Text = tostring(default)
@@ -6976,7 +7221,8 @@ function Library:AddDropdown(page, text, options, defaultIndex, callback)
     searchBox.Text = ""
     searchBox.PlaceholderText = "Search options..."
     searchBox.PlaceholderColor3 = self._Colors.TextDim
-    searchBox.TextColor3 = self._Colors.Text
+    searchBox.TextColor3 = Color3.fromRGB(255, 255, 255)
+    searchBox.TextStrokeTransparency = 1
     searchBox.Font = Enum.Font.GothamMedium
     searchBox.TextSize = 11
     searchBox.TextXAlignment = Enum.TextXAlignment.Left
@@ -8256,7 +8502,8 @@ function Library:AddTextbox(page, text, placeholder, callback)
     input.Text = ""
     input.PlaceholderText = tostring(placeholder or "")
     input.PlaceholderColor3 = self._Colors.TextDim
-    input.TextColor3 = self._Colors.Text
+    input.TextColor3 = Color3.fromRGB(255, 255, 255)
+    input.TextStrokeTransparency = 1
     input.Font = Enum.Font.GothamMedium
     input.TextSize = 11
     input.TextXAlignment = Enum.TextXAlignment.Left
@@ -8453,7 +8700,8 @@ function Library:AddColorPicker(page, text, defaultColor3, callback)
     hexBox.Position = UDim2.new(0.55, 2, 1, -28)
     hexBox.Size = UDim2.new(0.45, -12, 0, 18)
     hexBox.BackgroundColor3 = self._Colors.Bg
-    hexBox.TextColor3 = self._Colors.Text
+    hexBox.TextColor3 = Color3.fromRGB(255, 255, 255)
+    hexBox.TextStrokeTransparency = 1
     hexBox.Font = Enum.Font.RobotoMono
     hexBox.TextSize = 10
     hexBox.PlaceholderText = "#FFFFFF"
