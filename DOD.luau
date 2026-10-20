@@ -2914,8 +2914,8 @@ function Library:CreateCategory(categoryName, iconSpec)
         if iconSpec then
             if string.sub(iconSpec, 1, 6) == "asset:" then
                 iconImg.Image = "rbxassetid://" .. string.sub(iconSpec, 7)
-            elseif iconSpec == "crosshair" then
-                iconImg.Image = "rbxassetid://6031280882"
+            else
+                iconImg.Image = GetIcon(iconSpec)
             end
         end
 
@@ -3011,8 +3011,8 @@ function Library:CreateCategory(categoryName, iconSpec)
     if iconSpec then
         if string.sub(iconSpec, 1, 6) == "asset:" then
             iconImg.Image = "rbxassetid://" .. string.sub(iconSpec, 7)
-        elseif iconSpec == "crosshair" then
-            iconImg.Image = "rbxassetid://6031280882"
+        else
+            iconImg.Image = GetIcon(iconSpec)
         end
     end
 
