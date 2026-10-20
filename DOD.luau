@@ -3447,6 +3447,8 @@ function Library:CreateCategory(categoryName, iconSpec)
 
         header.MouseButton1Click:Connect(function()
             local current = STATE.AccordionExpanded[categoryName]
+            local isActiveCat = (STATE.ActiveCategory == categoryName)
+            
             if not current then
                 local tabs = STATE.CategoryTabs[categoryName]
                 local targetTab = nil
@@ -3455,7 +3457,15 @@ function Library:CreateCategory(categoryName, iconSpec)
                     targetTab = (savedIdx and tabs[savedIdx]) or tabs[1]
                 end
                 self:SetActiveCategory(categoryName, targetTab)
-            else
+            elseif current and not isActiveCat then
+                local tabs = STATE.CategoryTabs[categoryName]
+                local targetTab = nil
+                if tabs and #tabs > 0 then
+                    local savedIdx = STATE.ActiveSubIndices[categoryName]
+                    targetTab = (savedIdx and tabs[savedIdx]) or tabs[1]
+                end
+                self:SetActiveCategory(categoryName, targetTab)
+            elseif current and isActiveCat then
                 self:_setAccordionState(categoryName, false)
             end
         end)
@@ -3650,12 +3660,9 @@ function Library:SetActiveCategory(categoryName, preferredTab)
     end
 
     if self.TabPosition == "Side" then
-        for otherCat in pairs(STATE.CategoryButtons) do
-            if otherCat ~= categoryName then
-                self:_setAccordionState(otherCat, false)
-            end
+        if not STATE.AccordionExpanded[categoryName] then
+            self:_setAccordionState(categoryName, true)
         end
-        self:_setAccordionState(categoryName, true)
         
         for _, catData in pairs(STATE.CategoryButtons) do
             if catData.isAccordion and catData.tabList then
