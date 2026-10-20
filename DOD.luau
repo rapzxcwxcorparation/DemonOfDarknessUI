@@ -689,6 +689,10 @@ function Library.new(opts)
 
     local self = setmetatable({}, Library)
 
+    self._initialized = false
+    self._themeLoading = false
+    self._themeSavePending = false
+
     self.Title       = opts.Title or "Demon of Darkness UI"
     self.Version     = opts.Version or "v1.2"
     self.Author      = opts.Author or "@DemonOfDarkness"
@@ -866,6 +870,29 @@ function Library.new(opts)
             self:LoadConfig(g.DoD_LastConfig, true)
         end)
     end
+
+    local themeSetters = {
+        "SetTheme", "SetAccentColor", "SetAcrylic", "SetAcrylicIntensity",
+        "SetReducedMotion", "SetLayoutDensity", "SetSectionTransparency",
+        "SetFocusOverlay", "SetWeather", "SetNotificationPosition",
+        "SetTooltipEnabled", "SetTooltipTransparency",
+        "SetSoundsEnabled", "SetSoundVolume", "SetWallpaper",
+        "SetTitleIcon", "SetVersion", "SetVersionBadgeColor",
+    }
+    for _, mName in ipairs(themeSetters) do
+        local orig = self[mName]
+        if type(orig) == "function" then
+            self[mName] = function(s, ...)
+                local result = orig(s, ...)
+                s:_triggerThemeSave()
+                return result
+            end
+        end
+    end
+
+    self._initialized = true
+
+    self:LoadThemeConfig("settings", true)
 
     return self
 end
@@ -2084,7 +2111,31 @@ function Library:_initMainGui()
     UI.AcrylicSheen.Visible = self.Acrylic
 
     UI.MainScale = Instance.new("UIScale", MC)
-    UI.MainScale.Scale = self._isMobile and 0.75 or 1
+    UI.MainScale.Scale = 1
+
+    local function updateAdaptiveScale()
+        if not UI.MainScale then return end
+        if not UserInputService.TouchEnabled then
+            UI.MainScale.Scale = 1
+            return
+        end
+        local cam = getCam()
+        if not cam then return end
+        local viewport = cam.ViewportSize
+        local baseW = (self.WindowSize and self.WindowSize.X.Offset) or 900
+        local baseH = (self.WindowSize and self.WindowSize.Y.Offset) or 580
+        if baseW <= 0 then baseW = 900 end
+        if baseH <= 0 then baseH = 580 end
+        local fitW = (viewport.X * 0.95) / baseW
+        local fitH = (viewport.Y * 0.90) / baseH
+        local fit = math.min(fitW, fitH)
+        UI.MainScale.Scale = math.clamp(fit, 0.72, 1.4)
+    end
+    updateAdaptiveScale()
+    local adaptiveCam = getCam()
+    if adaptiveCam then
+        Fn.track(adaptiveCam:GetPropertyChangedSignal("ViewportSize"), updateAdaptiveScale, self)
+    end
 
     UI.MainStroke = Instance.new("UIStroke", MC)
     UI.MainStroke.Color = self._Colors.Border
@@ -4166,9 +4217,10 @@ function Library:_updateFavoriteStar(configId)
     if not star or not star.Parent then return end
     local isFav = self._STATE.Favorites[configId] == true
     local hovering = star:GetAttribute("DoD_Hover") == true
+    local mobileVisible = self._isMobile
     TweenService:Create(star, TweenInfo.new(0.15, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
         ImageColor3 = isFav and self._Colors.Accent or self._Colors.TextDim,
-        ImageTransparency = isFav and (hovering and 0 or 0.15) or (hovering and 0.2 or 1),
+        ImageTransparency = isFav and (hovering and 0 or 0.15) or (mobileVisible and 0.5 or (hovering and 0.2 or 1)),
     }):Play()
 end
 
@@ -4179,14 +4231,25 @@ function Library:_attachFavorite(holder, configId, starPos)
     self._STATE.FavoriteHolders[configId] = holder
     self._STATE.FavoriteStars = self._STATE.FavoriteStars or {}
 
-    local star = Instance.new("ImageLabel", holder)
+    local star = Instance.new("ImageButton", holder)
     star.Name = "FavoriteStar"
-    star.Size = UDim2.fromOffset(11, 11)
-    star.Position = starPos or UDim2.new(1, -14, 0, 2)
+    if self._isMobile then
+        star.Size = UDim2.fromOffset(16, 16)
+        star.Position = starPos or UDim2.new(1, -20, 0, 0)
+    else
+        star.Size = UDim2.fromOffset(11, 11)
+        star.Position = starPos or UDim2.new(1, -14, 0, 2)
+    end
     star.BackgroundTransparency = 1
+    star.BorderSizePixel = 0
+    star.AutoButtonColor = false
     star.Image = GetIcon("star")
     star.ImageColor3 = self._STATE.Favorites[configId] and self._Colors.Accent or self._Colors.TextDim
-    star.ImageTransparency = self._STATE.Favorites[configId] and 0.15 or 1
+    if self._isMobile then
+        star.ImageTransparency = self._STATE.Favorites[configId] and 0.15 or 0.5
+    else
+        star.ImageTransparency = self._STATE.Favorites[configId] and 0.15 or 1
+    end
     star.ZIndex = 10
     self._STATE.FavoriteStars[configId] = star
 
@@ -4207,7 +4270,17 @@ function Library:_attachFavorite(holder, configId, starPos)
         self:_updateFavoriteStar(configId)
     end)
 
-    -- Left click on star is intentionally ignored (handled by row)
+    star.MouseButton1Click:Connect(function()
+        if self:_isDead() then return end
+        if self._STATE.Favorites[configId] then
+            self._STATE.Favorites[configId] = nil
+        else
+            self._STATE.Favorites[configId] = true
+        end
+        self:_updateFavoriteStar(configId)
+        self:_applySearchFilter()
+        self:_triggerAutoSave()
+    end)
 
     self:_registerThemeRefresher(function()
         if star and star.Parent then
@@ -4734,37 +4807,68 @@ end
 
 function Library:_initMobileToggle()
     local UI = self._UI
+    local isTouch = UserInputService.TouchEnabled
+
     UI.MobileToggle = Instance.new("TextButton", UI.MainGui)
-    UI.MobileToggle.Visible = UserInputService.TouchEnabled
-    UI.MobileToggle.Text = "<i>Menu</i>"
-    UI.MobileToggle.RichText = true
-    UI.MobileToggle.Size = UDim2.new(0, 48, 0, 48)
-    UI.MobileToggle.Position = UDim2.new(0, 16, 0.5, -24)
-    UI.MobileToggle.BackgroundColor3 = self._Colors.Card
-    UI.MobileToggle.TextColor3 = self._Colors.Text
-    UI.MobileToggle.Font = Enum.Font.Gotham
-    UI.MobileToggle.TextSize = 13
+    UI.MobileToggle.Name = "MobileToggle"
+    UI.MobileToggle.Size = UDim2.fromOffset(160, 32)
+    UI.MobileToggle.AnchorPoint = Vector2.new(0.5, 0)
+    UI.MobileToggle.Position = UDim2.new(0.5, 0, 0, 12)
+    UI.MobileToggle.BackgroundColor3 = self._Colors.Bg2
+    UI.MobileToggle.BackgroundTransparency = 0.08
+    UI.MobileToggle.Text = ""
     UI.MobileToggle.AutoButtonColor = false
     UI.MobileToggle.BorderSizePixel = 0
+    UI.MobileToggle.Visible = isTouch and self._STATE.GuiVisible
+    UI.MobileToggle.ZIndex = 1001
     Instance.new("UICorner", UI.MobileToggle).CornerRadius = UDim.new(1, 0)
 
     UI.MobileToggleStroke = Instance.new("UIStroke", UI.MobileToggle)
     UI.MobileToggleStroke.Color = self._Colors.Accent
-    UI.MobileToggleStroke.Thickness = 1.2
-    UI.MobileToggleStroke.Transparency = 0.35
+    UI.MobileToggleStroke.Thickness = 1.5
+    UI.MobileToggleStroke.Transparency = 0.4
+
+    local mtGrad = Instance.new("UIGradient", UI.MobileToggle)
+    mtGrad.Rotation = 90
+    mtGrad.Color = ColorSequence.new(self._Colors.Bg2, self._Colors.Bg)
+
+    local mtIcon = Instance.new("ImageLabel", UI.MobileToggle)
+    mtIcon.Size = UDim2.fromOffset(14, 14)
+    mtIcon.Position = UDim2.new(0, 14, 0.5, -7)
+    mtIcon.BackgroundTransparency = 1
+    mtIcon.Image = GetIcon("panel-top")
+    mtIcon.ImageColor3 = self._Colors.Accent
+
+    local mtLabel = Instance.new("TextLabel", UI.MobileToggle)
+    mtLabel.Size = UDim2.new(1, -40, 1, 0)
+    mtLabel.Position = UDim2.new(0, 36, 0, 0)
+    mtLabel.BackgroundTransparency = 1
+    mtLabel.Text = (self.Title:match("^(.-)%s*|") or self.Title)
+    mtLabel.TextColor3 = self._Colors.Text
+    mtLabel.Font = Enum.Font.GothamBold
+    mtLabel.TextSize = 11
+    mtLabel.TextXAlignment = Enum.TextXAlignment.Left
+    mtLabel.TextTruncate = Enum.TextTruncate.AtEnd
 
     Fn.bindPressAnimation(UI.MobileToggle)
     UI.MobileToggle.MouseButton1Click:Connect(function()
-        self:Toggle()
+        self:Minimize()
     end)
-    
-    -- Sinkronisasi visibilitas tombol Mobile Toggle
-    UI.MobileToggle.Visible = self._isMobile and self._STATE.GuiVisible
+
+    self:_registerThemeRefresher(function()
+        if not UI.MobileToggle.Parent then return end
+        UI.MobileToggle.BackgroundColor3 = self._Colors.Bg2
+        if UI.MobileToggleStroke then UI.MobileToggleStroke.Color = self._Colors.Accent end
+        mtIcon.ImageColor3 = self._Colors.Accent
+        mtLabel.TextColor3 = self._Colors.Text
+        mtGrad.Color = ColorSequence.new(self._Colors.Bg2, self._Colors.Bg)
+    end)
+
     local oldToggle = self.Toggle
     self.Toggle = function(lib, ...)
         oldToggle(lib, ...)
         if UI.MobileToggle then
-            UI.MobileToggle.Visible = self._isMobile and self._STATE.GuiVisible
+            UI.MobileToggle.Visible = UserInputService.TouchEnabled and self._STATE.GuiVisible
         end
     end
 end
@@ -6543,6 +6647,14 @@ function Library:CreateThemeCustomizer(tabName)
     self:AddButton(section, "Clear Wallpaper Cache", function()
         self:ClearWallpaperCache()
     end)
+    self:AddButton(section, "Save Theme Settings", function()
+        self:SaveThemeConfig("settings")
+    end)
+    self:AddButton(section, "Reset Theme to Default", function()
+        self:Confirm("Reset Theme", "Reset all theme customization to defaults?", function()
+            self:ResetThemeConfig()
+        end)
+    end)
     return section
 end
 
@@ -6939,6 +7051,15 @@ function Library:AddToggle(page, text, default, callback)
     local lastToggle = 0
     holder.InputBegan:Connect(function(inp)
         if inp.UserInputType == Enum.UserInputType.MouseButton1 or inp.UserInputType == Enum.UserInputType.Touch then
+            local starBtn = holder:FindFirstChild("FavoriteStar")
+            if starBtn and starBtn.Parent then
+                local mp = UserInputService:GetMouseLocation()
+                local sp = starBtn.AbsolutePosition
+                local ss = starBtn.AbsoluteSize
+                if mp.X >= sp.X and mp.X <= sp.X + ss.X and mp.Y >= sp.Y and mp.Y <= sp.Y + ss.Y then
+                    return
+                end
+            end
             local now = tick()
             if now - lastToggle < 0.15 then return end
             lastToggle = now
@@ -7228,16 +7349,66 @@ function Library:AddSlider(page, text, minVal, maxVal, default, decimals, callba
 
     local step = 1 / (10 ^ decimals)
 
-    btnMinus.MouseButton1Click:Connect(function()
-        applyValue(val - step, true)
-        callback(val)
-        self:_triggerAutoSave()
+    local function makeHold(dir)
+        local active = false
+        local thread = nil
+        return {
+            start = function()
+                if active then return end
+                active = true
+                local prev = val
+                applyValue(val + dir * step, true)
+                if val ~= prev then
+                    callback(val)
+                    self:_triggerAutoSave()
+                end
+                thread = task.spawn(function()
+                    task.wait(0.35)
+                    while active do
+                        local prevV = val
+                        applyValue(val + dir * step, true)
+                        if val ~= prevV then
+                            callback(val)
+                            self:_triggerAutoSave()
+                        end
+                        task.wait(0.05)
+                    end
+                end)
+            end,
+            stop = function()
+                if not active then return end
+                active = false
+                if thread then
+                    pcall(task.cancel, thread)
+                    thread = nil
+                end
+            end,
+        }
+    end
+
+    local minusHold = makeHold(-1)
+    local plusHold = makeHold(1)
+
+    btnMinus.InputBegan:Connect(function(inp)
+        if inp.UserInputType == Enum.UserInputType.MouseButton1 or inp.UserInputType == Enum.UserInputType.Touch then
+            minusHold.start()
+        end
     end)
-    
-    btnPlus.MouseButton1Click:Connect(function()
-        applyValue(val + step, true)
-        callback(val)
-        self:_triggerAutoSave()
+    btnMinus.InputEnded:Connect(function(inp)
+        if inp.UserInputType == Enum.UserInputType.MouseButton1 or inp.UserInputType == Enum.UserInputType.Touch then
+            minusHold.stop()
+        end
+    end)
+
+    btnPlus.InputBegan:Connect(function(inp)
+        if inp.UserInputType == Enum.UserInputType.MouseButton1 or inp.UserInputType == Enum.UserInputType.Touch then
+            plusHold.start()
+        end
+    end)
+    btnPlus.InputEnded:Connect(function(inp)
+        if inp.UserInputType == Enum.UserInputType.MouseButton1 or inp.UserInputType == Enum.UserInputType.Touch then
+            plusHold.stop()
+        end
     end)
 
     local function setFromPosition(position)
@@ -9202,6 +9373,257 @@ end
 -- WINDOW TOGGLE / DESTROY
 -- =========================================================
 
+function Library:_themeSnapshot()
+    local snap = {
+        _version = self.Version,
+        ThemeName = self.ThemeName,
+        Acrylic = self.Acrylic,
+        AcrylicBlurIntensity = self.AcrylicBlurIntensity,
+        SoundsEnabled = self._SoundsEnabled,
+        SoundVolume = self._SoundVolume,
+        NotifPosition = self._NotifPosition,
+        WallpaperSource = self.WallpaperSource or false,
+        WallpaperTransparency = self.WallpaperTransparency,
+        TitleIconName = self._TitleIconName,
+        FocusOverlayEnabled = self._STATE.FocusOverlayEnabled,
+        FocusOverlayType = self._STATE.FocusOverlayType,
+        WeatherEnabled = self._STATE.WeatherEnabled,
+        WeatherType = self._STATE.WeatherType,
+        WeatherIntensity = self._STATE.WeatherIntensity,
+        ReducedMotion = self._STATE.ReducedMotion,
+        LayoutDensity = self._STATE.LayoutDensity,
+        SectionTransparency = self._STATE.SectionTransparency,
+        TooltipEnabled = self._STATE.TooltipEnabled,
+        TooltipTransparency = self._STATE.TooltipTransparency,
+        _timestamp = os.time(),
+    }
+    if self._AccentOverride then
+        snap.AccentOverride = { self._AccentOverride.R, self._AccentOverride.G, self._AccentOverride.B }
+    end
+    if self._VersionBadgeOverride then
+        snap.VersionBadgeOverride = { self._VersionBadgeOverride.R, self._VersionBadgeOverride.G, self._VersionBadgeOverride.B }
+    end
+    return snap
+end
+
+function Library:_applyThemeSnapshot(data, silent)
+    if type(data) ~= "table" then return end
+    if self:_isDead() then return end
+    self._themeLoading = true
+    local ok, err = pcall(function()
+        if type(data.AccentOverride) == "table" and #data.AccentOverride >= 3 then
+            self._AccentOverride = Color3.new(data.AccentOverride[1], data.AccentOverride[2], data.AccentOverride[3])
+        end
+        if type(data.VersionBadgeOverride) == "table" and #data.VersionBadgeOverride >= 3 then
+            self._VersionBadgeOverride = Color3.new(data.VersionBadgeOverride[1], data.VersionBadgeOverride[2], data.VersionBadgeOverride[3])
+        end
+        if type(data.ThemeName) == "string" and D.Themes[data.ThemeName] then
+            self:SetTheme(data.ThemeName, true)
+        end
+        if type(data.Acrylic) == "boolean" then
+            self:SetAcrylic(data.Acrylic)
+        end
+        if type(data.AcrylicBlurIntensity) == "number" then
+            self:SetAcrylicIntensity(data.AcrylicBlurIntensity)
+        end
+        if type(data.SoundsEnabled) == "boolean" then
+            self:SetSoundsEnabled(data.SoundsEnabled)
+        end
+        if type(data.SoundVolume) == "number" then
+            self:SetSoundVolume(data.SoundVolume)
+        end
+        if type(data.NotifPosition) == "string" then
+            self:SetNotificationPosition(data.NotifPosition)
+        end
+        if type(data.FocusOverlayEnabled) == "boolean" then
+            self:SetFocusOverlay(data.FocusOverlayEnabled, type(data.FocusOverlayType) == "string" and data.FocusOverlayType or nil)
+        end
+        if type(data.WeatherEnabled) == "boolean" then
+            self:SetWeather(data.WeatherEnabled, type(data.WeatherType) == "string" and data.WeatherType or nil, type(data.WeatherIntensity) == "number" and data.WeatherIntensity or nil)
+        end
+        if type(data.ReducedMotion) == "boolean" then
+            self:SetReducedMotion(data.ReducedMotion)
+        end
+        if type(data.LayoutDensity) == "string" then
+            self:SetLayoutDensity(data.LayoutDensity)
+        end
+        if type(data.SectionTransparency) == "number" then
+            self:SetSectionTransparency(data.SectionTransparency)
+        end
+        if type(data.TooltipEnabled) == "boolean" then
+            self:SetTooltipEnabled(data.TooltipEnabled)
+        end
+        if type(data.TooltipTransparency) == "number" then
+            self:SetTooltipTransparency(data.TooltipTransparency)
+        end
+        if type(data.TitleIconName) == "string" and data.TitleIconName ~= "" then
+            self:SetTitleIcon(data.TitleIconName)
+            self._TitleIconName = data.TitleIconName
+        end
+        if type(data.WallpaperSource) == "string" and data.WallpaperSource ~= "" then
+            self:SetWallpaper(data.WallpaperSource, tonumber(data.WallpaperTransparency) or 0)
+            self.WallpaperSource = data.WallpaperSource
+            self.WallpaperTransparency = tonumber(data.WallpaperTransparency) or 0
+        elseif data.WallpaperSource == false and self.WallpaperSource then
+            self:SetWallpaper(nil)
+            self.WallpaperSource = nil
+        end
+        if type(data.WallpaperTransparency) == "number" then
+            self.WallpaperTransparency = data.WallpaperTransparency
+            if self._UI.Wallpaper and self._UI.Wallpaper.Visible then
+                self._UI.Wallpaper.ImageTransparency = math.clamp(data.WallpaperTransparency, 0, 1)
+            end
+        end
+    end)
+    self._themeLoading = false
+    if not ok and not silent then
+        warn("[DoD UI] Theme apply failed: " .. tostring(err))
+    end
+end
+
+function Library:_triggerThemeSave()
+    if not self._initialized then return end
+    if self._themeLoading then return end
+    if self._themeSavePending then return end
+    self._themeSavePending = true
+    task.delay(0.8, function()
+        self._themeSavePending = false
+        if not self:_isDead() then
+            self:SaveThemeConfig("settings", true)
+        end
+    end)
+end
+
+function Library:ExportTheme()
+    if self:_isDead() then return {} end
+    return self:_themeSnapshot()
+end
+
+function Library:ImportTheme(data, silent)
+    if self:_isDead() then return end
+    self:_applyThemeSnapshot(data, silent)
+    if not silent then
+        self:Notify("THEME", "Theme applied", "success")
+    end
+end
+
+function Library:SaveThemeConfig(name, silent)
+    if self:_isDead() then return end
+    local key = type(name) == "string" and name ~= "" and name or "settings"
+    local g = (getgenv and getgenv()) or _G
+    g.DoD_LastTheme = key
+    local snap = self:_themeSnapshot()
+    local ok, json = pcall(function()
+        return game:GetService("HttpService"):JSONEncode(snap)
+    end)
+    if not ok or type(json) ~= "string" then
+        if not silent then self:Notify("THEME", "JSON encode failed", "error") end
+        return
+    end
+    local path = "DoD_Theme_" .. key .. ".json"
+    local saved = false
+    pcall(function()
+        if writefile and type(writefile) == "function" then
+            writefile(path, json)
+            saved = true
+        end
+    end)
+    if not saved then
+        g.__DoDThemeConfigs = g.__DoDThemeConfigs or {}
+        g.__DoDThemeConfigs[key] = json
+        saved = true
+    end
+    if saved and not silent then
+        self:Notify("THEME", "Saved: " .. key, "success")
+    end
+end
+
+function Library:LoadThemeConfig(name, silent)
+    if self:_isDead() then return end
+    local key = type(name) == "string" and name ~= "" and name or "settings"
+    local path = "DoD_Theme_" .. key .. ".json"
+    local json = nil
+    pcall(function()
+        if isfile and type(isfile) == "function" and readfile and type(readfile) == "function" then
+            if isfile(path) then json = readfile(path) end
+        end
+    end)
+    if not json then
+        local g = (getgenv and getgenv()) or _G
+        if g.__DoDThemeConfigs and g.__DoDThemeConfigs[key] then
+            json = g.__DoDThemeConfigs[key]
+        end
+    end
+    if type(json) ~= "string" then
+        if not silent then self:Notify("THEME", "Not found: " .. key, "warning") end
+        return
+    end
+    local ok, data = pcall(function()
+        return game:GetService("HttpService"):JSONDecode(json)
+    end)
+    if not ok or type(data) ~= "table" then
+        if not silent then self:Notify("THEME", "Decode failed", "error") end
+        return
+    end
+    self:_applyThemeSnapshot(data, true)
+    local g = (getgenv and getgenv()) or _G
+    g.DoD_LastTheme = key
+    if not silent then
+        self:Notify("THEME", "Loaded: " .. key, "success")
+    end
+end
+
+function Library:GetThemeConfigs()
+    local configs = {}
+    local prefix = "DoD_Theme_"
+    local suffix = ".json"
+    pcall(function()
+        if listfiles and type(listfiles) == "function" then
+            for _, file in ipairs(listfiles()) do
+                if string.sub(file, 1, #prefix) == prefix and string.sub(file, -#suffix) == suffix then
+                    local name = string.sub(file, #prefix + 1, #file - #suffix)
+                    table.insert(configs, name)
+                end
+            end
+        else
+            local g = (getgenv and getgenv()) or _G
+            if g.__DoDThemeConfigs then
+                for name, _ in pairs(g.__DoDThemeConfigs) do
+                    table.insert(configs, name)
+                end
+            end
+        end
+    end)
+    table.sort(configs)
+    return configs
+end
+
+function Library:ResetThemeConfig(silent)
+    if self:_isDead() then return end
+    self._AccentOverride = nil
+    self._VersionBadgeOverride = nil
+    self:_applyThemeSnapshot({
+        ThemeName = "Demon of Darkness",
+        Acrylic = true,
+        AcrylicBlurIntensity = 8,
+        SoundsEnabled = true,
+        SoundVolume = 1,
+        NotifPosition = "TopRight",
+        FocusOverlayEnabled = true,
+        FocusOverlayType = "Grid",
+        WeatherEnabled = false,
+        WeatherType = "Snow",
+        WeatherIntensity = 65,
+        ReducedMotion = false,
+        LayoutDensity = "Normal",
+        SectionTransparency = 0.15,
+        TooltipEnabled = true,
+        TooltipTransparency = 0.15,
+        WallpaperSource = false,
+    }, true)
+    if not silent then self:Notify("THEME", "Reset to defaults", "info") end
+end
+
 function Library:_isDead()
     return self._STATE ~= nil and self._STATE.Destroyed == true
 end
@@ -9213,6 +9635,7 @@ function Library:Minimize()
     if not STATE.GuiVisible or STATE.AnimatingGui then return end
     STATE.AnimatingGui = true
     STATE.GuiVisible = false
+    if UI.MobileToggle then UI.MobileToggle.Visible = false end
     
     self:PlaySound("ToggleOff")
     
