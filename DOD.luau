@@ -1457,36 +1457,46 @@ function Library:_initMainGui()
     local minBtn = Instance.new("TextButton")
     minBtn.Name = "MinimizeButton"
     minBtn.Parent = UI.MainGui
-    minBtn.Size = UDim2.fromOffset(120, 32)
+    minBtn.Size = UDim2.fromOffset(180, 28)
     minBtn.Position = UDim2.new(0.5, 0, 0, -40)
     minBtn.AnchorPoint = Vector2.new(0.5, 0)
     minBtn.BackgroundColor3 = self._Colors.Bg2
-    minBtn.BackgroundTransparency = 0.1
+    minBtn.BackgroundTransparency = 0.12
     minBtn.AutoButtonColor = false
     minBtn.Visible = false
     minBtn.ZIndex = 500
     Instance.new("UICorner", minBtn).CornerRadius = UDim.new(1, 0)
+
+    local minGrad = Instance.new("UIGradient", minBtn)
+    minGrad.Rotation = 90
+    minGrad.Color = ColorSequence.new({
+        ColorSequenceKeypoint.new(0, self._Colors.Bg2),
+        ColorSequenceKeypoint.new(1, self._Colors.Bg),
+    })
     
     local minStroke = Instance.new("UIStroke", minBtn)
     minStroke.Color = self._Colors.Accent
     minStroke.Thickness = 1.5
-    minStroke.Transparency = 0.5
+    minStroke.Transparency = 0.4
     
     local minIcon = Instance.new("ImageLabel")
-    minIcon.Size = UDim2.fromOffset(16, 16)
-    minIcon.Position = UDim2.new(0, 12, 0.5, -8)
+    minIcon.Size = UDim2.fromOffset(14, 14)
+    minIcon.Position = UDim2.new(0, 14, 0.5, -7)
     minIcon.BackgroundTransparency = 1
     minIcon.Image = GetIcon("panel-top")
     minIcon.ImageColor3 = self._Colors.Accent
     
+    local mainTitle = self.Title:match("^(.-)%s*|") or self.Title
+    
     local minText = Instance.new("TextLabel")
-    minText.Size = UDim2.new(1, -34, 1, 0)
-    minText.Position = UDim2.new(0, 34, 0, 0)
+    minText.Size = UDim2.new(1, -40, 1, 0)
+    minText.Position = UDim2.new(0, 36, 0, 0)
     minText.BackgroundTransparency = 1
-    minText.Text = "OPEN UI"
-    minText.TextColor3 = self._Colors.Accent
+    minText.Text = mainTitle
+    minText.TextColor3 = self._Colors.Text
     minText.Font = Enum.Font.GothamBold
     minText.TextSize = 11
+    minText.TextXAlignment = Enum.TextXAlignment.Left
     
     UI.MinimizeButton = minBtn
     UI.MinimizeButtonStroke = minStroke
@@ -1557,7 +1567,8 @@ function Library:_initKeybindOverlay()
     local subtitleBg = Instance.new("Frame", overlay)
     subtitleBg.Size = UDim2.new(0, 0, 0, 18)
     subtitleBg.AutomaticSize = Enum.AutomaticSize.X
-    subtitleBg.Position = UDim2.new(1, -44, 0, 15)
+    subtitleBg.AnchorPoint = Vector2.new(1, 0)
+    subtitleBg.Position = UDim2.new(1, -56, 0, 15)
     subtitleBg.BackgroundColor3 = self._Colors.Bg
     subtitleBg.BackgroundTransparency = 0.4
     subtitleBg.BorderSizePixel = 0
@@ -6525,27 +6536,32 @@ function Library:Minimize()
         centerY = (pos.Y + size.Y / 2) / vp.Y
     end
     
-    for i = 1, 35 do
+    for i = 1, 75 do
         local p = Instance.new("Frame")
         p.Parent = UI.MainGui
-        p.Size = UDim2.fromOffset(math.random(4, 10), math.random(4, 10))
-        p.Position = UDim2.fromScale(centerX + (math.random() - 0.5) * 0.1, centerY + (math.random() - 0.5) * 0.1)
+        local pSize = math.random(4, 12)
+        p.Size = UDim2.fromOffset(pSize, pSize)
+        
+        local startX = centerX + (math.random() - 0.5) * 0.4
+        local startY = centerY + 0.25 + math.random() * 0.15
+        p.Position = UDim2.fromScale(startX, startY)
+        
         p.BackgroundColor3 = self._Colors.Accent
-        p.BackgroundTransparency = math.random(20, 50) / 100
+        p.BackgroundTransparency = math.random(20, 60) / 100
         p.ZIndex = 999
         Instance.new("UICorner", p).CornerRadius = UDim.new(1, 0)
         
-        local targetX = 0.5 + (math.random() - 0.5) * 0.08
-        local targetY = 0.02 + (math.random() - 0.5) * 0.05
+        local targetX = 0.5 + (math.random() - 0.5) * 0.15
+        local targetY = 0.02 + math.random() * 0.08
         
-        local tweenInfo = TweenInfo.new(math.random(6, 12) / 10, Enum.EasingStyle.Quart, Enum.EasingDirection.Out)
+        local tweenInfo = TweenInfo.new(math.random(8, 15) / 10, Enum.EasingStyle.Quart, Enum.EasingDirection.Out)
         TweenService:Create(p, tweenInfo, {
             Position = UDim2.fromScale(targetX, targetY),
             Size = UDim2.fromOffset(0, 0),
             BackgroundTransparency = 1
         }):Play()
         
-        task.delay(1.2, function() if p and p.Parent then p:Destroy() end end)
+        task.delay(1.7, function() if p and p.Parent then p:Destroy() end end)
     end
     
     local tweenInfo = TweenInfo.new(0.35, Enum.EasingStyle.Quart, Enum.EasingDirection.In)
@@ -6572,10 +6588,10 @@ function Library:Minimize()
         local btn = UI.MinimizeButton
         if btn then
             btn.Visible = true
-            btn.Size = UDim2.fromOffset(0, 32)
+            btn.Size = UDim2.fromOffset(0, 28)
             btn.Position = UDim2.new(0.5, 0, 0, -40)
             TweenService:Create(btn, TweenInfo.new(0.4, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
-                Size = UDim2.fromOffset(120, 32),
+                Size = UDim2.fromOffset(180, 28),
                 Position = UDim2.new(0.5, 0, 0, 16)
             }):Play()
         end
