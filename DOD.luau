@@ -501,6 +501,7 @@ function SubTabModule:_createSubGroup(mainCategory, subList)
         btn.TextColor3 = (i == 1) and self.Theme.TextActive or self.Theme.TextInactive
         btn.Font = (i == 1) and self.Theme.FontActive or self.Theme.FontInactive
         btn.TextSize = 12
+        btn.TextTruncate = Enum.TextTruncate.AtEnd
         btn.AutoButtonColor = false
         btn.ZIndex = 2
         subElements[i] = btn
@@ -969,7 +970,7 @@ function Library:_initNotifications()
     gui.Name = "DoD_UI_Notifications"
     gui.Parent = CoreGui
     gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-    gui.DisplayOrder = 999
+    gui.DisplayOrder = 2000
     self._UI.NotifGui = gui
 end
 
@@ -1066,6 +1067,15 @@ function Library:Notify(title, text, notifyType)
         progressBar.Position = UDim2.new(0, 4, 1, -2)
         progressBar.BackgroundColor3 = color
         progressBar.BorderSizePixel = 0
+
+        local accentBar = Instance.new("Frame", frame)
+        accentBar.Name = "AccentBar"
+        accentBar.Size = UDim2.new(0, 3, 1, -8)
+        accentBar.Position = UDim2.new(0, 4, 0, 4)
+        accentBar.BackgroundColor3 = color
+        accentBar.BorderSizePixel = 0
+        accentBar.ZIndex = 2
+        Instance.new("UICorner", accentBar).CornerRadius = UDim.new(1, 0)
 
         STATE.notifParts[frame] = {
             stroke = frameStroke,
@@ -1289,6 +1299,7 @@ function Library:_initMainGui()
 end
 
 function Library:_initShadowSync()
+    local SHADOW_PADDING = 32
     local function sync()
         local pos = self._UI.MainContainer.Position
         for _, layer in ipairs(self._shadowLayers) do
@@ -1299,9 +1310,9 @@ function Library:_initShadowSync()
         end
     end
     local function syncSize()
-        local absoluteSize = self._UI.MainContainer.AbsoluteSize
+        local sz = self._UI.MainContainer.Size
         for _, layer in ipairs(self._shadowLayers) do
-            layer.frame.Size = UDim2.fromOffset(absoluteSize.X, absoluteSize.Y)
+            layer.frame.Size = UDim2.fromOffset(sz.X.Offset + SHADOW_PADDING, sz.Y.Offset + SHADOW_PADDING)
         end
     end
     local function syncScale()
@@ -1315,7 +1326,6 @@ function Library:_initShadowSync()
     syncScale()
     Fn.track(self._UI.MainContainer:GetPropertyChangedSignal("Position"), sync, self)
     Fn.track(self._UI.MainContainer:GetPropertyChangedSignal("Size"), syncSize, self)
-    Fn.track(self._UI.MainContainer:GetPropertyChangedSignal("AbsoluteSize"), syncSize, self)
     Fn.track(self._UI.MainContainer:GetPropertyChangedSignal("Visible"), function()
         for _, layer in ipairs(self._shadowLayers) do
             layer.frame.Visible = self._UI.MainContainer.Visible
@@ -1886,12 +1896,25 @@ function Library:_initTrafficLights()
             if child:IsA("GuiObject") and child ~= UI.TitleBar then
                 if child == UI.AcrylicTexture or child == UI.AcrylicSheen then
                     child.Visible = visible and self.Acrylic
-                elseif child == UI.ProfileCard then
-                    child.Visible = visible
                 else
                     child.Visible = visible
                 end
             end
+        end
+        if UI.ParticleBG then
+            UI.ParticleBG.Visible = visible and self._STATE.GuiVisible
+        end
+        if UI.SnowLayer then
+            UI.SnowLayer.Visible = visible and self._STATE.GuiVisible and self._STATE.WeatherEnabled
+        end
+        if UI.MobileToggle then
+            UI.MobileToggle.Visible = visible and UserInputService.TouchEnabled
+        end
+        if UI.KeybindOverlay and not visible then
+            UI.KeybindOverlay.Visible = false
+        end
+        if UI.KeybindOverlayToggle then
+            UI.KeybindOverlayToggle.Visible = visible and #self._STATE.activeKeybindListeners > 0
         end
         if self._STATE.ContentPages then
             for name, page in pairs(self._STATE.ContentPages) do
@@ -2002,8 +2025,8 @@ function Library:_initSidebar()
 
     local accordionScroll = Instance.new("ScrollingFrame", UI.CategoryBar)
     accordionScroll.Name = "AccordionScroll"
-    accordionScroll.Position = UDim2.new(0, 4, 0, 48)
-    accordionScroll.Size = UDim2.new(1, -8, 1, -98)
+    accordionScroll.Position = UDim2.new(0, 6, 0, 56)
+    accordionScroll.Size = UDim2.new(1, -12, 1, -114)
     accordionScroll.BackgroundTransparency = 1
     accordionScroll.BorderSizePixel = 0
     accordionScroll.ScrollBarThickness = 2
@@ -2150,7 +2173,8 @@ function Library:_applyNavigationLayout()
         end
         if hasContent then
             local contentTop = 119
-            local contentH = math.max(120, mainH - contentTop - 85)
+            local bottomReserve = 56 + 10 + 10
+            local contentH = math.max(120, mainH - contentTop - bottomReserve)
             UI.ContentArea.Size = UDim2.new(1, -30, 0, contentH)
             UI.ContentArea.Position = UDim2.new(0, 15, 0, contentTop)
         end
@@ -2292,9 +2316,15 @@ function Library:_initSearchBar()
         self._STATE.SearchQuery = UI.SearchInput.Text
         clearBtn.Visible = #UI.SearchInput.Text > 0
         
-        if self._searchDebounce then task.cancel(self._searchDebounce) end
+        if self._searchDebounce then
+            pcall(task.cancel, self._searchDebounce)
+            self._searchDebounce = nil
+        end
         self._searchDebounce = task.delay(0.15, function()
-            self:_applySearchFilter()
+            self._searchDebounce = nil
+            if not self:_isDead() then
+                self:_applySearchFilter()
+            end
         end)
     end)
 
@@ -2653,12 +2683,12 @@ function Library:_createWeather(weatherType)
             frame.AnchorPoint = Vector2.new(0.5, 0.5)
             frame.Size = UDim2.new(size, 0, randomFloat(0.65, 1.1), 0)
             frame.Position = UDim2.fromScale(math.random(), randomFloat(0.35, 0.65))
-            frame.BackgroundTransparency = 0.45
+            frame.BackgroundTransparency = baseTransparency
         elseif preset.shape == "Mist" then
             frame.AnchorPoint = Vector2.new(0.5, 0.5)
             frame.Size = UDim2.fromOffset(size * 2.2, randomFloat(24, 54))
             frame.Position = UDim2.fromScale(math.random(), randomFloat(0.2, 0.9))
-            frame.BackgroundTransparency = 0.5
+            frame.BackgroundTransparency = baseTransparency
         elseif preset.shape == "Line" then
             frame.Size = UDim2.fromOffset(size, size * 4)
             frame.BackgroundTransparency = baseTransparency
@@ -3190,21 +3220,23 @@ function Library:SetActiveCategory(categoryName, preferredTab)
     end
 
     if STATE.SubTabBar and STATE.SubTabBar.Wrapper then
-        local oldWrapper = STATE.SubTabBar.Wrapper
-        STATE.SubTabBar:Destroy()
+        local oldBar = STATE.SubTabBar
+        local oldWrapper = oldBar.Wrapper
+        oldBar.Wrapper = nil
         STATE.SubTabBar = nil
         if oldWrapper then
             for _, child in ipairs(oldWrapper:GetDescendants()) do
                 if child:IsA("CanvasGroup") then
-                    TweenService:Create(child, TweenInfo.new(0.12), {GroupTransparency = 1}):Play()
+                    TweenService:Create(child, TweenInfo.new(0.15), {GroupTransparency = 1}):Play()
                 elseif child:IsA("TextButton") or child:IsA("TextLabel") then
-                    TweenService:Create(child, TweenInfo.new(0.12), {TextTransparency = 1}):Play()
+                    TweenService:Create(child, TweenInfo.new(0.15), {TextTransparency = 1}):Play()
                 end
             end
-            task.delay(0.12, function()
+            task.delay(0.16, function()
                 if oldWrapper and oldWrapper.Parent then oldWrapper:Destroy() end
             end)
         end
+        oldBar:Destroy()
     end
 
     local suppress = false
@@ -3245,7 +3277,7 @@ function Library:SetActiveCategory(categoryName, preferredTab)
 end
 
 function Library:SetTabBadge(categoryName, tabName, text, color)
-    -- Badges removed for clean tab navigation (no more overlapping)
+    warn("[DoD UI] SetTabBadge is deprecated - badges removed in this version.")
     return
 end
 
@@ -4524,11 +4556,16 @@ function Library:AddDropdown(page, text, options, defaultIndex, callback)
     popupScroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
     popupScroll.ZIndex = 201
 
+    local optionButtons = {}
+
     searchBox:GetPropertyChangedSignal("Text"):Connect(function()
         local q = string.lower(searchBox.Text)
         for _, btn in ipairs(optionButtons) do
-            local text = string.lower(btn:FindFirstChildOfClass("TextLabel").Text)
-            btn.Visible = (q == "" or string.find(text, q, 1, true) ~= nil)
+            local lbl = btn:FindFirstChildOfClass("TextLabel")
+            if lbl then
+                local txt = string.lower(lbl.Text)
+                btn.Visible = (q == "" or string.find(txt, q, 1, true) ~= nil)
+            end
         end
     end)
 
@@ -4541,8 +4578,6 @@ function Library:AddDropdown(page, text, options, defaultIndex, callback)
     popupPad.PaddingBottom = UDim.new(0, 5)
     popupPad.PaddingLeft = UDim.new(0, 5)
     popupPad.PaddingRight = UDim.new(0, 5)
-
-    local optionButtons = {}
 
     local function refreshOptions()
         for _, b in ipairs(optionButtons) do b:Destroy() end
@@ -4777,9 +4812,20 @@ function Library:AddKeybind(page, text, default, callback)
         setKey = setLabel,
     }
     table.insert(STATE.activeKeybindListeners, listener)
+    if not STATE._overlayAutoShown then
+        STATE._overlayAutoShown = true
+        self._UI.KeybindOverlayToggle.Visible = true
+    end
     self:_refreshKeybindOverlay()
 
     btn.MouseButton1Click:Connect(function()
+        if listener.active then
+            listener.active = false
+            btnText.Text = listener.keyName
+            TweenService:Create(btnStroke, TweenInfo.new(0.15), {Color = self._Colors.Border, Transparency = 0.5}):Play()
+            TweenService:Create(btn, TweenInfo.new(0.15), {BackgroundTransparency = 0.2}):Play()
+            return
+        end
         for _, l in ipairs(STATE.activeKeybindListeners) do 
             l.active = false
             if l.btnText then l.btnText.Text = l.keyName end
@@ -4830,8 +4876,13 @@ function Library:AddKeybind(page, text, default, callback)
     self:_registerThemeRefresher(function()
         holder.BackgroundColor3 = self._Colors.Card
         lab.TextColor3 = self._Colors.Text
-        btn.BackgroundColor3 = self._Colors.Accent
-        btn.TextColor3 = Fn.accentTextColor(self._Colors.Accent)
+        btnGrad.Color = ColorSequence.new(self._Colors.Bg2, self._Colors.Bg)
+        btnText.TextColor3 = self._Colors.Text
+        if listener and listener.key ~= nil then
+            btnIcon.ImageColor3 = self._Colors.Accent
+        else
+            btnIcon.ImageColor3 = self._Colors.TextDim
+        end
     end)
     self:_bindTooltip(lab, text .. " — click to rebind")
     return self:_registerSearchControl(holder, text)
