@@ -506,20 +506,6 @@ function SubTabModule:_createSubGroup(mainCategory, subList)
         subElements[i] = btn
         Fn.bindPressAnimation(btn)
 
-        local badge = Instance.new("TextLabel", btn)
-        badge.Name = "Badge"
-        badge.Size = UDim2.fromOffset(20, 12)
-        badge.Position = UDim2.new(1, -24, 0.5, -6)
-        badge.BackgroundColor3 = Color3.fromRGB(255, 100, 100)
-        badge.Text = ""
-        badge.TextColor3 = Color3.new(1, 1, 1)
-        badge.Font = Enum.Font.GothamBold
-        badge.TextSize = 8
-        badge.BorderSizePixel = 0
-        badge.Visible = false
-        Instance.new("UICorner", badge).CornerRadius = UDim.new(1, 0)
-        -- [FIX] btn.Badge = badge (Dihapus karena TextButton ga boleh punya custom prop)
-
         btn.MouseEnter:Connect(function()
             if self.ActiveSubIndices[mainCategory] ~= i then
                 TweenService:Create(btn, TweenInfo.new(0.18), {TextColor3 = Color3.fromRGB(200, 200, 215)}):Play()
@@ -762,6 +748,7 @@ function Library.new(opts)
         SnowParticles       = {},
         SnowConnection      = nil,
         WeatherClock        = 0,
+        AccordionExpanded   = {},
     }
 
     self:_initNotifications()
@@ -1778,7 +1765,7 @@ function Library:_initTitleBar()
     UI.TitleVersionBadge = Instance.new("TextLabel", UI.TitleBar)
     UI.TitleVersionBadge.Size = UDim2.new(0, 0, 0, 20)
     UI.TitleVersionBadge.AutomaticSize = Enum.AutomaticSize.X
-    UI.TitleVersionBadge.Position = UDim2.new(0, 240, 0.5, -10)
+    UI.TitleVersionBadge.Position = UDim2.new(0, 170, 0.5, -10)
     UI.TitleVersionBadge.BackgroundColor3 = self._Colors.Accent
     UI.TitleVersionBadge.BackgroundTransparency = 0.15
     UI.TitleVersionBadge.Text = self.Version
@@ -1825,9 +1812,15 @@ function Library:_initTitleBar()
         local titleWidth = math.clamp(width - 400, 80, 200)
         UI.TitleLabel.Size = UDim2.new(0, titleWidth, 1, 0)
 
+        local actualTextW = UI.TitleLabel.TextBounds.X
+        if actualTextW <= 0 then
+            actualTextW = math.min(#UI.TitleLabel.Text * 7.5, titleWidth)
+        end
+        actualTextW = math.min(actualTextW, titleWidth)
+
         local badgeW = UI.TitleVersionBadge.AbsoluteSize.X
         if badgeW <= 0 then badgeW = 60 end
-        local badgeStart = titleWidth + 40
+        local badgeStart = UI.TitleLabel.Position.X.Offset + actualTextW + 8
         local badgeEnd = badgeStart + badgeW
 
         local hintStart = width - 300
@@ -2006,6 +1999,88 @@ function Library:_initSidebar()
     UI.TabBarDivider.BackgroundColor3 = self._Colors.Border
     UI.TabBarDivider.BackgroundTransparency = 0.5
     UI.TabBarDivider.BorderSizePixel = 0
+
+    local accordionScroll = Instance.new("ScrollingFrame", UI.CategoryBar)
+    accordionScroll.Name = "AccordionScroll"
+    accordionScroll.Position = UDim2.new(0, 4, 0, 48)
+    accordionScroll.Size = UDim2.new(1, -8, 1, -98)
+    accordionScroll.BackgroundTransparency = 1
+    accordionScroll.BorderSizePixel = 0
+    accordionScroll.ScrollBarThickness = 2
+    accordionScroll.ScrollBarImageColor3 = self._Colors.Accent
+    accordionScroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
+    accordionScroll.CanvasSize = UDim2.new(0, 0, 0, 0)
+    accordionScroll.Visible = false
+    accordionScroll.ZIndex = 5
+
+    local asLayout = Instance.new("UIListLayout", accordionScroll)
+    asLayout.SortOrder = Enum.SortOrder.LayoutOrder
+    asLayout.Padding = UDim.new(0, 4)
+
+    local asPad = Instance.new("UIPadding", accordionScroll)
+    asPad.PaddingTop = UDim.new(0, 4)
+    asPad.PaddingBottom = UDim.new(0, 8)
+    asPad.PaddingLeft = UDim.new(0, 4)
+    asPad.PaddingRight = UDim.new(0, 4)
+
+    UI.AccordionScroll = accordionScroll
+
+    local miniProfile = Instance.new("Frame", UI.CategoryBar)
+    miniProfile.Name = "SideProfileMini"
+    miniProfile.Size = UDim2.new(1, -16, 0, 32)
+    miniProfile.Position = UDim2.new(0, 8, 1, -42)
+    miniProfile.BackgroundColor3 = self._Colors.Card
+    miniProfile.BackgroundTransparency = 0.4
+    miniProfile.BorderSizePixel = 0
+    miniProfile.Visible = false
+    miniProfile.ZIndex = 10
+    Instance.new("UICorner", miniProfile).CornerRadius = UDim.new(0, 8)
+
+    local spStroke = Instance.new("UIStroke", miniProfile)
+    spStroke.Color = self._Colors.Border
+    spStroke.Thickness = 1
+    spStroke.Transparency = 0.4
+
+    local spAvatar = Instance.new("ImageLabel", miniProfile)
+    spAvatar.Size = UDim2.fromOffset(20, 20)
+    spAvatar.Position = UDim2.new(0, 6, 0.5, -10)
+    spAvatar.BackgroundColor3 = self._Colors.Bg2
+    spAvatar.BorderSizePixel = 0
+    spAvatar.ZIndex = 11
+    Instance.new("UICorner", spAvatar).CornerRadius = UDim.new(1, 0)
+    task.spawn(function()
+        local ok, content = pcall(function()
+            return Players:GetUserThumbnailAsync(LocalPlayer.UserId, Enum.ThumbnailType.HeadShot, Enum.ThumbnailSize.Size100x100)
+        end)
+        if ok and content and spAvatar and spAvatar.Parent then
+            spAvatar.Image = content
+        end
+    end)
+
+    local spName = Instance.new("TextLabel", miniProfile)
+    spName.Size = UDim2.new(1, -38, 1, 0)
+    spName.Position = UDim2.new(0, 32, 0, 0)
+    spName.BackgroundTransparency = 1
+    spName.Text = "@" .. LocalPlayer.Name
+    spName.TextColor3 = self._Colors.TextDim
+    spName.Font = Enum.Font.GothamMedium
+    spName.TextSize = 11
+    spName.TextXAlignment = Enum.TextXAlignment.Left
+    spName.TextTruncate = Enum.TextTruncate.AtEnd
+    spName.ZIndex = 11
+
+    UI.SideProfileMini = miniProfile
+
+    self:_registerThemeRefresher(function()
+        if not miniProfile.Parent then return end
+        miniProfile.BackgroundColor3 = self._Colors.Card
+        spStroke.Color = self._Colors.Border
+        spName.TextColor3 = self._Colors.TextDim
+        spAvatar.BackgroundColor3 = self._Colors.Bg2
+        if accordionScroll and accordionScroll.Parent then
+            accordionScroll.ScrollBarImageColor3 = self._Colors.Accent
+        end
+    end)
 end
 
 function Library:_applyNavigationLayout()
@@ -2022,29 +2097,42 @@ function Library:_applyNavigationLayout()
     local BOTTOM_PADDING = 15
 
     if position == "Side" then
+        if hasSearch and UI.SearchBar.Parent ~= UI.CategoryBar then
+            UI.SearchBar.Parent = UI.CategoryBar
+        end
         UI.CategoryBar.Size = UDim2.new(0, sideWidth, 1, -62)
         UI.CategoryBar.Position = UDim2.new(0, 10, 0, 50)
-        UI.CategoryBarStroke.Transparency = 1
-
-        UI.Sidebar.Size = UDim2.new(1, -(sideWidth + 30), 0, 30)
-        UI.Sidebar.Position = UDim2.new(0, sideWidth + 20, 0, 50)
-        UI.TabBarDivider.Size = UDim2.new(0, 1, 1, -60)
-        UI.TabBarDivider.Position = UDim2.new(0, sideWidth + 10, 0, 50)
+        UI.CategoryBar.BackgroundColor3 = self._Colors.Sidebar
+        UI.CategoryBar.BackgroundTransparency = 0.35
+        UI.CategoryBarStroke.Transparency = 0
+        UI.CategoryBarStroke.Color = self._Colors.Border
 
         if hasSearch then
-            UI.SearchBar.Size = UDim2.new(1, -(sideWidth + 45), 0, 28)
-            UI.SearchBar.Position = UDim2.new(0, sideWidth + 20, 0, 88)
+            UI.SearchBar.Size = UDim2.new(1, -16, 0, 32)
+            UI.SearchBar.Position = UDim2.new(0, 8, 0, 8)
         end
+
+        UI.Sidebar.Visible = false
+        UI.TabBarDivider.Visible = false
+        if UI.AccordionScroll then UI.AccordionScroll.Visible = true end
+        if UI.SideProfileMini then UI.SideProfileMini.Visible = true end
+
         if hasContent then
-            local contentTop = 121
-            local contentH = math.max(120, mainH - contentTop - BOTTOM_PADDING)
-            UI.ContentArea.Size = UDim2.new(1, -(sideWidth + 45), 0, contentH)
-            UI.ContentArea.Position = UDim2.new(0, sideWidth + 20, 0, contentTop)
+            UI.ContentArea.Size = UDim2.new(1, -(sideWidth + 30), 1, -62)
+            UI.ContentArea.Position = UDim2.new(0, sideWidth + 20, 0, 50)
         end
 
     elseif position == "Bottom" then
-        UI.CategoryBar.Size = UDim2.new(0, 160, 0, 44)
-        UI.CategoryBar.Position = UDim2.new(0.5, -80, 1, -54)
+        if hasSearch and UI.SearchBar.Parent ~= UI.MainContainer then
+            UI.SearchBar.Parent = UI.MainContainer
+        end
+        UI.Sidebar.Visible = true
+        UI.TabBarDivider.Visible = true
+        if UI.AccordionScroll then UI.AccordionScroll.Visible = false end
+        if UI.SideProfileMini then UI.SideProfileMini.Visible = false end
+
+        UI.CategoryBar.Size = UDim2.new(1, -20, 0, 48)
+        UI.CategoryBar.Position = UDim2.new(0, 10, 1, -58)
         UI.CategoryBar.BackgroundColor3 = self._Colors.Card
         UI.CategoryBar.BackgroundTransparency = 0.1
         UI.CategoryBarStroke.Transparency = 0.25
@@ -2093,7 +2181,40 @@ function Library:_applyNavigationLayout()
     self:_resizeSubTabs()
 end
 
+function Library:_toggleCategoryAccordion(categoryName)
+    if self:_isDead() then return end
+    local STATE = self._STATE
+    local data = STATE.CategoryButtons and STATE.CategoryButtons[categoryName]
+    if not data or not data.isAccordion then return end
+    local current = STATE.AccordionExpanded[categoryName]
+    self:_setAccordionState(categoryName, not current)
+end
+
+function Library:_setAccordionState(categoryName, expanded)
+    if self:_isDead() then return end
+    local STATE = self._STATE
+    local data = STATE.CategoryButtons and STATE.CategoryButtons[categoryName]
+    if not data or not data.isAccordion then return end
+    STATE.AccordionExpanded[categoryName] = expanded
+    data.tabList.Visible = expanded
+    if data.chevron then
+        TweenService:Create(data.chevron, TweenInfo.new(0.18, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {
+            Rotation = expanded and 90 or 0,
+        }):Play()
+    end
+    if data.button and data.stroke then
+        TweenService:Create(data.stroke, TweenInfo.new(0.18), {
+            Transparency = expanded and 0.3 or 0.7,
+            Color = expanded and self._Colors.Accent or self._Colors.Border,
+        }):Play()
+        TweenService:Create(data.button, TweenInfo.new(0.18), {
+            BackgroundTransparency = expanded and 0.5 or 0.75,
+        }):Play()
+    end
+end
+
 function Library:_resizeSubTabs()
+    if self.TabPosition == "Side" then return end
     local subTabBar = self._STATE.SubTabBar
     local category = self._STATE.ActiveCategory
     if not subTabBar or not category then return end
@@ -2740,9 +2861,135 @@ function Library:CreateCategory(categoryName, iconSpec)
         table.insert(STATE.CategoryOrder, categoryName)
     end
 
+    if self.TabPosition == "Side" and UI.AccordionScroll then
+        local group = Instance.new("Frame", UI.AccordionScroll)
+        group.Name = "AccGroup_" .. categoryName
+        group.LayoutOrder = #STATE.CategoryOrder
+        group.Size = UDim2.new(1, 0, 0, 34)
+        group.BackgroundTransparency = 1
+        group.ClipsDescendants = true
+        group.ZIndex = 5
+        group.AutomaticSize = Enum.AutomaticSize.Y
+
+        local groupLayout = Instance.new("UIListLayout", group)
+        groupLayout.SortOrder = Enum.SortOrder.LayoutOrder
+        groupLayout.Padding = UDim.new(0, 2)
+
+        local header = Instance.new("TextButton", group)
+        header.Name = "Header"
+        header.LayoutOrder = 1
+        header.Size = UDim2.new(1, 0, 0, 32)
+        header.BackgroundColor3 = self._Colors.Card
+        header.BackgroundTransparency = 0.75
+        header.Text = ""
+        header.AutoButtonColor = false
+        header.ZIndex = 6
+        Instance.new("UICorner", header).CornerRadius = UDim.new(0, 8)
+
+        local hStroke = Instance.new("UIStroke", header)
+        hStroke.Color = self._Colors.Border
+        hStroke.Thickness = 1
+        hStroke.Transparency = 0.7
+
+        local chevron = Instance.new("TextLabel", header)
+        chevron.Size = UDim2.fromOffset(12, 12)
+        chevron.Position = UDim2.new(0, 8, 0.5, -6)
+        chevron.BackgroundTransparency = 1
+        chevron.Text = "▶"
+        chevron.Font = Enum.Font.GothamBold
+        chevron.TextSize = 9
+        chevron.TextColor3 = self._Colors.TextDim
+        chevron.ZIndex = 7
+
+        local iconImg = Instance.new("ImageLabel", header)
+        iconImg.Size = UDim2.fromOffset(14, 14)
+        iconImg.Position = UDim2.new(0, 26, 0.5, -7)
+        iconImg.BackgroundTransparency = 1
+        iconImg.ImageColor3 = self._Colors.TextDim
+        iconImg.ScaleType = Enum.ScaleType.Fit
+        iconImg.ZIndex = 7
+        if iconSpec then
+            if string.sub(iconSpec, 1, 6) == "asset:" then
+                iconImg.Image = "rbxassetid://" .. string.sub(iconSpec, 7)
+            elseif iconSpec == "crosshair" then
+                iconImg.Image = "rbxassetid://6031280882"
+            end
+        end
+
+        local label = Instance.new("TextLabel", header)
+        label.Size = UDim2.new(1, -48, 1, 0)
+        label.Position = UDim2.new(0, 46, 0, 0)
+        label.BackgroundTransparency = 1
+        label.Text = string.upper(categoryName)
+        label.TextColor3 = self._Colors.TextDim
+        label.Font = Enum.Font.GothamBold
+        label.TextSize = 10
+        label.TextXAlignment = Enum.TextXAlignment.Left
+        label.TextTruncate = Enum.TextTruncate.AtEnd
+        label.ZIndex = 7
+
+        local tabList = Instance.new("Frame", group)
+        tabList.Name = "TabList"
+        tabList.LayoutOrder = 2
+        tabList.Size = UDim2.new(1, 0, 0, 0)
+        tabList.BackgroundTransparency = 1
+        tabList.AutomaticSize = Enum.AutomaticSize.Y
+        tabList.Visible = false
+        tabList.ZIndex = 5
+
+        local tlLayout = Instance.new("UIListLayout", tabList)
+        tlLayout.SortOrder = Enum.SortOrder.LayoutOrder
+        tlLayout.Padding = UDim.new(0, 3)
+
+        local tlPad = Instance.new("UIPadding", tabList)
+        tlPad.PaddingLeft = UDim.new(0, 20)
+        tlPad.PaddingRight = UDim.new(0, 4)
+        tlPad.PaddingTop = UDim.new(0, 4)
+        tlPad.PaddingBottom = UDim.new(0, 6)
+
+        STATE.CategoryButtons[categoryName] = {
+            button = header,
+            label = label,
+            icon = iconImg,
+            chevron = chevron,
+            group = group,
+            tabList = tabList,
+            stroke = hStroke,
+            isAccordion = true,
+        }
+
+        header.MouseButton1Click:Connect(function()
+            self:_toggleCategoryAccordion(categoryName)
+        end)
+
+        header.MouseEnter:Connect(function()
+            TweenService:Create(hStroke, TweenInfo.new(0.15), {Transparency = 0.3, Color = self._Colors.Accent}):Play()
+            TweenService:Create(header, TweenInfo.new(0.15), {BackgroundTransparency = 0.55}):Play()
+        end)
+        header.MouseLeave:Connect(function()
+            local isActive = categoryName == STATE.ActiveCategory
+            TweenService:Create(hStroke, TweenInfo.new(0.15), {
+                Transparency = isActive and 0.3 or 0.7,
+                Color = isActive and self._Colors.Accent or self._Colors.Border,
+            }):Play()
+            TweenService:Create(header, TweenInfo.new(0.15), {BackgroundTransparency = isActive and 0.5 or 0.75}):Play()
+        end)
+
+        self:_registerThemeRefresher(function()
+            if not header.Parent then return end
+            header.BackgroundColor3 = self._Colors.Card
+            hStroke.Color = categoryName == STATE.ActiveCategory and self._Colors.Accent or self._Colors.Border
+            label.TextColor3 = categoryName == STATE.ActiveCategory and self._Colors.Text or self._Colors.TextDim
+            iconImg.ImageColor3 = categoryName == STATE.ActiveCategory and self._Colors.Accent or self._Colors.TextDim
+            chevron.TextColor3 = categoryName == STATE.ActiveCategory and self._Colors.Accent or self._Colors.TextDim
+        end)
+
+        return header
+    end
+
     local btn = Instance.new("TextButton", UI.CategoryBar)
     btn.Name = "CatBtn_" .. categoryName
-    btn.Size = self.TabPosition == "Side" and UDim2.new(1, -16, 0, 34) or UDim2.new(0, 110, 0, 30)
+    btn.Size = UDim2.new(0, 110, 0, 30)
     btn.BackgroundColor3 = self._Colors.Card
     btn.BackgroundTransparency = 1
     btn.Text = ""
@@ -2753,7 +3000,7 @@ function Library:CreateCategory(categoryName, iconSpec)
 
     local iconImg = Instance.new("ImageLabel", btn)
     iconImg.Size = UDim2.new(0, 16, 0, 16)
-    iconImg.Position = UDim2.new(0, self.TabPosition == "Side" and 10 or 14, 0.5, -8)
+    iconImg.Position = UDim2.new(0, 14, 0.5, -8)
     iconImg.BackgroundTransparency = 1
     iconImg.ImageColor3 = Color3.new(1, 1, 1)
     iconImg.ImageTransparency = 0.45
@@ -2767,8 +3014,8 @@ function Library:CreateCategory(categoryName, iconSpec)
     end
 
     local label = Instance.new("TextLabel", btn)
-    label.Size = UDim2.new(1, self.TabPosition == "Side" and -38 or -42, 1, 0)
-    label.Position = UDim2.new(0, self.TabPosition == "Side" and 32 or 36, 0, 0)
+    label.Size = UDim2.new(1, -42, 1, 0)
+    label.Position = UDim2.new(0, 36, 0, 0)
     label.BackgroundTransparency = 1
     label.Text = categoryName
     label.TextColor3 = self._Colors.TextDim
@@ -2797,29 +3044,20 @@ function Library:_layoutCategoryButtons()
     local STATE = self._STATE
     local UI = self._UI
     if not STATE.CategoryButtons then return end
+    if self.TabPosition == "Side" then return end
     local names = {}
     for _, name in ipairs(STATE.CategoryOrder or {}) do
         if STATE.CategoryButtons[name] then table.insert(names, name) end
     end
     if #names == 0 then
         if self.TabPosition == "Bottom" then
-            UI.CategoryBar.Size = UDim2.new(0, 160, 0, 44)
-            UI.CategoryBar.Position = UDim2.new(0.5, -80, 1, -54)
+            UI.CategoryBar.Size = UDim2.new(1, -20, 0, 48)
+            UI.CategoryBar.Position = UDim2.new(0, 10, 1, -58)
         end
         return
     end
 
-    if self.TabPosition == "Side" then
-        local buttonHeight, gap = 34, 8
-        for i, name in ipairs(names) do
-            local data = STATE.CategoryButtons[name]
-            data.button.Size = UDim2.new(1, -16, 0, buttonHeight)
-            data.button.Position = UDim2.new(0, 8, 0, 8 + (i - 1) * (buttonHeight + gap))
-            data.label.Visible = UI.CategoryBar.AbsoluteSize.X >= 108
-            data.icon.Position = UDim2.new(0, data.label.Visible and 10 or (UI.CategoryBar.AbsoluteSize.X - 16) / 2, 0.5, -8)
-            data.label.Size = UDim2.new(1, -38, 1, 0)
-        end
-    else
+    if false then
         local gap, padding = 8, 8
         local availableWidth = UI.MainContainer.AbsoluteSize.X - 20
         if self.TabPosition == "Top" then
@@ -2884,24 +3122,6 @@ function Library:SetActiveCategory(categoryName, preferredTab)
         }):Play()
     end
 
-    if STATE.SubTabBar and STATE.SubTabBar.Wrapper then
-        local oldWrapper = STATE.SubTabBar.Wrapper
-        STATE.SubTabBar:Destroy()
-        STATE.SubTabBar = nil
-        if oldWrapper then
-            for _, child in ipairs(oldWrapper:GetDescendants()) do
-                if child:IsA("CanvasGroup") then
-                    TweenService:Create(child, TweenInfo.new(0.12), {GroupTransparency = 1}):Play()
-                elseif child:IsA("TextButton") or child:IsA("TextLabel") then
-                    TweenService:Create(child, TweenInfo.new(0.12), {TextTransparency = 1}):Play()
-                end
-            end
-            task.delay(0.12, function()
-                if oldWrapper and oldWrapper.Parent then oldWrapper:Destroy() end
-            end)
-        end
-    end
-
     local tabs = STATE.CategoryTabs[categoryName]
     if not (tabs and #tabs > 0) then return end
 
@@ -2920,6 +3140,62 @@ function Library:SetActiveCategory(categoryName, preferredTab)
             targetIdx, targetName = savedIdx, tabs[savedIdx]
         else
             targetIdx, targetName = 1, tabs[1]
+        end
+    end
+
+    if self.TabPosition == "Side" then
+        for otherCat in pairs(STATE.CategoryButtons) do
+            if otherCat ~= categoryName then
+                self:_setAccordionState(otherCat, false)
+            end
+        end
+        self:_setAccordionState(categoryName, true)
+        if targetName then
+            STATE.ActiveSubIndices[categoryName] = targetIdx
+            local catData = STATE.CategoryButtons[categoryName]
+            if catData and catData.tabList then
+                for _, child in ipairs(catData.tabList:GetChildren()) do
+                    if child:IsA("TextButton") and child:GetAttribute("TabName") == targetName then
+                        local allSubs = catData.tabList:GetChildren()
+                        for _, otherSub in ipairs(allSubs) do
+                            if otherSub:IsA("TextButton") then
+                                local isThis = otherSub == child
+                                otherSub.BackgroundTransparency = isThis and 0.4 or 1
+                                local lbl = otherSub:FindFirstChild("SubLabel")
+                                if lbl then
+                                    lbl.TextColor3 = isThis and self._Colors.Text or self._Colors.TextDim
+                                    lbl.Font = isThis and Enum.Font.GothamBold or Enum.Font.GothamMedium
+                                end
+                                local ind = otherSub:FindFirstChild("AccentDot")
+                                if ind then ind.Visible = isThis end
+                            end
+                        end
+                        break
+                    end
+                end
+            end
+            if STATE.ContentPages[targetName] then
+                self:SwitchTab(targetName)
+            end
+        end
+        return
+    end
+
+    if STATE.SubTabBar and STATE.SubTabBar.Wrapper then
+        local oldWrapper = STATE.SubTabBar.Wrapper
+        STATE.SubTabBar:Destroy()
+        STATE.SubTabBar = nil
+        if oldWrapper then
+            for _, child in ipairs(oldWrapper:GetDescendants()) do
+                if child:IsA("CanvasGroup") then
+                    TweenService:Create(child, TweenInfo.new(0.12), {GroupTransparency = 1}):Play()
+                elseif child:IsA("TextButton") or child:IsA("TextLabel") then
+                    TweenService:Create(child, TweenInfo.new(0.12), {TextTransparency = 1}):Play()
+                end
+            end
+            task.delay(0.12, function()
+                if oldWrapper and oldWrapper.Parent then oldWrapper:Destroy() end
+            end)
         end
     end
 
@@ -2961,26 +3237,8 @@ function Library:SetActiveCategory(categoryName, preferredTab)
 end
 
 function Library:SetTabBadge(categoryName, tabName, text, color)
-    if self:_isDead() then return end
-    local STATE = self._STATE
-    if not STATE.SubTabBar then return end
-    local group = STATE.SubTabBar.Groups[categoryName]
-    if not group then return end
-    for _, btn in ipairs(group.Buttons) do
-        if btn.Text == tostring(tabName) then
-            local bdg = btn:FindFirstChild("Badge")
-            if bdg then
-                if text then
-                    bdg.Text = tostring(text)
-                    bdg.BackgroundColor3 = color or Color3.fromRGB(255, 100, 100)
-                    bdg.Visible = true
-                else
-                    bdg.Visible = false
-                end
-            end
-            return
-        end
-    end
+    -- Badges removed for clean tab navigation (no more overlapping)
+    return
 end
 
 function Library:CreateTab(categoryName, tabName)
@@ -3090,6 +3348,91 @@ function Library:CreateTab(categoryName, tabName)
             STATE.SavedScrollPositions[tabName] = page.CanvasPosition
         end
     end)
+
+    if self.TabPosition == "Side" then
+        local catData = STATE.CategoryButtons[categoryName]
+        if catData and catData.tabList then
+            local tabCount = 0
+            for _, c in ipairs(catData.tabList:GetChildren()) do
+                if c:IsA("TextButton") then tabCount = tabCount + 1 end
+            end
+            local subBtn = Instance.new("TextButton", catData.tabList)
+            subBtn.Name = "SubTab_" .. tabName
+            subBtn.LayoutOrder = tabCount + 1
+            subBtn.Size = UDim2.new(1, 0, 0, 26)
+            subBtn.BackgroundColor3 = self._Colors.Card
+            subBtn.BackgroundTransparency = 1
+            subBtn.Text = ""
+            subBtn.AutoButtonColor = false
+            subBtn.ZIndex = 6
+            subBtn:SetAttribute("TabName", tabName)
+            Instance.new("UICorner", subBtn).CornerRadius = UDim.new(0, 6)
+
+            local accentDot = Instance.new("Frame", subBtn)
+            accentDot.Name = "AccentDot"
+            accentDot.Size = UDim2.fromOffset(3, 12)
+            accentDot.Position = UDim2.new(0, 2, 0.5, -6)
+            accentDot.BackgroundColor3 = self._Colors.Accent
+            accentDot.BorderSizePixel = 0
+            accentDot.Visible = false
+            accentDot.ZIndex = 7
+            Instance.new("UICorner", accentDot).CornerRadius = UDim.new(1, 0)
+
+            local subLabel = Instance.new("TextLabel", subBtn)
+            subLabel.Name = "SubLabel"
+            subLabel.Size = UDim2.new(1, -16, 1, 0)
+            subLabel.Position = UDim2.new(0, 12, 0, 0)
+            subLabel.BackgroundTransparency = 1
+            subLabel.Text = tabName
+            subLabel.TextColor3 = self._Colors.TextDim
+            subLabel.Font = Enum.Font.GothamMedium
+            subLabel.TextSize = 11
+            subLabel.TextXAlignment = Enum.TextXAlignment.Left
+            subLabel.TextTruncate = Enum.TextTruncate.AtEnd
+            subLabel.ZIndex = 7
+
+            subBtn.MouseEnter:Connect(function()
+                if STATE.ActiveTab ~= tabName then
+                    TweenService:Create(subBtn, TweenInfo.new(0.15), {BackgroundTransparency = 0.7}):Play()
+                    TweenService:Create(subLabel, TweenInfo.new(0.15), {TextColor3 = self._Colors.Text}):Play()
+                end
+            end)
+            subBtn.MouseLeave:Connect(function()
+                if STATE.ActiveTab ~= tabName then
+                    TweenService:Create(subBtn, TweenInfo.new(0.15), {BackgroundTransparency = 1}):Play()
+                    TweenService:Create(subLabel, TweenInfo.new(0.15), {TextColor3 = self._Colors.TextDim}):Play()
+                end
+            end)
+
+            subBtn.MouseButton1Click:Connect(function()
+                if STATE.ActiveCategory ~= categoryName then
+                    STATE.ActiveCategory = categoryName
+                end
+                local allSubs = catData.tabList:GetChildren()
+                for _, otherSub in ipairs(allSubs) do
+                    if otherSub:IsA("TextButton") then
+                        local isThis = otherSub == subBtn
+                        otherSub.BackgroundTransparency = isThis and 0.4 or 1
+                        local lbl = otherSub:FindFirstChild("SubLabel")
+                        if lbl then
+                            lbl.TextColor3 = isThis and self._Colors.Text or self._Colors.TextDim
+                            lbl.Font = isThis and Enum.Font.GothamBold or Enum.Font.GothamMedium
+                        end
+                        local ind = otherSub:FindFirstChild("AccentDot")
+                        if ind then ind.Visible = isThis end
+                    end
+                end
+                self:SwitchTab(tabName)
+            end)
+
+            self:_registerThemeRefresher(function()
+                if not subBtn.Parent then return end
+                subBtn.BackgroundColor3 = self._Colors.Card
+                subLabel.TextColor3 = STATE.ActiveTab == tabName and self._Colors.Text or self._Colors.TextDim
+                accentDot.BackgroundColor3 = self._Colors.Accent
+            end)
+        end
+    end
 
     if STATE.ActiveCategory == nil or STATE.ActiveCategory == categoryName then
         self:SetActiveCategory(categoryName)
