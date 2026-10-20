@@ -1985,33 +1985,28 @@ function Library:_initTitleBar()
     UI.TitleGradient.Rotation = 90
     UI.TitleGradient.Transparency = NumberSequence.new(0.85)
 
+    -- Modern Glass Logo
     local logoBadge = Instance.new("Frame", UI.TitleBar)
     logoBadge.Name = "TitleLogoBadge"
-    logoBadge.Size = UDim2.fromOffset(20, 20)
-    logoBadge.Position = UDim2.new(0, 12, 0.5, -10)
-    logoBadge.BackgroundColor3 = self._Colors.Accent
+    logoBadge.Size = UDim2.fromOffset(24, 24)
+    logoBadge.Position = UDim2.new(0, 12, 0.5, -12)
+    logoBadge.BackgroundColor3 = Color3.new(1, 1, 1)
+    logoBadge.BackgroundTransparency = 0.88
     logoBadge.BorderSizePixel = 0
-    Instance.new("UICorner", logoBadge).CornerRadius = UDim.new(0, 6)
-
-    local logoGradient = Instance.new("UIGradient", logoBadge)
-    logoGradient.Rotation = 135
-    logoGradient.Color = ColorSequence.new({
-        ColorSequenceKeypoint.new(0, self._Colors.Accent),
-        ColorSequenceKeypoint.new(1, self._Colors.Accent2),
-    })
+    Instance.new("UICorner", logoBadge).CornerRadius = UDim.new(0, 8)
 
     local logoStroke = Instance.new("UIStroke", logoBadge)
-    logoStroke.Color = self._Colors.Accent
+    logoStroke.Color = Color3.new(1, 1, 1)
     logoStroke.Thickness = 1
-    logoStroke.Transparency = 0.5
+    logoStroke.Transparency = 0.85
 
     local logoIcon = Instance.new("ImageLabel", logoBadge)
     logoIcon.Name = "Icon"
-    logoIcon.Size = UDim2.fromOffset(12, 12)
-    logoIcon.Position = UDim2.new(0.5, -6, 0.5, -6)
+    logoIcon.Size = UDim2.fromOffset(14, 14)
+    logoIcon.Position = UDim2.new(0.5, -7, 0.5, -7)
     logoIcon.BackgroundTransparency = 1
     logoIcon.Image = GetIcon(self._TitleIconName)
-    logoIcon.ImageColor3 = Fn.accentTextColor(self._Colors.Accent)
+    logoIcon.ImageColor3 = self._Colors.Accent
     logoIcon.ScaleType = Enum.ScaleType.Fit
 
     local logoScale = Instance.new("UIScale", logoBadge)
@@ -2023,11 +2018,10 @@ function Library:_initTitleBar()
     end)
     logoBadge.MouseLeave:Connect(function()
         TweenService:Create(logoScale, TweenInfo.new(0.15, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Scale = 1}):Play()
-        TweenService:Create(logoStroke, TweenInfo.new(0.15), {Transparency = 0.5}):Play()
+        TweenService:Create(logoStroke, TweenInfo.new(0.15), {Transparency = 0.85}):Play()
     end)
 
     UI.TitleLogoBadge = logoBadge
-    UI.TitleLogoGradient = logoGradient
     UI.TitleLogoStroke = logoStroke
     UI.TitleLogoIcon = logoIcon
 
@@ -2039,18 +2033,18 @@ function Library:_initTitleBar()
 
     UI.TitleLabel = Instance.new("TextLabel", UI.TitleBar)
     UI.TitleLabel.Size = UDim2.new(0, 200, 1, 0)
-    UI.TitleLabel.Position = UDim2.new(0, 40, 0, 0)
+    UI.TitleLabel.Position = UDim2.new(0, 46, 0, 0)
     UI.TitleLabel.BackgroundTransparency = 1
     UI.TitleLabel.Text = mainTitle
     UI.TitleLabel.TextColor3 = self._Colors.Text
-    UI.TitleLabel.Font = Enum.Font.GothamBold
+    UI.TitleLabel.Font = Enum.Font.GothamBlack
     UI.TitleLabel.TextSize = 14
     UI.TitleLabel.TextXAlignment = Enum.TextXAlignment.Left
     UI.TitleLabel.TextYAlignment = Enum.TextYAlignment.Center
 
     UI.TitleSubtitle = Instance.new("TextLabel", UI.TitleBar)
     UI.TitleSubtitle.Size = UDim2.new(0, 200, 1, 0)
-    UI.TitleSubtitle.Position = UDim2.new(0, 40, 0, 0)
+    UI.TitleSubtitle.Position = UDim2.new(0, 46, 0, 0)
     UI.TitleSubtitle.BackgroundTransparency = 1
     UI.TitleSubtitle.Text = subTitle
     UI.TitleSubtitle.TextColor3 = self._Colors.TextDim
@@ -2059,12 +2053,13 @@ function Library:_initTitleBar()
     UI.TitleSubtitle.TextXAlignment = Enum.TextXAlignment.Left
     UI.TitleSubtitle.TextYAlignment = Enum.TextYAlignment.Center
 
+    -- Glass Pill Version
     UI.TitleVersionBadge = Instance.new("TextLabel", UI.TitleBar)
-    UI.TitleVersionBadge.Size = UDim2.new(0, 0, 0, 20)
+    UI.TitleVersionBadge.Size = UDim2.new(0, 0, 0, 18)
     UI.TitleVersionBadge.AutomaticSize = Enum.AutomaticSize.X
-    UI.TitleVersionBadge.Position = UDim2.new(0, 170, 0.5, -10)
+    UI.TitleVersionBadge.Position = UDim2.new(0, 170, 0.5, -9)
     UI.TitleVersionBadge.BackgroundColor3 = Color3.new(1, 1, 1)
-    UI.TitleVersionBadge.BackgroundTransparency = 0.94
+    UI.TitleVersionBadge.BackgroundTransparency = 0.92
     UI.TitleVersionBadge.Text = self.Version
     UI.TitleVersionBadge.TextColor3 = self._Colors.TextDim
     UI.TitleVersionBadge.Font = Enum.Font.RobotoMono
@@ -2074,12 +2069,12 @@ function Library:_initTitleBar()
 
     local vStroke = Instance.new("UIStroke", UI.TitleVersionBadge)
     vStroke.Color = Color3.new(1, 1, 1)
-    vStroke.Transparency = 0.9
+    vStroke.Transparency = 0.88
     vStroke.Thickness = 1
 
     local vPad = Instance.new("UIPadding", UI.TitleVersionBadge)
-    vPad.PaddingLeft = UDim.new(0, 10)
-    vPad.PaddingRight = UDim.new(0, 10)
+    vPad.PaddingLeft = UDim.new(0, 8)
+    vPad.PaddingRight = UDim.new(0, 8)
 
     UI.TitleDiscord = Instance.new("TextLabel", UI.TitleBar)
     UI.TitleDiscord.Size = UDim2.new(0, 150, 1, 0)
@@ -2092,29 +2087,60 @@ function Library:_initTitleBar()
     UI.TitleDiscord.TextSize = 12
     UI.TitleDiscord.TextXAlignment = Enum.TextXAlignment.Right
 
-    UI.TitleToggleHint = Instance.new("TextLabel", UI.TitleBar)
-    UI.TitleToggleHint.Size = UDim2.new(0, 80, 1, 0)
-    UI.TitleToggleHint.Position = UDim2.new(1, -300, 0, 0)
+    -- Keybind Hint Box
+    local hintBg = Instance.new("Frame", UI.TitleBar)
+    hintBg.Size = UDim2.new(0, 0, 0, 20)
+    hintBg.AutomaticSize = Enum.AutomaticSize.X
+    hintBg.Position = UDim2.new(1, -300, 0.5, -10)
+    hintBg.BackgroundColor3 = self._Colors.Bg
+    hintBg.BackgroundTransparency = 0.5
+    hintBg.BorderSizePixel = 0
+    Instance.new("UICorner", hintBg).CornerRadius = UDim.new(0, 4)
+
+    local hintStroke = Instance.new("UIStroke", hintBg)
+    hintStroke.Color = self._Colors.Border
+    hintStroke.Transparency = 0.5
+    hintStroke.Thickness = 1
+
+    local hintPad = Instance.new("UIPadding", hintBg)
+    hintPad.PaddingLeft = UDim.new(0, 6)
+    hintPad.PaddingRight = UDim.new(0, 6)
+
+    UI.TitleToggleHint = Instance.new("TextLabel", hintBg)
+    UI.TitleToggleHint.AutomaticSize = Enum.AutomaticSize.X
+    UI.TitleToggleHint.Size = UDim2.new(0, 0, 1, 0)
     UI.TitleToggleHint.BackgroundTransparency = 1
-    UI.TitleToggleHint.Text = "[" .. self.ToggleKey.Name .. "]"
+    UI.TitleToggleHint.Text = self.ToggleKey.Name
     UI.TitleToggleHint.TextColor3 = self._Colors.TextDim
     UI.TitleToggleHint.Font = Enum.Font.GothamMedium
     UI.TitleToggleHint.TextSize = 10
-    UI.TitleToggleHint.TextXAlignment = Enum.TextXAlignment.Right
+    UI.TitleToggleHint.TextXAlignment = Enum.TextXAlignment.Center
+    UI.TitleToggleHint.TextYAlignment = Enum.TextYAlignment.Center
+    
+    UI.TitleToggleHintBg = hintBg
 
     self:_registerThemeRefresher(function()
         if UI.TitleToggleHint then
             UI.TitleToggleHint.TextColor3 = self._Colors.TextDim
         end
+        if hintStroke then
+            hintStroke.Color = self._Colors.Border
+        end
+        if hintBg then
+            hintBg.BackgroundColor3 = self._Colors.Bg
+        end
         if UI.TitleSubtitle then
             UI.TitleSubtitle.TextColor3 = self._Colors.TextDim
+        end
+        if logoIcon then
+            logoIcon.ImageColor3 = self._Colors.Accent
         end
     end)
 
     local function updateTitleLayout()
         local width = UI.MainContainer.AbsoluteSize.X
         if width <= 0 then width = 640 end
-        local maxTitleWidth = math.clamp(width - 400, 80, 300)
+        local maxTitleWidth = math.clamp(width - 420, 80, 300)
         
         local mainTextW = UI.TitleLabel.TextBounds.X
         if mainTextW <= 0 then
@@ -2127,10 +2153,10 @@ function Library:_initTitleBar()
         if UI.TitleSubtitle.Text ~= "" then
             subTextW = UI.TitleSubtitle.TextBounds.X
             if subTextW <= 0 then subTextW = #UI.TitleSubtitle.Text * 6 end
-            local maxSubWidth = math.max(10, maxTitleWidth - mainTextW - 6)
+            local maxSubWidth = math.max(10, maxTitleWidth - mainTextW - 8)
             subTextW = math.min(subTextW, maxSubWidth)
             UI.TitleSubtitle.Size = UDim2.new(0, subTextW, 1, 0)
-            UI.TitleSubtitle.Position = UDim2.new(0, 40 + mainTextW + 6, 0, 0)
+            UI.TitleSubtitle.Position = UDim2.new(0, 46 + mainTextW + 8, 0, 0)
             UI.TitleSubtitle.Visible = true
         else
             UI.TitleSubtitle.Visible = false
@@ -2138,29 +2164,39 @@ function Library:_initTitleBar()
 
         local badgeW = UI.TitleVersionBadge.AbsoluteSize.X
         if badgeW <= 0 then badgeW = 40 end
-        local badgeStart = 40 + mainTextW + (subTextW > 0 and subTextW + 10 or 8)
+        local badgeStart = 46 + mainTextW + (subTextW > 0 and subTextW + 12 or 10)
         local badgeEnd = badgeStart + badgeW
 
-        local hintStart = width - 300
-        local canShowBadge = width >= 400 and (badgeEnd + 12) < hintStart
+        local hintW = UI.TitleToggleHintBg.AbsoluteSize.X
+        if hintW <= 0 then hintW = 50 end
+        
+        local trafficLightsW = 76
+        local authorW = UI.TitleDiscord.Visible and 150 or 0
+        local rightOffset = trafficLightsW + authorW + 20
+        
+        UI.TitleToggleHintBg.Position = UDim2.new(1, -rightOffset - hintW, 0.5, -10)
+
+        local hintStart = width - rightOffset - hintW
+        local canShowBadge = width >= 420 and (badgeEnd + 16) < hintStart
 
         UI.TitleVersionBadge.Visible = canShowBadge
-        UI.TitleVersionBadge.Position = UDim2.new(0, badgeStart, 0.5, -10)
-        UI.TitleDiscord.Visible = width >= 540
+        UI.TitleVersionBadge.Position = UDim2.new(0, badgeStart, 0.5, -9)
+        UI.TitleDiscord.Visible = width >= 560
     end
     updateTitleLayout()
     task.defer(updateTitleLayout)
     task.delay(0.15, updateTitleLayout)
     Fn.track(UI.MainContainer:GetPropertyChangedSignal("AbsoluteSize"), updateTitleLayout, self)
     Fn.track(UI.TitleVersionBadge:GetPropertyChangedSignal("AbsoluteSize"), updateTitleLayout, self)
+    Fn.track(UI.TitleToggleHintBg:GetPropertyChangedSignal("AbsoluteSize"), updateTitleLayout, self)
 end
 
 function Library:_initTrafficLights()
     local UI = self._UI
     local container = Instance.new("Frame", UI.TitleBar)
     container.Name = "TrafficLights"
-    container.Size = UDim2.new(0, 54, 0, 12)
-    container.Position = UDim2.new(1, -68, 0.5, -6)
+    container.Size = UDim2.new(0, 62, 0, 14)
+    container.Position = UDim2.new(1, -76, 0.5, -7)
     container.BackgroundTransparency = 1
 
     local baseColors = {
@@ -2176,8 +2212,8 @@ function Library:_initTrafficLights()
     UI.TrafficDots = {}
     for i = 1, 3 do
         local dot = Instance.new("TextButton", container)
-        dot.Size = UDim2.new(0, 12, 0, 12)
-        dot.Position = UDim2.new(0, (i - 1) * 16, 0, 0)
+        dot.Size = UDim2.new(0, 14, 0, 14)
+        dot.Position = UDim2.new(0, (i - 1) * 18, 0, 0)
         dot.BackgroundColor3 = baseColors[i]
         dot.Text = ""
         dot.BorderSizePixel = 0
