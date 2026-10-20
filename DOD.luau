@@ -1454,6 +1454,68 @@ function Library:_initMainGui()
     UI.MainStroke.Color = self._Colors.Border
     UI.MainStroke.Thickness = 1.5
 
+    local minBtn = Instance.new("TextButton")
+    minBtn.Name = "MinimizeButton"
+    minBtn.Parent = UI.MainGui
+    minBtn.Size = UDim2.fromOffset(120, 32)
+    minBtn.Position = UDim2.new(0.5, 0, 0, -40)
+    minBtn.AnchorPoint = Vector2.new(0.5, 0)
+    minBtn.BackgroundColor3 = self._Colors.Bg2
+    minBtn.BackgroundTransparency = 0.1
+    minBtn.AutoButtonColor = false
+    minBtn.Visible = false
+    minBtn.ZIndex = 500
+    Instance.new("UICorner", minBtn).CornerRadius = UDim.new(1, 0)
+    
+    local minStroke = Instance.new("UIStroke", minBtn)
+    minStroke.Color = self._Colors.Accent
+    minStroke.Thickness = 1.5
+    minStroke.Transparency = 0.5
+    
+    local minIcon = Instance.new("ImageLabel")
+    minIcon.Size = UDim2.fromOffset(16, 16)
+    minIcon.Position = UDim2.new(0, 12, 0.5, -8)
+    minIcon.BackgroundTransparency = 1
+    minIcon.Image = GetIcon("panel-top")
+    minIcon.ImageColor3 = self._Colors.Accent
+    
+    local minText = Instance.new("TextLabel")
+    minText.Size = UDim2.new(1, -34, 1, 0)
+    minText.Position = UDim2.new(0, 34, 0, 0)
+    minText.BackgroundTransparency = 1
+    minText.Text = "OPEN UI"
+    minText.TextColor3 = self._Colors.Accent
+    minText.Font = Enum.Font.GothamBold
+    minText.TextSize = 11
+    
+    UI.MinimizeButton = minBtn
+    UI.MinimizeButtonStroke = minStroke
+    UI.MinimizeButtonIcon = minIcon
+    
+    Fn.bindPressAnimation(minBtn)
+    
+    minBtn.MouseEnter:Connect(function()
+        TweenService:Create(minBtn, TweenInfo.new(0.15), {BackgroundTransparency = 0}):Play()
+        TweenService:Create(minStroke, TweenInfo.new(0.15), {Transparency = 0}):Play()
+    end)
+    minBtn.MouseLeave:Connect(function()
+        TweenService:Create(minBtn, TweenInfo.new(0.15), {BackgroundTransparency = 0.1}):Play()
+        TweenService:Create(minStroke, TweenInfo.new(0.15), {Transparency = 0.5}):Play()
+    end)
+    
+    minBtn.MouseButton1Click:Connect(function()
+        self:PlaySound("Click")
+        minBtn.Visible = false
+        self:Toggle()
+    end)
+    
+    self:_registerThemeRefresher(function()
+        minBtn.BackgroundColor3 = self._Colors.Bg2
+        minStroke.Color = self._Colors.Accent
+        minIcon.ImageColor3 = self._Colors.Accent
+        minText.TextColor3 = self._Colors.Accent
+    end)
+
     self._shadowLayers = {}
 end
 
@@ -1932,7 +1994,7 @@ function Library:SetToggleKey(key)
     end
     self.ToggleKey = key
     if self._UI.TitleToggleHint then
-        self._UI.TitleToggleHint.Text = "[" .. key.Name .. "]"
+        self._UI.TitleToggleHint.Text = key.Name
     end
     self:Notify("KEYBIND", "Toggle GUI: " .. key.Name)
 end
@@ -2077,7 +2139,8 @@ function Library:_initTitleBar()
     vPad.PaddingRight = UDim.new(0, 8)
 
     UI.TitleDiscord = Instance.new("TextLabel", UI.TitleBar)
-    UI.TitleDiscord.Size = UDim2.new(0, 150, 1, 0)
+    UI.TitleDiscord.Size = UDim2.new(0, 0, 1, 0)
+    UI.TitleDiscord.AutomaticSize = Enum.AutomaticSize.X
     UI.TitleDiscord.Position = UDim2.new(1, -230, 0, 0)
     UI.TitleDiscord.BackgroundTransparency = 1
     UI.TitleDiscord.Text = "<i>" .. self.Author .. "</i>"
@@ -2088,13 +2151,16 @@ function Library:_initTitleBar()
     UI.TitleDiscord.TextXAlignment = Enum.TextXAlignment.Right
 
     -- Keybind Hint Box
-    local hintBg = Instance.new("Frame", UI.TitleBar)
+    local hintBg = Instance.new("TextButton", UI.TitleBar)
+    hintBg.Name = "TitleToggleHintBg"
     hintBg.Size = UDim2.new(0, 0, 0, 20)
     hintBg.AutomaticSize = Enum.AutomaticSize.X
     hintBg.Position = UDim2.new(1, -300, 0.5, -10)
     hintBg.BackgroundColor3 = self._Colors.Bg
     hintBg.BackgroundTransparency = 0.5
     hintBg.BorderSizePixel = 0
+    hintBg.Text = ""
+    hintBg.AutoButtonColor = false
     Instance.new("UICorner", hintBg).CornerRadius = UDim.new(0, 4)
 
     local hintStroke = Instance.new("UIStroke", hintBg)
@@ -2119,6 +2185,39 @@ function Library:_initTitleBar()
     
     UI.TitleToggleHintBg = hintBg
 
+    hintBg.MouseEnter:Connect(function()
+        TweenService:Create(hintBg, TweenInfo.new(0.15), {BackgroundTransparency = 0.2}):Play()
+        TweenService:Create(hintStroke, TweenInfo.new(0.15), {Transparency = 0.2, Color = self._Colors.Accent}):Play()
+    end)
+    hintBg.MouseLeave:Connect(function()
+        TweenService:Create(hintBg, TweenInfo.new(0.15), {BackgroundTransparency = 0.5}):Play()
+        TweenService:Create(hintStroke, TweenInfo.new(0.15), {Transparency = 0.5, Color = self._Colors.Border}):Play()
+    end)
+
+    local isListening = false
+    hintBg.MouseButton1Click:Connect(function()
+        if isListening then return end
+        isListening = true
+        UI.TitleToggleHint.Text = "PRESS KEY..."
+        UI.TitleToggleHint.TextColor3 = self._Colors.Accent
+        
+        local conn
+        conn = UserInputService.InputBegan:Connect(function(input, gameProcessed)
+            if gameProcessed then return end
+            if input.UserInputType == Enum.UserInputType.Keyboard then
+                self:SetToggleKey(input.KeyCode)
+                UI.TitleToggleHint.TextColor3 = self._Colors.TextDim
+                isListening = false
+                conn:Disconnect()
+            elseif input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.MouseButton2 then
+                UI.TitleToggleHint.Text = self.ToggleKey.Name
+                UI.TitleToggleHint.TextColor3 = self._Colors.TextDim
+                isListening = false
+                conn:Disconnect()
+            end
+        end)
+    end)
+
     self:_registerThemeRefresher(function()
         if UI.TitleToggleHint then
             UI.TitleToggleHint.TextColor3 = self._Colors.TextDim
@@ -2140,6 +2239,21 @@ function Library:_initTitleBar()
     local function updateTitleLayout()
         local width = UI.MainContainer.AbsoluteSize.X
         if width <= 0 then width = 640 end
+        
+        local tlWidth = 76
+        UI.TitleDiscord.Visible = width >= 560
+        local authorW = 0
+        if UI.TitleDiscord.Visible then
+            authorW = UI.TitleDiscord.AbsoluteSize.X
+            if authorW <= 0 then authorW = 50 end
+            UI.TitleDiscord.Position = UDim2.new(1, -tlWidth - authorW, 0, 0)
+        end
+
+        local hintW = UI.TitleToggleHintBg.AbsoluteSize.X
+        if hintW <= 0 then hintW = 40 end
+        local hintOffset = tlWidth + (authorW > 0 and authorW + 12 or 0)
+        UI.TitleToggleHintBg.Position = UDim2.new(1, -hintOffset - hintW, 0.5, -10)
+
         local maxTitleWidth = math.clamp(width - 420, 80, 300)
         
         local mainTextW = UI.TitleLabel.TextBounds.X
@@ -2167,21 +2281,11 @@ function Library:_initTitleBar()
         local badgeStart = 46 + mainTextW + (subTextW > 0 and subTextW + 12 or 10)
         local badgeEnd = badgeStart + badgeW
 
-        local hintW = UI.TitleToggleHintBg.AbsoluteSize.X
-        if hintW <= 0 then hintW = 50 end
-        
-        local trafficLightsW = 76
-        local authorW = UI.TitleDiscord.Visible and 150 or 0
-        local rightOffset = trafficLightsW + authorW + 20
-        
-        UI.TitleToggleHintBg.Position = UDim2.new(1, -rightOffset - hintW, 0.5, -10)
-
-        local hintStart = width - rightOffset - hintW
+        local hintStart = width - hintOffset - hintW
         local canShowBadge = width >= 420 and (badgeEnd + 16) < hintStart
 
         UI.TitleVersionBadge.Visible = canShowBadge
         UI.TitleVersionBadge.Position = UDim2.new(0, badgeStart, 0.5, -9)
-        UI.TitleDiscord.Visible = width >= 560
     end
     updateTitleLayout()
     task.defer(updateTitleLayout)
@@ -2315,10 +2419,8 @@ function Library:_initTrafficLights()
     end
 
     UI.TrafficDots[2].MouseButton1Click:Connect(function()
-        if self._hudState == "MINIMIZED" then
-            applyHudState("NORMAL")
-        else
-            applyHudState("MINIMIZED")
+        if STATE.GuiVisible then
+            self:Minimize()
         end
     end)
 
@@ -2583,7 +2685,7 @@ function Library:_setAccordionState(categoryName, expanded)
         tw:Play()
     end
     if data.chevron then
-        data.chevron.Image = GetIcon(expanded and "arrow-up" or "arrow-down")
+        data.chevron.Image = GetIcon(expanded and "chevron-up" or "chevron-down")
     end
     if data.button and data.stroke then
         TweenService:Create(data.stroke, TweenInfo.new(0.18), {
@@ -3418,7 +3520,7 @@ function Library:CreateCategory(categoryName, iconSpec)
         chevron.Size = UDim2.fromOffset(12, 12)
         chevron.Position = UDim2.new(0, 8, 0.5, -6)
         chevron.BackgroundTransparency = 1
-        chevron.Image = GetIcon("arrow-down")
+        chevron.Image = GetIcon("chevron-down")
         chevron.ImageColor3 = self._Colors.TextDim
         chevron.ScaleType = Enum.ScaleType.Fit
         chevron.ZIndex = 7
@@ -6355,6 +6457,80 @@ function Library:_isDead()
     return self._STATE ~= nil and self._STATE.Destroyed == true
 end
 
+function Library:Minimize()
+    if self:_isDead() then return end
+    local STATE = self._STATE
+    local UI = self._UI
+    if not STATE.GuiVisible or STATE.AnimatingGui then return end
+    STATE.AnimatingGui = true
+    
+    self:PlaySound("Click")
+    
+    local centerX = 0.5
+    local centerY = 0.5
+    local camera = getCam()
+    if UI.MainContainer and camera then
+        local pos = UI.MainContainer.AbsolutePosition
+        local size = UI.MainContainer.AbsoluteSize
+        local vp = camera.ViewportSize
+        centerX = (pos.X + size.X / 2) / vp.X
+        centerY = (pos.Y + size.Y / 2) / vp.Y
+    end
+    
+    for i = 1, 35 do
+        local p = Instance.new("Frame")
+        p.Parent = UI.MainGui
+        p.Size = UDim2.fromOffset(math.random(4, 10), math.random(4, 10))
+        p.Position = UDim2.fromScale(centerX + (math.random() - 0.5) * 0.1, centerY + (math.random() - 0.5) * 0.1)
+        p.BackgroundColor3 = self._Colors.Accent
+        p.BackgroundTransparency = math.random(20, 50) / 100
+        p.ZIndex = 999
+        Instance.new("UICorner", p).CornerRadius = UDim.new(1, 0)
+        
+        local targetX = 0.5 + (math.random() - 0.5) * 0.08
+        local targetY = 0.02 + (math.random() - 0.5) * 0.05
+        
+        local tweenInfo = TweenInfo.new(math.random(6, 12) / 10, Enum.EasingStyle.Quart, Enum.EasingDirection.Out)
+        TweenService:Create(p, tweenInfo, {
+            Position = UDim2.fromScale(targetX, targetY),
+            Size = UDim2.fromOffset(0, 0),
+            BackgroundTransparency = 1
+        }):Play()
+        
+        task.delay(1.2, function() if p and p.Parent then p:Destroy() end end)
+    end
+    
+    local tweenInfo = TweenInfo.new(0.35, Enum.EasingStyle.Quart, Enum.EasingDirection.In)
+    
+    TweenService:Create(UI.GuiBlur, tweenInfo, {Size = 0}):Play()
+    TweenService:Create(UI.MainContainer, tweenInfo, {BackgroundTransparency = 1}):Play()
+    if UI.AcrylicTexture then TweenService:Create(UI.AcrylicTexture, tweenInfo, {BackgroundTransparency = 1}):Play() end
+    if UI.AcrylicSheen then TweenService:Create(UI.AcrylicSheen, tweenInfo, {BackgroundTransparency = 1}):Play() end
+    TweenService:Create(UI.FocusOverlay, tweenInfo, {BackgroundTransparency = 1}):Play()
+    
+    local st = TweenService:Create(UI.MainScale, tweenInfo, {Scale = 1.2})
+    st:Play()
+    
+    st.Completed:Connect(function()
+        UI.MainContainer.Visible = false
+        UI.ParticleBG.Visible = false
+        UI.FocusOverlay.Visible = false
+        STATE.GuiVisible = false
+        STATE.AnimatingGui = false
+        
+        local btn = UI.MinimizeButton
+        if btn then
+            btn.Visible = true
+            btn.Size = UDim2.fromOffset(0, 32)
+            btn.Position = UDim2.new(0.5, 0, 0, -40)
+            TweenService:Create(btn, TweenInfo.new(0.4, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
+                Size = UDim2.fromOffset(120, 32),
+                Position = UDim2.new(0.5, 0, 0, 16)
+            }):Play()
+        end
+    end)
+end
+
 function Library:PlaySound(soundName)
     if self:_isDead() then return end
     local s = self._Sounds and self._Sounds[soundName]
@@ -6371,11 +6547,23 @@ function Library:Toggle()
     STATE.AnimatingGui = true
     if STATE.GuiTween then STATE.GuiTween:Cancel() end
 
+    local blurTarget = self.Acrylic and self.AcrylicBlurIntensity or 0
+    if STATE.FocusOverlayEnabled then blurTarget = math.max(blurTarget, 12) end
+    local mainBgTrans = self.Acrylic and 0.32 or 0.1
+
     if STATE.GuiVisible then
-        TweenService:Create(UI.GuiBlur, TweenInfo.new(0.12), {Size = 0}):Play()
-        TweenService:Create(UI.FocusOverlay, TweenInfo.new(0.12), {BackgroundTransparency = 1}):Play()
-        STATE.GuiTween = TweenService:Create(UI.MainScale, TweenInfo.new(0.12), {Scale = 0})
+        -- CLOSE ANIMATION (Focus Zoom Out)
+        local tweenInfo = TweenInfo.new(0.3, Enum.EasingStyle.Quart, Enum.EasingDirection.In)
+        
+        TweenService:Create(UI.GuiBlur, tweenInfo, {Size = 0}):Play()
+        TweenService:Create(UI.MainContainer, tweenInfo, {BackgroundTransparency = 1}):Play()
+        if UI.AcrylicTexture then TweenService:Create(UI.AcrylicTexture, tweenInfo, {BackgroundTransparency = 1}):Play() end
+        if UI.AcrylicSheen then TweenService:Create(UI.AcrylicSheen, tweenInfo, {BackgroundTransparency = 1}):Play() end
+        TweenService:Create(UI.FocusOverlay, tweenInfo, {BackgroundTransparency = 1}):Play()
+        
+        STATE.GuiTween = TweenService:Create(UI.MainScale, tweenInfo, {Scale = 1.15})
         STATE.GuiTween:Play()
+        
         STATE.GuiTween.Completed:Connect(function()
             UI.MainContainer.Visible = false
             UI.ParticleBG.Visible = false
@@ -6385,24 +6573,41 @@ function Library:Toggle()
             STATE.GuiTween = nil
         end)
     else
+        -- OPEN ANIMATION (Focus Zoom In)
         UI.MainContainer.Visible = true
         UI.ParticleBG.Visible = true
         STATE.GuiVisible = true
-        UI.GuiBlur.Size = 0
-        local blurTarget = self.Acrylic and self.AcrylicBlurIntensity or 0
+        if UI.MinimizeButton then
+            UI.MinimizeButton.Visible = false
+        end
+        
+        UI.MainScale.Scale = 1.15
+        UI.MainContainer.BackgroundTransparency = 1
+        if UI.AcrylicTexture then UI.AcrylicTexture.BackgroundTransparency = 1 end
+        if UI.AcrylicSheen then UI.AcrylicSheen.BackgroundTransparency = 1 end
+        UI.GuiBlur.Size = 24
+        
         if STATE.FocusOverlayEnabled then
             UI.FocusOverlay.Visible = true
             UI.FocusOverlay.BackgroundTransparency = 1
-            blurTarget = math.max(blurTarget, 12)
-            TweenService:Create(UI.FocusOverlay, TweenInfo.new(0.18), {
+        end
+
+        local tweenInfo = TweenInfo.new(0.4, Enum.EasingStyle.Quart, Enum.EasingDirection.Out)
+        
+        TweenService:Create(UI.GuiBlur, tweenInfo, {Size = blurTarget}):Play()
+        TweenService:Create(UI.MainContainer, tweenInfo, {BackgroundTransparency = mainBgTrans}):Play()
+        if UI.AcrylicTexture then TweenService:Create(UI.AcrylicTexture, tweenInfo, {BackgroundTransparency = self.Acrylic and 0.94 or 1}):Play() end
+        if UI.AcrylicSheen then TweenService:Create(UI.AcrylicSheen, tweenInfo, {BackgroundTransparency = self.Acrylic and 0.72 or 1}):Play() end
+        
+        if STATE.FocusOverlayEnabled then
+            TweenService:Create(UI.FocusOverlay, tweenInfo, {
                 BackgroundTransparency = (D.Themes[self.ThemeName] or {}).OverlayTransparency or 0.45
             }):Play()
         end
-        if blurTarget > 0 then
-            TweenService:Create(UI.GuiBlur, TweenInfo.new(0.18), {Size = blurTarget}):Play()
-        end
-        STATE.GuiTween = TweenService:Create(UI.MainScale, TweenInfo.new(0.18), {Scale = 1})
+        
+        STATE.GuiTween = TweenService:Create(UI.MainScale, tweenInfo, {Scale = 1})
         STATE.GuiTween:Play()
+        
         STATE.GuiTween.Completed:Connect(function()
             STATE.AnimatingGui = false
             STATE.GuiTween = nil
