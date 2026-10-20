@@ -3865,7 +3865,7 @@ function Library:_initResize()
     Fn.track(RunService.RenderStepped, function()
         if not resizing or not camera then return end
         local mouse = UserInputService:GetMouseLocation()
-        local delta = mouse - startMouse
+        local delta = Vector2.new(mouse.X - startMouse.X, mouse.Y - startMouse.Y)
         
         local newX = math.clamp(startSize.X + delta.X, 450, camera.ViewportSize.X * 0.95)
         local newY = math.clamp(startSize.Y + delta.Y, 300, camera.ViewportSize.Y * 0.95)
