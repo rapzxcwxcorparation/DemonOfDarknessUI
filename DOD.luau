@@ -5527,15 +5527,42 @@ function Library:CreateSection(tabName, title, summary, defaultOpen, columnName,
     indicator.ImageColor3 = defaultOpen and self._Colors.Accent or self._Colors.TextDim
     indicator.ScaleType = Enum.ScaleType.Fit
 
-    local hoverBar = Instance.new("Frame", section)
+    local hoverBarWrap = Instance.new("Frame", section)
+    hoverBarWrap.Name = "HoverBarWrap"
+    hoverBarWrap.AnchorPoint = Vector2.new(0, 0.5)
+    hoverBarWrap.Position = UDim2.new(0, 0, 0.5, 0)
+    hoverBarWrap.Size = UDim2.new(0, 4, 0, 0)
+    hoverBarWrap.BackgroundTransparency = 1
+    hoverBarWrap.BorderSizePixel = 0
+    hoverBarWrap.ClipsDescendants = false
+    hoverBarWrap.ZIndex = 5
+
+    local hoverBarGlow = Instance.new("Frame", hoverBarWrap)
+    hoverBarGlow.Name = "HoverBarGlow"
+    hoverBarGlow.Size = UDim2.new(1, 14, 1, 0)
+    hoverBarGlow.Position = UDim2.new(0, -7, 0, 0)
+    hoverBarGlow.BackgroundColor3 = self._Colors.Accent
+    hoverBarGlow.BackgroundTransparency = 1
+    hoverBarGlow.BorderSizePixel = 0
+    hoverBarGlow.ZIndex = 4
+    Instance.new("UICorner", hoverBarGlow).CornerRadius = UDim.new(1, 0)
+
+    local hoverBar = Instance.new("Frame", hoverBarWrap)
     hoverBar.Name = "HoverBar"
-    hoverBar.AnchorPoint = Vector2.new(0, 0.5)
-    hoverBar.Position = UDim2.new(0, 0, 0.5, 0)
-    hoverBar.Size = UDim2.new(0, 3, 0, 0)
+    hoverBar.Size = UDim2.new(1, 0, 1, 0)
     hoverBar.BackgroundColor3 = self._Colors.Accent
     hoverBar.BorderSizePixel = 0
     hoverBar.ZIndex = 5
     Instance.new("UICorner", hoverBar).CornerRadius = UDim.new(1, 0)
+
+    local hoverBarGradient = Instance.new("UIGradient", hoverBar)
+    hoverBarGradient.Rotation = 90
+    hoverBarGradient.Transparency = NumberSequence.new({
+        NumberSequenceKeypoint.new(0, 1),
+        NumberSequenceKeypoint.new(0.12, 0),
+        NumberSequenceKeypoint.new(0.88, 0),
+        NumberSequenceKeypoint.new(1, 1),
+    })
 
     local separator = Instance.new("Frame", section)
     separator.Size = UDim2.new(1, -32, 0, 1)
@@ -5570,35 +5597,36 @@ function Library:CreateSection(tabName, title, summary, defaultOpen, columnName,
     bodyPad.PaddingTop = UDim.new(0, 10)
     bodyPad.PaddingBottom = UDim.new(0, 14)
 
-    local scrollIndicator = Instance.new("Frame", section)
-    scrollIndicator.Name = "ScrollIndicator"
-    scrollIndicator.AnchorPoint = Vector2.new(0.5, 0)
-    scrollIndicator.Position = UDim2.new(1, -8, 0, HEADER_HEIGHT + 14)
-    scrollIndicator.Size = UDim2.fromOffset(3, 0)
-    scrollIndicator.AutomaticSize = Enum.AutomaticSize.Y
-    scrollIndicator.BackgroundTransparency = 1
-    scrollIndicator.BorderSizePixel = 0
-    scrollIndicator.ZIndex = 6
-    scrollIndicator.Visible = false
+    local scrollTrack = Instance.new("Frame", section)
+    scrollTrack.Name = "ScrollTrack"
+    scrollTrack.AnchorPoint = Vector2.new(0.5, 0)
+    scrollTrack.Position = UDim2.new(1, -10, 0, HEADER_HEIGHT + 14)
+    scrollTrack.Size = UDim2.fromOffset(3, 0)
+    scrollTrack.BackgroundColor3 = self._Colors.Border
+    scrollTrack.BackgroundTransparency = 0.75
+    scrollTrack.BorderSizePixel = 0
+    scrollTrack.ZIndex = 6
+    scrollTrack.Visible = false
+    Instance.new("UICorner", scrollTrack).CornerRadius = UDim.new(1, 0)
 
-    local indLayout = Instance.new("UIListLayout", scrollIndicator)
-    indLayout.FillDirection = Enum.FillDirection.Vertical
-    indLayout.SortOrder = Enum.SortOrder.LayoutOrder
-    indLayout.Padding = UDim.new(0, 3)
-    indLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+    local scrollThumb = Instance.new("Frame", scrollTrack)
+    scrollThumb.Name = "ScrollThumb"
+    scrollThumb.Size = UDim2.new(1, 0, 0.3, 0)
+    scrollThumb.Position = UDim2.new(0, 0, 0, 0)
+    scrollThumb.BackgroundColor3 = self._Colors.Accent
+    scrollThumb.BorderSizePixel = 0
+    scrollThumb.ZIndex = 7
+    Instance.new("UICorner", scrollThumb).CornerRadius = UDim.new(1, 0)
 
-    local indBars = {}
-    for bi = 1, 6 do
-        local bar = Instance.new("Frame", scrollIndicator)
-        bar.Size = UDim2.fromOffset(3, 7)
-        bar.BackgroundColor3 = self._Colors.Accent
-        bar.BackgroundTransparency = 0.8
-        bar.BorderSizePixel = 0
-        bar.LayoutOrder = bi
-        bar.ZIndex = 6
-        Instance.new("UICorner", bar).CornerRadius = UDim.new(1, 0)
-        indBars[bi] = bar
-    end
+    local scrollThumbGlow = Instance.new("Frame", scrollThumb)
+    scrollThumbGlow.Name = "ThumbGlow"
+    scrollThumbGlow.Size = UDim2.new(1, 8, 1, 0)
+    scrollThumbGlow.Position = UDim2.new(0, -4, 0, 0)
+    scrollThumbGlow.BackgroundColor3 = self._Colors.Accent
+    scrollThumbGlow.BackgroundTransparency = 0.7
+    scrollThumbGlow.BorderSizePixel = 0
+    scrollThumbGlow.ZIndex = 6
+    Instance.new("UICorner", scrollThumbGlow).CornerRadius = UDim.new(1, 0)
 
     local expanded = defaultOpen == true
     local currentTween
@@ -5619,21 +5647,26 @@ function Library:CreateSection(tabName, title, summary, defaultOpen, columnName,
     local function updateScrollIndicator()
         if not body or not body.Parent then return end
         if not expanded then
-            scrollIndicator.Visible = false
+            scrollTrack.Visible = false
             return
         end
         local maxScroll = math.max(0, body.AbsoluteCanvasSize.Y - body.AbsoluteSize.Y)
         if maxScroll <= 2 then
-            scrollIndicator.Visible = false
+            scrollTrack.Visible = false
             return
         end
-        scrollIndicator.Visible = true
+        scrollTrack.Visible = true
+        local bodyH = body.AbsoluteSize.Y
+        if bodyH <= 0 then return end
+        local trackH = math.max(28, bodyH - 20)
+        scrollTrack.Size = UDim2.fromOffset(3, trackH)
+        local canvasH = math.max(1, body.AbsoluteCanvasSize.Y)
         local ratio = math.clamp(body.CanvasPosition.Y / maxScroll, 0, 1)
-        local n = #indBars
-        local activeIdx = 1 + math.floor(ratio * (n - 1) + 0.5)
-        for i, bar in ipairs(indBars) do
-            bar.BackgroundTransparency = (i <= activeIdx) and 0.1 or 0.8
-        end
+        local thumbRatio = math.clamp(bodyH / canvasH, 0.12, 1)
+        local thumbH = math.max(22, trackH * thumbRatio)
+        scrollThumb.Size = UDim2.new(1, 0, 0, thumbH)
+        local maxThumbY = math.max(0, trackH - thumbH)
+        scrollThumb.Position = UDim2.new(0, 0, 0, ratio * maxThumbY)
     end
 
     local function updateHeight(animate)
@@ -5719,15 +5752,31 @@ function Library:CreateSection(tabName, title, summary, defaultOpen, columnName,
         local baseTrans = self._STATE.SectionTransparency or 0.15
         TweenService:Create(section, TweenInfo.new(0.18),
             {BackgroundColor3 = self._Colors.CardHover, BackgroundTransparency = math.max(0, baseTrans - 0.1)}):Play()
-        TweenService:Create(hoverBar, TweenInfo.new(0.28, Enum.EasingStyle.Quart, Enum.EasingDirection.Out),
-            {Size = UDim2.new(0, 3, 1, -24)}):Play()
+        TweenService:Create(cardStroke, TweenInfo.new(0.22),
+            {Color = self._Colors.Accent, Transparency = 0.25}):Play()
+        TweenService:Create(hoverBarWrap, TweenInfo.new(0.32, Enum.EasingStyle.Quart, Enum.EasingDirection.Out),
+            {Size = UDim2.new(0, 4, 1, -28)}):Play()
+        TweenService:Create(hoverBarGlow, TweenInfo.new(0.32),
+            {BackgroundTransparency = 0.55}):Play()
+        if sectionIcon then
+            TweenService:Create(sectionIcon, TweenInfo.new(0.22),
+                {ImageColor3 = self._Colors.Accent}):Play()
+        end
     end)
     header.MouseLeave:Connect(function()
         local baseTrans = self._STATE.SectionTransparency or 0.15
         TweenService:Create(section, TweenInfo.new(0.18),
             {BackgroundColor3 = self._Colors.Card, BackgroundTransparency = baseTrans}):Play()
-        TweenService:Create(hoverBar, TweenInfo.new(0.22, Enum.EasingStyle.Quart, Enum.EasingDirection.Out),
-            {Size = UDim2.new(0, 3, 0, 0)}):Play()
+        TweenService:Create(cardStroke, TweenInfo.new(0.22),
+            {Color = self._Colors.Border, Transparency = 0.4}):Play()
+        TweenService:Create(hoverBarWrap, TweenInfo.new(0.22, Enum.EasingStyle.Quart, Enum.EasingDirection.Out),
+            {Size = UDim2.new(0, 4, 0, 0)}):Play()
+        TweenService:Create(hoverBarGlow, TweenInfo.new(0.22),
+            {BackgroundTransparency = 1}):Play()
+        if sectionIcon then
+            TweenService:Create(sectionIcon, TweenInfo.new(0.22),
+                {ImageColor3 = self._Colors.Accent}):Play()
+        end
     end)
 
     local lastToggleTime = 0
@@ -5759,8 +5808,17 @@ function Library:CreateSection(tabName, title, summary, defaultOpen, columnName,
         if hoverBar then
             hoverBar.BackgroundColor3 = self._Colors.Accent
         end
-        for _, bar in ipairs(indBars) do
-            bar.BackgroundColor3 = self._Colors.Accent
+        if hoverBarGlow then
+            hoverBarGlow.BackgroundColor3 = self._Colors.Accent
+        end
+        if scrollTrack then
+            scrollTrack.BackgroundColor3 = self._Colors.Border
+        end
+        if scrollThumb then
+            scrollThumb.BackgroundColor3 = self._Colors.Accent
+        end
+        if scrollThumbGlow then
+            scrollThumbGlow.BackgroundColor3 = self._Colors.Accent
         end
     end)
 
