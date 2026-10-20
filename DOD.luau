@@ -718,6 +718,7 @@ function Library.new(opts)
     self.WindowSize = opts.Size or UDim2.fromOffset(750, 500)
     self.WallpaperSource = opts.Wallpaper
     self.WallpaperTransparency = opts.WallpaperTransparency or 0
+    self.AutoTheme = opts.AutoTheme ~= false
     self.Acrylic = opts.Acrylic ~= false
     if opts.AcrylicBlur == nil then
         self.AcrylicBlurIntensity = 8
@@ -2348,6 +2349,34 @@ function Library:SetToggleKey(key)
     self:Notify("KEYBIND", "Toggle GUI: " .. key.Name)
 end
 
+function Library:_generateAutoTheme(imageStr)
+    if not self.AutoTheme then return end
+    if not imageStr then return end
+    
+    local hash = 0
+    for i = 1, #imageStr do
+        hash = (hash + (string.byte(imageStr, i) * i)) % 360
+    end
+    local h1 = hash / 360
+    local h2 = (hash + 45) / 360
+    if h2 > 1 then h2 = h2 - 1 end
+
+    D.Themes["Auto"] = {
+        Accent = Color3.fromHSV(h1, 0.7, 0.9),
+        Accent2 = Color3.fromHSV(h2, 0.8, 0.8),
+        Bg = Color3.fromHSV(h1, 0.4, 0.08),
+        Bg2 = Color3.fromHSV(h1, 0.4, 0.12),
+        Card = Color3.fromHSV(h1, 0.35, 0.18),
+        Sidebar = Color3.fromHSV(h1, 0.4, 0.06),
+        Border = Color3.fromHSV(h1, 0.4, 0.3),
+        Text = Color3.fromHSV(h1, 0.05, 0.95),
+        TextDim = Color3.fromHSV(h1, 0.15, 0.65),
+        FocusOverlayColor = Color3.fromHSV(h1, 0.5, 0.05),
+        OverlayTransparency = 0.4
+    }
+    self:SetTheme("Auto", true)
+end
+
 function Library:SetWallpaper(assetId, transparency)
     if self:_isDead() then return end
     local UI = self._UI
@@ -2361,6 +2390,7 @@ function Library:SetWallpaper(assetId, transparency)
     
     if string.sub(img, 1, 4) == "http" then
         -- Web URL (GitHub, Imgur, etc)
+        self:Notify("WALLPAPER", "Downloading 4K image...", "info")
         local success, content = pcall(function()
             if getcustomasset and type(getcustomasset) == "function" then
                 return getcustomasset(img)
@@ -2384,6 +2414,9 @@ function Library:SetWallpaper(assetId, transparency)
     
     UI.Wallpaper.ImageTransparency = math.clamp(transparency or 0, 0, 1)
     UI.Wallpaper.Visible = true
+    
+    -- Auto-Generate Theme from Wallpaper ID
+    self:_generateAutoTheme(img)
 end
 
 function Library:SetCursorIcon(assetId)
@@ -5287,6 +5320,44 @@ function Library:CreateThemeCustomizer(tabName)
     self:AddSlider(section, "Blur intensity", 0, 24, self.AcrylicBlurIntensity, 0, function(value)
         self:SetAcrylicIntensity(value)
     end)
+    local wallpaperBaseUrl = "https://raw.githubusercontent.com/rapzxcwxcorparation/DemonOfDarknessUI/refs/heads/main/wallpaperdod/"
+    local wallpaperOptions = {
+        "None",
+        "chika-fujiwara-3840x2160-16148.jpg",
+        "h1-key-lovechapter-3840x2160-25940.jpg",
+        "itachi-uchiha-3840x2160-25721.jpg",
+        "kawaii-cat-girl-3840x2160-26545.png",
+        "miles-morales-3840x2160-25975.jpg",
+        "thumb-1920-1394067.png"
+    }
+
+    local currentWallpaperIndex = 1
+    local wpName = tostring(self.WallpaperSource or "")
+    for i, name in ipairs(wallpaperOptions) do
+        if wpName:find(name, 1, true) or (self._UI.Wallpaper and self._UI.Wallpaper.Image and string.find(tostring(self._UI.Wallpaper.Image), name, 1, true)) then
+            currentWallpaperIndex = i
+            break
+        end
+    end
+
+    self:AddDropdown(section, "Wallpaper Image", wallpaperOptions, currentWallpaperIndex, function(idx, val)
+        if val == "None" then
+            self:SetWallpaper(nil)
+            self.WallpaperSource = nil
+        else
+            local fullUrl = wallpaperBaseUrl .. val
+            self:SetWallpaper(fullUrl, self.WallpaperTransparency or 0)
+            self.WallpaperSource = fullUrl
+        end
+    end)
+
+    self:AddSlider(section, "Wallpaper Transparency", 0, 1, self.WallpaperTransparency or 0, 2, function(value)
+        self.WallpaperTransparency = value
+        if self._UI.Wallpaper and self._UI.Wallpaper.Visible then
+            self._UI.Wallpaper.ImageTransparency = math.clamp(value, 0, 1)
+        end
+    end)
+
     self:AddDropdown(section, "Weather effect", D.WeatherTypes,
         table.find(D.WeatherTypes, self._STATE.WeatherType) or 1,
         function(_, weatherType)
