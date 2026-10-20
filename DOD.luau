@@ -894,7 +894,13 @@ function Library:SetTheme(themeName, silent)
             if UI.TitleLogoIcon then UI.TitleLogoIcon.ImageColor3 = Fn.accentTextColor(self._Colors.Accent) end
         end
         if UI.TitleVersionBadge then
+            local badgeColor = self._VersionBadgeOverride or self._Colors.Accent
+            UI.TitleVersionBadge.BackgroundColor3 = badgeColor
             UI.TitleVersionBadge.TextColor3 = self._Colors.TextDim
+            local vStroke = UI.TitleVersionBadge:FindFirstChildOfClass("UIStroke")
+            if vStroke then
+                vStroke.Color = badgeColor
+            end
         end
         if UI.MainStroke then UI.MainStroke.Color = self._Colors.Border end
         if UI.TitleGradient then
@@ -1385,7 +1391,7 @@ function Library:_initMainGui()
     UI.CustomCursor.Visible = false
 
     Fn.track(RunService.RenderStepped, function()
-        if not self._STATE or not self._STATE.GuiVisible then
+        if not self._STATE or not self._STATE.GuiVisible or self._STATE.Destroyed then
             if UI.CustomCursor and UI.CustomCursor.Visible then
                 UI.CustomCursor.Visible = false
             end
@@ -1399,12 +1405,13 @@ function Library:_initMainGui()
         local overGui = false
         
         local function checkBounds(frame)
-            if frame and frame.Visible then
-                local pos, size = frame.AbsolutePosition, frame.AbsoluteSize
-                if mouse.X >= pos.X and mouse.X <= pos.X + size.X and
-                   mouse.Y >= pos.Y and mouse.Y <= pos.Y + size.Y then
-                    return true
-                end
+            if frame and frame.Parent and frame.Visible then
+                local ok, result = pcall(function()
+                    local pos, size = frame.AbsolutePosition, frame.AbsoluteSize
+                    return (mouse.X >= pos.X and mouse.X <= pos.X + size.X and
+                            mouse.Y >= pos.Y and mouse.Y <= pos.Y + size.Y)
+                end)
+                if ok then return result end
             end
             return false
         end
@@ -2172,6 +2179,15 @@ function Library:SetVersion(text)
     end
 end
 
+function Library:SetVersionBadgeColor(color)
+    if self:_isDead() then return end
+    if typeof(color) ~= "Color3" then
+        error("[DoD UI] SetVersionBadgeColor expects a Color3 value.")
+    end
+    self._VersionBadgeOverride = color
+    self:SetTheme(self.ThemeName, true)
+end
+
 function Library:SetToggleKey(key)
     if self:_isDead() then return end
     if typeof(key) ~= "EnumItem" or key.EnumType ~= Enum.KeyCode then
@@ -2194,6 +2210,67 @@ function Library:SetCursorIcon(assetId)
     if self._UI.CustomCursor then
         self._UI.CustomCursor.Image = img
     end
+end
+
+function Library:AddTitleButton(iconName, tooltip, callback)
+    if self:_isDead() then return end
+    local UI = self._UI
+    if not UI.TitleCustomIcons then return end
+
+    local btn = Instance.new("TextButton")
+    btn.Size = UDim2.fromOffset(24, 24)
+    btn.BackgroundColor3 = self._Colors.Card
+    btn.BackgroundTransparency = 0.8
+    btn.Text = ""
+    btn.Parent = UI.TitleCustomIcons
+    btn.AutoButtonColor = false
+    btn.BorderSizePixel = 0
+    
+    Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 6)
+
+    local stroke = Instance.new("UIStroke", btn)
+    stroke.Color = self._Colors.Border
+    stroke.Thickness = 1
+    stroke.Transparency = 0.8
+
+    local icon = Instance.new("ImageLabel")
+    icon.Size = UDim2.fromOffset(14, 14)
+    icon.Position = UDim2.new(0.5, -7, 0.5, -7)
+    icon.BackgroundTransparency = 1
+    icon.Image = GetIcon(iconName)
+    icon.ImageColor3 = self._Colors.TextDim
+    icon.ScaleType = Enum.ScaleType.Fit
+    icon.Parent = btn
+
+    Fn.bindPressAnimation(btn)
+
+    btn.MouseEnter:Connect(function()
+        TweenService:Create(btn, TweenInfo.new(0.15), {BackgroundTransparency = 0.5}):Play()
+        TweenService:Create(stroke, TweenInfo.new(0.15), {Transparency = 0.3, Color = self._Colors.Accent}):Play()
+        TweenService:Create(icon, TweenInfo.new(0.15), {ImageColor3 = self._Colors.Accent}):Play()
+    end)
+    btn.MouseLeave:Connect(function()
+        TweenService:Create(btn, TweenInfo.new(0.15), {BackgroundTransparency = 0.8}):Play()
+        TweenService:Create(stroke, TweenInfo.new(0.15), {Transparency = 0.8, Color = self._Colors.Border}):Play()
+        TweenService:Create(icon, TweenInfo.new(0.15), {ImageColor3 = self._Colors.TextDim}):Play()
+    end)
+
+    btn.MouseButton1Click:Connect(function()
+        self:PlaySound("Click")
+        if callback then callback() end
+    end)
+
+    if tooltip and tooltip ~= "" then
+        self:_bindTooltip(btn, tooltip)
+    end
+
+    self:_registerThemeRefresher(function()
+        btn.BackgroundColor3 = self._Colors.Card
+        stroke.Color = self._Colors.Border
+        icon.ImageColor3 = self._Colors.TextDim
+    end)
+
+    return btn
 end
 
 function Library:SetTitleIcon(iconName)
@@ -2317,8 +2394,8 @@ function Library:_initTitleBar()
     UI.TitleVersionBadge.Size = UDim2.new(0, 0, 0, 18)
     UI.TitleVersionBadge.AutomaticSize = Enum.AutomaticSize.X
     UI.TitleVersionBadge.Position = UDim2.new(0, 170, 0.5, -9)
-    UI.TitleVersionBadge.BackgroundColor3 = Color3.new(1, 1, 1)
-    UI.TitleVersionBadge.BackgroundTransparency = 0.92
+    UI.TitleVersionBadge.BackgroundColor3 = self._Colors.Accent
+    UI.TitleVersionBadge.BackgroundTransparency = 0.85
     UI.TitleVersionBadge.Text = self.Version
     UI.TitleVersionBadge.TextColor3 = self._Colors.TextDim
     UI.TitleVersionBadge.Font = Enum.Font.RobotoMono
@@ -2327,8 +2404,8 @@ function Library:_initTitleBar()
     Instance.new("UICorner", UI.TitleVersionBadge).CornerRadius = UDim.new(1, 0)
 
     local vStroke = Instance.new("UIStroke", UI.TitleVersionBadge)
-    vStroke.Color = Color3.new(1, 1, 1)
-    vStroke.Transparency = 0.88
+    vStroke.Color = self._Colors.Accent
+    vStroke.Transparency = 0.7
     vStroke.Thickness = 1
 
     local vPad = Instance.new("UIPadding", UI.TitleVersionBadge)
@@ -2346,6 +2423,23 @@ function Library:_initTitleBar()
     UI.TitleDiscord.Font = Enum.Font.GothamBold
     UI.TitleDiscord.TextSize = 12
     UI.TitleDiscord.TextXAlignment = Enum.TextXAlignment.Right
+
+    -- Custom Title Elements Container (Right side)
+    local customContainer = Instance.new("Frame", UI.TitleBar)
+    customContainer.Name = "TitleCustomIcons"
+    customContainer.Size = UDim2.new(0, 0, 0, 24)
+    customContainer.AutomaticSize = Enum.AutomaticSize.X
+    customContainer.AnchorPoint = Vector2.new(1, 0.5)
+    customContainer.Position = UDim2.new(1, -200, 0.5, 0)
+    customContainer.BackgroundTransparency = 1
+    customContainer.ZIndex = 10
+
+    local customLayout = Instance.new("UIListLayout", customContainer)
+    customLayout.FillDirection = Enum.FillDirection.Horizontal
+    customLayout.VerticalAlignment = Enum.VerticalAlignment.Center
+    customLayout.Padding = UDim.new(0, 6)
+
+    UI.TitleCustomIcons = customContainer
 
     -- Keybind Hint Box
     local hintBg = Instance.new("TextButton", UI.TitleBar)
@@ -2453,6 +2547,11 @@ function Library:_initTitleBar()
         if hintW <= 0 then hintW = 40 end
         local hintOffset = tlWidth + (authorW > 0 and authorW + 28 or 0)
         UI.TitleToggleHintBg.Position = UDim2.new(1, -hintOffset - hintW, 0.5, -10)
+
+        local customW = UI.TitleCustomIcons.AbsoluteSize.X
+        if customW <= 0 then customW = 0 end
+        local customOffset = hintOffset + hintW + (customW > 0 and 16 or 0)
+        UI.TitleCustomIcons.Position = UDim2.new(1, -customOffset - customW, 0.5, 0)
 
         local maxTitleWidth = math.clamp(width - 420, 80, 300)
         
@@ -7235,6 +7334,10 @@ function Library:Destroy()
     local STATE = self._STATE
     if STATE.Destroyed then return end
     STATE.Destroyed = true
+    STATE.GuiVisible = false
+    
+    UserInputService.MouseIconEnabled = true
+    UserInputService.MouseBehavior = Enum.MouseBehavior.Default
     
     UserInputService.MouseIconEnabled = true
     STATE.WeatherEnabled = false
@@ -7268,6 +7371,10 @@ function Library:Destroy()
     table.clear(STATE.SearchSections)
     table.clear(STATE.SearchBodies)
     table.clear(STATE.SearchTopLevel)
+    
+    -- Final safety net to restore mouse state globally
+    UserInputService.MouseIconEnabled = true
+    UserInputService.MouseBehavior = Enum.MouseBehavior.Default
 end
 
 -- =========================================================
