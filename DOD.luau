@@ -8,8 +8,9 @@
 
 		   discord.gg/rapptezetyee
 			t.me/HGithub
-
-
+----------------------------------------------------------
+		credits: deepseek and me
+		i am prompt engginer lol
 ]]
 
 local Library = {}
@@ -2950,8 +2951,20 @@ function Library:SetTitleIcon(iconName)
         error("[DoD UI] SetTitleIcon expects a non-empty icon name string.")
     end
     self._TitleIconName = iconName
+    
+    local finalImage = iconName
+    local lower = string.lower(iconName)
+    
+    if tonumber(iconName) then
+        finalImage = "rbxassetid://" .. iconName
+    elseif string.sub(lower, 1, 4) == "http" or string.sub(lower, 1, 10) == "rbxassetid:" or string.sub(lower, 1, 10) == "rbxasset://" then
+        finalImage = iconName
+    else
+        finalImage = GetIcon(iconName)
+    end
+    
     if self._UI.TitleLogoIcon then
-        self._UI.TitleLogoIcon.Image = GetIcon(iconName)
+        self._UI.TitleLogoIcon.Image = finalImage
     end
 end
 
@@ -3012,7 +3025,15 @@ function Library:_initTitleBar()
     logoIcon.Size = UDim2.fromOffset(14, 14)
     logoIcon.Position = UDim2.new(0.5, -7, 0.5, -7)
     logoIcon.BackgroundTransparency = 1
-    logoIcon.Image = GetIcon(self._TitleIconName)
+    local iconName = self._TitleIconName
+    local lowerIcon = string.lower(iconName)
+    if tonumber(iconName) then
+        logoIcon.Image = "rbxassetid://" .. iconName
+    elseif string.sub(lowerIcon, 1, 4) == "http" or string.sub(lowerIcon, 1, 10) == "rbxassetid:" or string.sub(lowerIcon, 1, 10) == "rbxasset://" then
+        logoIcon.Image = iconName
+    else
+        logoIcon.Image = GetIcon(iconName)
+    end
     logoIcon.ImageColor3 = self._Colors.Accent
     logoIcon.ScaleType = Enum.ScaleType.Fit
 
@@ -5847,6 +5868,28 @@ function Library:CreateThemeCustomizer(tabName)
     self:AddDropdown(section, "Theme", D.ThemeNames, themeIndex, function(_, themeName)
         self._AccentOverride = nil
         self:SetTheme(themeName)
+    end)
+    
+    local iconOptions = {
+        "hexagon", "shield", "sword", "ghost", "skull", "crown", "star", 
+        "zap", "flame", "diamond", "gem", "target", "crosshair", "eye", 
+        "settings", "wrench", "cog", "command", "activity", "cpu", 
+        "database", "terminal", "box", "package", "layers", "gamepad-2",
+        "bot", "user", "users", "infinity", "orbit", "atom", "sparkles"
+    }
+    local currentIcon = self._TitleIconName or "hexagon"
+    local iconIndex = table.find(iconOptions, currentIcon) or 1
+    
+    self:AddDropdown(section, "Title Icon", iconOptions, iconIndex, function(_, val)
+        self:SetTitleIcon(val)
+        self._TitleIconName = val
+    end)
+    
+    self:AddTextbox(section, "Custom Title Icon", "Lucide Name / ID / URL", function(txt)
+        if txt and txt ~= "" then
+            self:SetTitleIcon(txt)
+            self._TitleIconName = txt
+        end
     end)
     self:AddColorPicker(section, "Accent color", self._Colors.Accent, function(color)
         self:SetAccentColor(color)
