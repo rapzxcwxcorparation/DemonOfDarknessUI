@@ -6386,12 +6386,20 @@ function Library:Destroy()
 end
 
 -- =========================================================
--- MODULE EXPORT
+-- MODULE EXPORT (UPDATED FOR MAXIMUM COMPATIBILITY)
 -- =========================================================
 
-return {
-    new = Library.new,
+local export = {
+    new = function(...) return Library.new(...) end,
     Themes = D.ThemeNames,
     WeatherTypes = D.WeatherTypes,
     FocusOverlayTypes = D.FocusOverlayTypes,
 }
+
+setmetatable(export, {
+    __call = function(_, ...)
+        return Library.new(...)
+    end
+})
+
+return export
