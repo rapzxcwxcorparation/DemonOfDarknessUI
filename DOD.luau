@@ -101,18 +101,9 @@ Fn.bindPressAnimation = function(guiObject)
     end
     local baseScale = scale.Scale
     local activeTween
-    local pressed = false
 
     local function animate(factor)
         if activeTween then activeTween:Cancel() end
-        if factor < 1 then
-            if not pressed then
-                baseScale = scale.Scale
-                pressed = true
-            end
-        else
-            pressed = false
-        end
         activeTween = TweenService:Create(
             scale,
             TweenInfo.new(0.09, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
@@ -4126,7 +4117,7 @@ function Library:_updateFavoriteStar(configId)
     local hovering = star:GetAttribute("DoD_Hover") == true
     TweenService:Create(star, TweenInfo.new(0.15, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
         ImageColor3 = isFav and self._Colors.Accent or self._Colors.TextDim,
-        ImageTransparency = isFav and (hovering and 0 or 0.15) or (hovering and 0.25 or 0.55),
+        ImageTransparency = isFav and (hovering and 0 or 0.15) or (hovering and 0.2 or 1),
     }):Play()
 end
 
@@ -4144,7 +4135,7 @@ function Library:_attachFavorite(holder, configId, starPos)
     star.BackgroundTransparency = 1
     star.Image = GetIcon("star")
     star.ImageColor3 = self._STATE.Favorites[configId] and self._Colors.Accent or self._Colors.TextDim
-    star.ImageTransparency = self._STATE.Favorites[configId] and 0 or 0.55
+    star.ImageTransparency = self._STATE.Favorites[configId] and 0.15 or 1
     star.ZIndex = 10
     self._STATE.FavoriteStars[configId] = star
 
