@@ -1178,6 +1178,13 @@ function Library:SetFavoritesOnly(enabled)
             ImageTransparency = self._STATE.FavoritesOnly and 0 or 0.4,
         }):Play()
     end
+    if self._STATE.FavoritesOnly then
+        local count = 0
+        for _ in pairs(self._STATE.Favorites or {}) do count = count + 1 end
+        if count == 0 then
+            self:Notify("FAVORITES", "No favorites yet — right-click any control to add one", "info")
+        end
+    end
     self:_applySearchFilter()
 end
 
@@ -2782,39 +2789,60 @@ function Library:SetWallpaper(assetId, transparency)
     
     local img = tostring(assetId)
     
+    local trans = math.clamp(transparency or 0, 0, 1)
+
     if string.sub(img, 1, 4) == "http" then
+        if not (getcustomasset and type(getcustomasset) == "function") then
+            self:Notify("WALLPAPER", "Executor tidak support getcustomasset", "error")
+            return
+        end
         local cached = self:_getCachedWallpaper(img)
-        if cached and #cached > 0 then
-            UI.Wallpaper.Image = cached
-            self:Notify("WALLPAPER", "Loaded from cache", "info")
-        else
-            self:Notify("WALLPAPER", "Downloading 4K image...", "info")
-            local success, content = pcall(function()
-                if getcustomasset and type(getcustomasset) == "function" then
-                    return getcustomasset(img)
-                else
-                    return nil
-                end
+        if cached and type(cached) == "string" and #cached > 0 then
+            local ok = pcall(function()
+                UI.Wallpaper.Image = cached
+                UI.Wallpaper.ImageTransparency = trans
+                UI.Wallpaper.Visible = true
             end)
-            if success and content then
-                UI.Wallpaper.Image = content
-                self:_setWallpaperCache(img, content)
+            if ok then
+                self:Notify("WALLPAPER", "Loaded from cache", "success")
+                self:_generateAutoTheme(img)
             else
-                warn("[DoD UI] Gagal memuat wallpaper dari URL. Executor lu mungkin tidak support 'getcustomasset', atau link-nya invalid.")
-                UI.Wallpaper.Visible = false
-                return
+                self:Notify("WALLPAPER", "Cache invalid — reloading", "warning")
             end
         end
+        if not UI.Wallpaper.Visible or not UI.Wallpaper.Image or UI.Wallpaper.Image == "" then
+            self:Notify("WALLPAPER", "Downloading...", "info")
+            if self.ShowLoading then self:ShowLoading("Downloading wallpaper...") end
+            task.spawn(function()
+                local success, content = pcall(getcustomasset, img)
+                if self.HideLoading then self:HideLoading() end
+                if not success or type(content) ~= "string" or #content == 0 then
+                    self:Notify("WALLPAPER", "Download gagal — URL invalid atau executor limit", "error")
+                    return
+                end
+                local setOk = pcall(function()
+                    UI.Wallpaper.Image = content
+                    UI.Wallpaper.ImageTransparency = trans
+                    UI.Wallpaper.Visible = true
+                end)
+                if not setOk then
+                    self:Notify("WALLPAPER", "Gagal set image (asset invalid)", "error")
+                    return
+                end
+                self:_setWallpaperCache(img, content)
+                self:Notify("WALLPAPER", "Wallpaper applied", "success")
+                self:_generateAutoTheme(img)
+            end)
+        end
+        return
     elseif string.sub(img, 1, 13) == "rbxassetid://" then
         UI.Wallpaper.Image = img
     else
         UI.Wallpaper.Image = "rbxassetid://" .. img
     end
     
-    UI.Wallpaper.ImageTransparency = math.clamp(transparency or 0, 0, 1)
+    UI.Wallpaper.ImageTransparency = trans
     UI.Wallpaper.Visible = true
-    
-    -- Auto-Generate Theme from Wallpaper ID
     self:_generateAutoTheme(img)
 end
 
@@ -3662,7 +3690,7 @@ function Library:_initSearchBar()
     UI.SearchIcon.ImageColor3 = self._Colors.TextDim
 
     UI.SearchInput = Instance.new("TextBox", UI.SearchBar)
-    UI.SearchInput.Size = UDim2.new(1, -72, 1, 0)
+    UI.SearchInput.Size = UDim2.new(1, -100, 1, 0)
     UI.SearchInput.Position = UDim2.new(0, 36, 0, 0)
     UI.SearchInput.BackgroundTransparency = 1
     UI.SearchInput.Text = ""
@@ -3747,10 +3775,11 @@ function Library:_applySearchFilter(tabName)
     local query = string.lower(STATE.SearchQuery or ""):match("^%s*(.-)%s*$")
     local searching = query ~= ""
     local favoritesOnly = STATE.FavoritesOnly == true
+    local isFiltering = searching or favoritesOnly
     local totalMatches = 0
 
     for _, sectionData in ipairs(STATE.SearchSections[tabName] or {}) do
-        if searching and not sectionData.searching then
+        if isFiltering and not sectionData.searching then
             sectionData.expandedBeforeSearch = sectionData.expanded
         end
 
@@ -3777,18 +3806,28 @@ function Library:_applySearchFilter(tabName)
             end
         end
 
-        local sectionMatchesResults = not searching or sectionMatches or anyControlMatches
-        sectionData.section.Visible = sectionMatchesResults
-        if searching and not sectionMatchesResults then
+        local sectionVisible
+        if not isFiltering then
+            sectionVisible = true
+        elseif favoritesOnly and not searching then
+            sectionVisible = anyControlMatches
+        elseif searching and not favoritesOnly then
+            sectionVisible = sectionMatches or anyControlMatches
+        else
+            sectionVisible = anyControlMatches
+        end
+
+        sectionData.section.Visible = sectionVisible
+        if isFiltering and not sectionVisible then
             sectionData.section.Parent = nil
         elseif sectionData.section.Parent == nil and sectionData.parentColumn and sectionData.parentColumn.Parent then
             sectionData.section.Parent = sectionData.parentColumn
         end
-        if searching and sectionMatchesResults then totalMatches = totalMatches + 1 end
+        if isFiltering and sectionVisible then totalMatches = totalMatches + 1 end
 
-        if searching then
-            if sectionData.expanded ~= sectionMatchesResults then
-                sectionData.setExpanded(sectionMatchesResults, false)
+        if isFiltering then
+            if sectionData.expanded ~= sectionVisible then
+                sectionData.setExpanded(sectionVisible, false)
             end
         elseif sectionData.searching then
             if sectionData.expandedBeforeSearch ~= nil then
@@ -3796,7 +3835,7 @@ function Library:_applySearchFilter(tabName)
                 sectionData.expandedBeforeSearch = nil
             end
         end
-        sectionData.searching = searching
+        sectionData.searching = isFiltering
     end
 
     local pool = STATE.SearchTopLevel and STATE.SearchTopLevel[tabName]
@@ -3811,7 +3850,7 @@ function Library:_applySearchFilter(tabName)
                 if ctrl.instance.Parent == nil and ctrl.parent and ctrl.parent.Parent then
                     ctrl.instance.Parent = ctrl.parent
                 end
-                if searching then totalMatches = totalMatches + 1 end
+                if isFiltering then totalMatches = totalMatches + 1 end
             else
                 ctrl.instance.Parent = nil
             end
@@ -3821,7 +3860,19 @@ function Library:_applySearchFilter(tabName)
     local page = STATE.ContentPages[tabName]
     if page then
         local emptyState = page:FindFirstChild("SearchEmptyState")
-        if searching and totalMatches == 0 then
+        local showEmpty = isFiltering and totalMatches == 0
+        if showEmpty then
+            local msg, iconName
+            if searching and favoritesOnly then
+                msg = "No favorites match '" .. query .. "'"
+                iconName = "search"
+            elseif searching then
+                msg = "No results found for '" .. query .. "'"
+                iconName = "search"
+            else
+                msg = "No favorites yet — right-click any control to favorite it"
+                iconName = "star"
+            end
             if not emptyState then
                 emptyState = Instance.new("Frame", page)
                 emptyState.Name = "SearchEmptyState"
@@ -3829,19 +3880,31 @@ function Library:_applySearchFilter(tabName)
                 emptyState.BackgroundTransparency = 1
                 emptyState.LayoutOrder = 999
                 local eIcon = Instance.new("ImageLabel", emptyState)
+                eIcon.Name = "EmptyIcon"
                 eIcon.Size = UDim2.fromOffset(32, 32)
                 eIcon.Position = UDim2.new(0.5, -16, 0, 10)
                 eIcon.BackgroundTransparency = 1
-                eIcon.Image = GetIcon("search")
                 eIcon.ImageColor3 = self._Colors.TextDim
                 local eText = Instance.new("TextLabel", emptyState)
-                eText.Size = UDim2.new(1, 0, 0, 20)
-                eText.Position = UDim2.new(0, 0, 0, 50)
+                eText.Name = "EmptyText"
+                eText.Size = UDim2.new(1, -32, 0, 40)
+                eText.Position = UDim2.new(0, 16, 0, 50)
                 eText.BackgroundTransparency = 1
-                eText.Text = "No results found for '" .. query .. "'"
                 eText.TextColor3 = self._Colors.TextDim
                 eText.Font = Enum.Font.GothamMedium
                 eText.TextSize = 11
+                eText.TextWrapped = true
+                eText.TextXAlignment = Enum.TextXAlignment.Center
+            end
+            local eIcon = emptyState:FindFirstChild("EmptyIcon")
+            if eIcon then
+                eIcon.Image = GetIcon(iconName)
+                eIcon.ImageColor3 = self._Colors.TextDim
+            end
+            local eText = emptyState:FindFirstChild("EmptyText")
+            if eText then
+                eText.Text = msg
+                eText.TextColor3 = self._Colors.TextDim
             end
             emptyState.Visible = true
             emptyState.Size = UDim2.new(1, 0, 0, 100)
@@ -5794,15 +5857,34 @@ function Library:CreateThemeCustomizer(tabName)
         end
     end
 
+    local _pendingWallpaper = self.WallpaperSource
+
     self:AddDropdown(section, "Wallpaper Image", wallpaperOptions, currentWallpaperIndex, function(idx, val)
         if val == "None" then
+            _pendingWallpaper = nil
             self:SetWallpaper(nil)
             self.WallpaperSource = nil
         else
             local fullUrl = wallpaperBaseUrl .. val
+            _pendingWallpaper = fullUrl
             self:SetWallpaper(fullUrl, self.WallpaperTransparency or 0)
             self.WallpaperSource = fullUrl
         end
+    end)
+
+    self:AddButton(section, "Re-apply Wallpaper", function()
+        if _pendingWallpaper then
+            self:SetWallpaper(_pendingWallpaper, self.WallpaperTransparency or 0)
+        else
+            self:Notify("WALLPAPER", "Pilih wallpaper dulu di dropdown", "info")
+        end
+    end)
+
+    self:AddButton(section, "Remove Wallpaper", function()
+        self:SetWallpaper(nil)
+        self.WallpaperSource = nil
+        _pendingWallpaper = nil
+        self:Notify("WALLPAPER", "Wallpaper dihapus", "info")
     end)
 
     self:AddSlider(section, "Wallpaper Transparency", 0, 1, self.WallpaperTransparency or 0, 2, function(value)
