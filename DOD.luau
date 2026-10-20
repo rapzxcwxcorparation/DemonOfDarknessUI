@@ -5222,7 +5222,7 @@ function Library:AddDropdown(page, text, options, defaultIndex, callback)
                 Position = targetPos,
             }):Play()
         end
-    )
+    end)
 
     table.insert(STATE.activeDropdownPopups, {
         popup = popup,
@@ -5515,7 +5515,7 @@ function Library:AddMultiDropdown(page, text, options, defaults, callback)
                 Position = targetPos,
             }):Play()
         end
-    )
+    end)
 
     table.insert(STATE.activeDropdownPopups, {
         popup = popup,
