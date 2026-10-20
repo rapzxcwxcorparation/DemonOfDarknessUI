@@ -49,7 +49,8 @@ local GuiSound = {
     ToggleOff = { id = "rbxassetid://6895079853", pitch = 0.88, vol = 0.40 },
     TabSwitch = { id = "rbxassetid://6895079853", pitch = 1.25, vol = 0.40 },
     Dropdown  = { id = "rbxassetid://6895079853", pitch = 1.00, vol = 0.40 },
-    Notify    = { id = "rbxassetid://4590662766", pitch = 1.35, vol = 0.55 }
+    Notify    = { id = "rbxassetid://4590662766", pitch = 1.35, vol = 0.55 },
+    Hover     = { id = "rbxassetid://6895079853", pitch = 1.80, vol = 0.12 }
 }
 
 -- =========================================================
@@ -733,7 +734,6 @@ function Library.new(opts)
     self._isMobile = UserInputService.TouchEnabled
     self._CustomColorOverrides = {}
     self._NotifPosition = "TopRight"
-    self._TrailEnabled = true
     self._Colors = table.clone(D.Colors)
     if opts.FocusOverlay ~= nil and type(opts.FocusOverlay) ~= "boolean" then
         error("[DoD UI] FocusOverlay must be a boolean.")
@@ -812,6 +812,7 @@ function Library.new(opts)
     self:_initFocusOverlay()
     self:_initMobileToggle()
     self:_initDrag()
+    self:_initResize()
     self:_initShadowSync()
     self:_initTooltip()
     self:_bindToggleKey()
@@ -903,6 +904,9 @@ function Library:SetTheme(themeName, silent)
         if UI.TabBarDivider then UI.TabBarDivider.BackgroundColor3 = self._Colors.Border end
         if UI.TitleLabel then UI.TitleLabel.TextColor3 = self._Colors.Text end
         if UI.TitleDiscord then UI.TitleDiscord.TextColor3 = self._Colors.TextDim end
+        if UI.ResizeHandle then
+            UI.ResizeHandle.ImageColor3 = self._Colors.TextDim
+        end
         if UI.TitleLogoBadge then
             UI.TitleLogoBadge.BackgroundColor3 = self._Colors.Accent
             if UI.TitleLogoGradient then
@@ -1505,35 +1509,6 @@ function Library:_initMainGui()
         
         if UI.CustomCursor and UI.CustomCursor.Visible then
             UI.CustomCursor.Position = UDim2.fromOffset(mouse.X, mouse.Y)
-            
-            -- Cursor Trail Effect
-            if self._TrailEnabled then
-                local now = tick()
-                if not self._lastTrailSpawn or now - self._lastTrailSpawn > 0.03 then
-                    self._lastTrailSpawn = now
-                    
-                    local trail = Instance.new("Frame")
-                    trail.Name = "CursorTrail"
-                    trail.Size = UDim2.fromOffset(8, 8)
-                    trail.AnchorPoint = Vector2.new(0.5, 0.5)
-                    trail.Position = UDim2.fromOffset(mouse.X, mouse.Y)
-                    trail.BackgroundColor3 = self._Colors.Accent
-                    trail.BackgroundTransparency = 0.4
-                    trail.BorderSizePixel = 0
-                    trail.ZIndex = 99997
-                    Instance.new("UICorner", trail).CornerRadius = UDim.new(0, 2)
-                    trail.Parent = UI.MainGui
-                    
-                    local tw = TweenService:Create(trail, TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
-                        Size = UDim2.fromOffset(0, 0),
-                        BackgroundTransparency = 1
-                    })
-                    tw:Play()
-                    tw.Completed:Connect(function()
-                        trail:Destroy()
-                    end)
-                end
-            end
         end
     end, self)
 
@@ -1697,6 +1672,18 @@ function Library:_initMainGui()
     UI.MainStroke = Instance.new("UIStroke", MC)
     UI.MainStroke.Color = self._Colors.Border
     UI.MainStroke.Thickness = 1.5
+
+    local resizeHandle = Instance.new("ImageLabel")
+    resizeHandle.Name = "ResizeHandle"
+    resizeHandle.Parent = MC
+    resizeHandle.Size = UDim2.fromOffset(18, 18)
+    resizeHandle.Position = UDim2.new(1, -22, 1, -22)
+    resizeHandle.BackgroundTransparency = 1
+    resizeHandle.Image = GetIcon("move-diagonal")
+    resizeHandle.ImageColor3 = self._Colors.TextDim
+    resizeHandle.ZIndex = 100
+    
+    UI.ResizeHandle = resizeHandle
 
     local minBtn = Instance.new("TextButton")
     minBtn.Name = "MinimizeButton"
@@ -2312,14 +2299,6 @@ function Library:SetToggleKey(key)
         self._UI.TitleToggleHint.Text = key.Name
     end
     self:Notify("KEYBIND", "Toggle GUI: " .. key.Name)
-end
-
-function Library:SetCursorTrail(enabled)
-    if self:_isDead() then return end
-    if type(enabled) ~= "boolean" then
-        error("[DoD UI] SetCursorTrail expects a boolean value.")
-    end
-    self._TrailEnabled = enabled
 end
 
 function Library:SetCursorIcon(assetId)
@@ -3857,6 +3836,44 @@ end
 -- DRAG LOGIC
 -- =========================================================
 
+function Library:_initResize()
+    local UI = self._UI
+    if not UI.ResizeHandle or not UI.MainContainer then return end
+    
+    local resizing = false
+    local startSize
+    local startMouse
+    local camera = getCam()
+    
+    UI.ResizeHandle.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            resizing = true
+            startSize = UI.MainContainer.AbsoluteSize
+            startMouse = input.Position
+        end
+    end)
+    
+    Fn.track(RunService.RenderStepped, function()
+        if not resizing or not camera then return end
+        local mouse = UserInputService:GetMouseLocation()
+        local delta = mouse - startMouse
+        
+        local newX = math.clamp(startSize.X + delta.X, 450, camera.ViewportSize.X * 0.95)
+        local newY = math.clamp(startSize.Y + delta.Y, 300, camera.ViewportSize.Y * 0.95)
+        
+        UI.MainContainer.Size = UDim2.fromOffset(newX, newY)
+    end, self)
+    
+    Fn.track(UserInputService.InputEnded, function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            if resizing then
+                resizing = false
+                self:SetVersion(self.Version)
+            end
+        end
+    end, self)
+end
+
 function Library:_initDrag()
     local UI = self._UI
     local dragging, dragStart, dragStartPos
@@ -5295,6 +5312,7 @@ function Library:AddToggle(page, text, default, callback)
     )
 
     holder.MouseEnter:Connect(function()
+        self:PlaySound("Hover")
         if not state then
             TweenService:Create(switchBg, TweenInfo.new(0.15), {BackgroundColor3 = Color3.fromRGB(60, 60, 70)}):Play()
         else
@@ -5659,6 +5677,7 @@ function Library:AddSlider(page, text, minVal, maxVal, default, decimals, callba
     )
 
     holder.MouseEnter:Connect(function()
+        self:PlaySound("Hover")
         if not drag then
             TweenService:Create(knobScale, TweenInfo.new(0.15), {Scale = 1.1}):Play()
             TweenService:Create(knobHalo, TweenInfo.new(0.18), {BackgroundTransparency = 0.82}):Play()
@@ -5751,6 +5770,7 @@ function Library:AddDropdown(page, text, options, defaultIndex, callback)
     chipStroke.Transparency = 0.4
 
     valueChip.MouseEnter:Connect(function()
+        self:PlaySound("Hover")
         TweenService:Create(chipStroke, TweenInfo.new(0.15), {Color = self._Colors.Accent, Transparency = 0.1}):Play()
         TweenService:Create(valueChip, TweenInfo.new(0.15), {BackgroundTransparency = 0}):Play()
     end)
@@ -6336,6 +6356,65 @@ function Library:AddConfigList(page, onLoad)
     refreshIcon.Image = GetIcon("refresh-cw")
     refreshIcon.ImageColor3 = self._Colors.TextDim
 
+    local copyBtn = Instance.new("TextButton", topBar)
+    copyBtn.Size = UDim2.fromOffset(24, 24)
+    copyBtn.Position = UDim2.new(1, -60, 0.5, -12)
+    copyBtn.BackgroundTransparency = 1
+    copyBtn.Text = ""
+    copyBtn.AutoButtonColor = false
+
+    local copyIcon = Instance.new("ImageLabel", copyBtn)
+    copyIcon.Size = UDim2.fromScale(1, 1)
+    copyIcon.BackgroundTransparency = 1
+    copyIcon.Image = GetIcon("copy")
+    copyIcon.ImageColor3 = self._Colors.TextDim
+
+    local pasteBtn = Instance.new("TextButton", topBar)
+    pasteBtn.Size = UDim2.fromOffset(24, 24)
+    pasteBtn.Position = UDim2.new(1, -88, 0.5, -12)
+    pasteBtn.BackgroundTransparency = 1
+    pasteBtn.Text = ""
+    pasteBtn.AutoButtonColor = false
+
+    local pasteIcon = Instance.new("ImageLabel", pasteBtn)
+    pasteIcon.Size = UDim2.fromScale(1, 1)
+    pasteIcon.BackgroundTransparency = 1
+    pasteIcon.Image = GetIcon("clipboard-paste")
+    pasteIcon.ImageColor3 = self._Colors.TextDim
+    
+    copyBtn.MouseButton1Click:Connect(function()
+        self:PlaySound("Click")
+        local data = self:ExportConfig()
+        local ok, json = pcall(function()
+            return game:GetService("HttpService"):JSONEncode(data)
+        end)
+        if ok and json then
+            if setclipboard then
+                setclipboard(json)
+                self:Notify("CONFIG", "Config copied to clipboard!", "success")
+            else
+                self:Notify("CONFIG", "Clipboard not supported", "error")
+            end
+        end
+    end)
+    
+    pasteBtn.MouseButton1Click:Connect(function()
+        self:PlaySound("Click")
+        if getclipboard then
+            local json = getclipboard()
+            local ok, data = pcall(function()
+                return game:GetService("HttpService"):JSONDecode(json)
+            end)
+            if ok and data then
+                self:ImportConfig(data)
+            else
+                self:Notify("CONFIG", "Invalid JSON in clipboard", "error")
+            end
+        else
+            self:Notify("CONFIG", "Clipboard not supported", "error")
+        end
+    end)
+
     local scroll = Instance.new("ScrollingFrame", holder)
     scroll.Size = UDim2.new(1, -16, 1, -38)
     scroll.Position = UDim2.new(0, 8, 0, 34)
@@ -6505,6 +6584,8 @@ function Library:AddConfigList(page, onLoad)
         emptyLabel.TextColor3 = self._Colors.TextDim
         scroll.ScrollBarImageColor3 = self._Colors.Accent
         refreshIcon.ImageColor3 = self._Colors.TextDim
+        copyIcon.ImageColor3 = self._Colors.TextDim
+        pasteIcon.ImageColor3 = self._Colors.TextDim
         hoverStroke.Color = self._Colors.Border
         for _, child in ipairs(scroll:GetChildren()) do
             if child:IsA("TextButton") then
@@ -6643,6 +6724,7 @@ function Library:AddKeybind(page, text, default, callback)
     setLabel(_initKey, _initMods)
 
     btn.MouseEnter:Connect(function()
+        self:PlaySound("Hover")
         TweenService:Create(btnStroke, TweenInfo.new(0.15), {Color = self._Colors.Accent, Transparency = 0.1}):Play()
         TweenService:Create(btn, TweenInfo.new(0.15), {BackgroundTransparency = 0.05}):Play()
     end)
@@ -6814,6 +6896,7 @@ function Library:AddButton(page, text, callback)
     btnStroke.Transparency = 0.5
 
     btn.MouseEnter:Connect(function()
+        self:PlaySound("Hover")
         TweenService:Create(btn, TweenInfo.new(0.15), {BackgroundTransparency = 0}):Play()
         TweenService:Create(btnStroke, TweenInfo.new(0.15), {Transparency = 0.1}):Play()
     end)
