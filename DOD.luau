@@ -2358,27 +2358,73 @@ function Library:_initKeybindOverlay()
         TweenService:Create(toggleStroke, TweenInfo.new(0.15), {Transparency = 0.6, Color = self._Colors.Border}):Play()
     end)
 
+    local isDragging = false
+    local dragStart = Vector2.zero
+    local startPos = UDim2.new()
+    
+    heading.Active = true
+    heading.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            isDragging = true
+            dragStart = input.Position
+            startPos = overlay.Position
+        end
+    end)
+    
+    Fn.track(UserInputService.InputChanged, function(input)
+        if isDragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+            local camera = getCam()
+            if not camera then return end
+            local vp = camera.ViewportSize
+            local sz = overlay.AbsoluteSize
+            
+            local delta = input.Position - dragStart
+            local scaleX = startPos.X.Scale * vp.X
+            local scaleY = startPos.Y.Scale * vp.Y
+            local absX = scaleX + startPos.X.Offset + delta.X
+            local absY = scaleY + startPos.Y.Offset + delta.Y
+            
+            -- Batas layar (anchor 1,1)
+            absX = math.clamp(absX, sz.X + 8, vp.X - 8)
+            absY = math.clamp(absY, sz.Y + 8, vp.Y - 8)
+            
+            overlay.Position = UDim2.new(
+                startPos.X.Scale, absX - scaleX,
+                startPos.Y.Scale, absY - scaleY
+            )
+        end
+    end, self)
+    
+    Fn.track(UserInputService.InputEnded, function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            isDragging = false
+        end
+    end, self)
+
     local overlayAnimating = false
     local function toggleOverlay()
         if overlayAnimating then return end
         overlayAnimating = true
         
         if overlay.Visible then
+            local curPos = overlay.Position
             local tw = TweenService:Create(overlay, TweenInfo.new(0.15, Enum.EasingStyle.Quart, Enum.EasingDirection.In), {
-                Position = UDim2.new(1, -18, 1, -48),
+                Position = UDim2.new(curPos.X.Scale, curPos.X.Offset, curPos.Y.Scale, curPos.Y.Offset + 15),
                 BackgroundTransparency = 1
             })
             tw:Play()
             tw.Completed:Connect(function()
                 overlay.Visible = false
+                overlay.Position = curPos
                 overlayAnimating = false
             end)
         else
             overlay.Visible = true
-            overlay.Position = UDim2.new(1, -18, 1, -48)
+            local curPos = overlay.Position
+            overlay.Position = UDim2.new(curPos.X.Scale, curPos.X.Offset, curPos.Y.Scale, curPos.Y.Offset + 15)
             overlay.BackgroundTransparency = 1
             TweenService:Create(overlay, TweenInfo.new(0.2, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {
-                Position = UDim2.new(1, -18, 1, -58),
+                Position = curPos,
                 BackgroundTransparency = 0.15
             }):Play()
             task.delay(0.2, function() overlayAnimating = false end)
@@ -2727,7 +2773,7 @@ function Library:_bindToggleKey()
     end, self)
     Fn.track(UserInputService.InputBegan, function(input, gameProcessed)
         if input.UserInputType ~= Enum.UserInputType.MouseButton2 then return end
-        local mp = UserInputService:GetMouseLocation()
+        local mp = Vector2.new(input.Position.X, input.Position.Y)
         for configId, holder in pairs(self._STATE.FavoriteHolders or {}) do
             if holder and holder.Parent then
                 local p, s = holder.AbsolutePosition, holder.AbsoluteSize
@@ -4108,9 +4154,10 @@ function Library:_attachFavorite(holder, configId, starPos)
     self._STATE.FavoriteHolders[configId] = holder
     self._STATE.FavoriteStars = self._STATE.FavoriteStars or {}
 
-    local star = Instance.new("ImageLabel", holder)
+    local star = Instance.new("ImageButton", holder)
     star.Name = "FavoriteStar"
     star.Size = UDim2.fromOffset(11, 11)
+    star.AutoButtonColor = false
     star.Position = starPos or UDim2.new(1, -14, 0, 2)
     star.BackgroundTransparency = 1
     star.Image = GetIcon("star")
@@ -4136,7 +4183,19 @@ function Library:_attachFavorite(holder, configId, starPos)
         self:_updateFavoriteStar(configId)
     end)
 
-    -- Left click on star is intentionally ignored (handled by row)
+    local function toggleFav()
+        if self._STATE.Favorites[configId] then
+            self._STATE.Favorites[configId] = nil
+        else
+            self._STATE.Favorites[configId] = true
+        end
+        self:_updateFavoriteStar(configId)
+        self:_applySearchFilter()
+        self:_triggerAutoSave()
+    end
+
+    star.MouseButton1Click:Connect(toggleFav)
+    star.MouseButton2Click:Connect(toggleFav)
 
     self:_registerThemeRefresher(function()
         if star and star.Parent then
@@ -4694,29 +4753,32 @@ function Library:_initDrag()
             dragging = true
             dragStart = inp.Position
             dragStartPos = UI.MainContainer.Position
+            for _, entry in ipairs(self._STATE.activeDropdownPopups) do
+                if entry.popup and entry.popup.Visible then
+                    entry.close()
+                end
+            end
         end
     end)
 
-    Fn.track(RunService.RenderStepped, function(dt)
-        if not dragging then return end
-        local camera = getCam()
-        if not camera then return end
-        local vp = camera.ViewportSize
-        local sz = UI.MainContainer.AbsoluteSize
-        local mouse = UserInputService:GetMouseLocation()
-        local scaleX = dragStartPos.X.Scale * vp.X
-        local scaleY = dragStartPos.Y.Scale * vp.Y
-        local absX = scaleX + dragStartPos.X.Offset + (mouse.X - dragStart.X)
-        local absY = scaleY + dragStartPos.Y.Offset + (mouse.Y - dragStart.Y)
-        absX = math.clamp(absX, sz.X * 0.5 + 8, vp.X - sz.X * 0.5 - 8)
-        absY = math.clamp(absY, sz.Y * 0.5 + 8, vp.Y - sz.Y * 0.5 - 8)
-        local targetX = absX - scaleX
-        local targetY = absY - scaleY
-        local cur = UI.MainContainer.Position
-        local smooth = math.min(1, dt * 30)
-        local newX = cur.X.Offset + (targetX - cur.X.Offset) * smooth
-        local newY = cur.Y.Offset + (targetY - cur.Y.Offset) * smooth
-        UI.MainContainer.Position = UDim2.new(cur.X.Scale, newX, cur.Y.Scale, newY)
+    Fn.track(UserInputService.InputChanged, function(inp)
+        if dragging and (inp.UserInputType == Enum.UserInputType.MouseMovement or inp.UserInputType == Enum.UserInputType.Touch) then
+            local camera = getCam()
+            if not camera then return end
+            local vp = camera.ViewportSize
+            local sz = UI.MainContainer.AbsoluteSize
+            local delta = inp.Position - dragStart
+            local scaleX = dragStartPos.X.Scale * vp.X
+            local scaleY = dragStartPos.Y.Scale * vp.Y
+            local absX = scaleX + dragStartPos.X.Offset + delta.X
+            local absY = scaleY + dragStartPos.Y.Offset + delta.Y
+            absX = math.clamp(absX, sz.X * 0.5 + 8, vp.X - sz.X * 0.5 - 8)
+            absY = math.clamp(absY, sz.Y * 0.5 + 8, vp.Y - sz.Y * 0.5 - 8)
+            UI.MainContainer.Position = UDim2.new(
+                dragStartPos.X.Scale, absX - scaleX,
+                dragStartPos.Y.Scale, absY - scaleY
+            )
+        end
     end, self)
 
     Fn.track(UserInputService.InputEnded, function(inp)
