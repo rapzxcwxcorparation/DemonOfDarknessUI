@@ -731,6 +731,8 @@ function Library.new(opts)
 
     self._UI = {}
     self._isMobile = UserInputService.TouchEnabled
+    self._CustomColorOverrides = {}
+    self._NotifPosition = "TopRight"
     self._Colors = table.clone(D.Colors)
     if opts.FocusOverlay ~= nil and type(opts.FocusOverlay) ~= "boolean" then
         error("[DoD UI] FocusOverlay must be a boolean.")
@@ -794,6 +796,7 @@ function Library.new(opts)
         ConfigRegistry      = {},
         ConfigCounter       = {},
         ConfigAutoSave      = nil,
+        ScrollFrames        = {},
     }
 
     self:_initNotifications()
@@ -850,7 +853,24 @@ function Library:_applyThemeColors(themeName)
     self._Colors.Border = theme.Border or base.Border
     self._Colors.Text = theme.Text or (theme.Bg and Fn.accentTextColor(theme.Bg)) or base.Text
     self._Colors.TextDim = theme.TextDim or base.TextDim
+    
+    for key, color in pairs(self._CustomColorOverrides) do
+        if self._Colors[key] then
+            self._Colors[key] = color
+        end
+    end
     return theme
+end
+
+function Library:SetCustomColors(colorTable)
+    if self:_isDead() then return end
+    if type(colorTable) ~= "table" then return end
+    for k, v in pairs(colorTable) do
+        if typeof(v) == "Color3" then
+            self._CustomColorOverrides[k] = v
+        end
+    end
+    self:SetTheme(self.ThemeName, true)
 end
 
 function Library:SetTheme(themeName, silent)
@@ -1065,13 +1085,29 @@ function Library:_initNotifications()
     self._UI.NotifGui = gui
 end
 
+function Library:SetNotificationPosition(pos)
+    if self:_isDead() then return end
+    self._NotifPosition = tostring(pos or "TopRight")
+end
+
 function Library:_updateNotifPositions()
+    local pos = self._NotifPosition or "TopRight"
     for index, frame in ipairs(self._STATE.activeNotifs) do
         local targetY = 15 + ((index - 1) * 65)
+        local targetX = UDim2.new(1, -275, 0, targetY)
+        
+        if pos == "TopLeft" then
+            targetX = UDim2.new(0, 15, 0, targetY)
+        elseif pos == "BottomLeft" then
+            targetX = UDim2.new(0, 15, 1, -targetY - 56)
+        elseif pos == "BottomRight" then
+            targetX = UDim2.new(1, -275, 1, -targetY - 56)
+        end
+        
         TweenService:Create(
             frame,
             TweenInfo.new(0.3, Enum.EasingStyle.Quart, Enum.EasingDirection.Out),
-            {Position = UDim2.new(1, -275, 0, targetY)}
+            {Position = targetX}
         ):Play()
     end
 end
@@ -1259,9 +1295,16 @@ function Library:Notify(title, text, notifyType)
             iconId = GetIcon("alert-triangle")
         end
 
+        local nPos = self._NotifPosition or "TopRight"
+        local spawnPos = UDim2.new(1, -295, 0, -70)
+        if nPos == "TopLeft" then spawnPos = UDim2.new(0, -295, 0, 15)
+        elseif nPos == "BottomLeft" then spawnPos = UDim2.new(0, -295, 1, -71)
+        elseif nPos == "BottomRight" then spawnPos = UDim2.new(1, -295, 1, -71)
+        end
+
         local frame = Instance.new("Frame", self._UI.NotifGui)
         frame.Size = UDim2.new(0, 280, 0, 56)
-        frame.Position = UDim2.new(1, -295, 0, -70)
+        frame.Position = spawnPos
         frame.BackgroundColor3 = palette.Bg2 or Color3.fromRGB(14, 14, 20)
         frame.BackgroundTransparency = 1
         frame.BorderSizePixel = 0
@@ -1351,10 +1394,19 @@ function Library:Notify(title, text, notifyType)
         TweenService:Create(icon, TweenInfo.new(0.2), {ImageTransparency = 1}):Play()
         TweenService:Create(frameStroke, TweenInfo.new(0.2), {Transparency = 1}):Play()
 
+        local nPos = self._NotifPosition or "TopRight"
+        local exitX = UDim2.new(1, 15, 0, frame.Position.Y.Offset)
+        if nPos == "TopLeft" or nPos == "BottomLeft" then
+            exitX = UDim2.new(0, -300, 0, frame.Position.Y.Offset)
+        end
+        if nPos == "BottomLeft" or nPos == "BottomRight" then
+            exitX = UDim2.new(exitX.X.Scale, exitX.X.Offset, 1, frame.Position.Y.Offset)
+        end
+
         local out = TweenService:Create(
             frame,
             TweenInfo.new(0.3, Enum.EasingStyle.Quart, Enum.EasingDirection.In),
-            {Position = UDim2.new(1, 15, 0, frame.Position.Y.Offset), BackgroundTransparency = 1}
+            {Position = exitX, BackgroundTransparency = 1}
         )
         out:Play()
         out.Completed:Wait()
@@ -1391,7 +1443,7 @@ function Library:_initMainGui()
     UI.CustomCursor.Visible = false
 
     Fn.track(RunService.RenderStepped, function()
-        if not self._STATE or not self._STATE.GuiVisible or self._STATE.Destroyed then
+        if self._STATE.Destroyed then
             if UI.CustomCursor and UI.CustomCursor.Visible then
                 UI.CustomCursor.Visible = false
             end
@@ -1416,8 +1468,14 @@ function Library:_initMainGui()
             return false
         end
 
-        if checkBounds(UI.MainContainer) or checkBounds(UI.KeybindOverlay) or checkBounds(UI.MinimizeButton) then
-            overGui = true
+        if self._STATE.GuiVisible then
+            if checkBounds(UI.MainContainer) or checkBounds(UI.KeybindOverlay) then
+                overGui = true
+            end
+        else
+            if checkBounds(UI.MinimizeButton) then
+                overGui = true
+            end
         end
 
         if overGui then
@@ -1488,6 +1546,30 @@ function Library:_initMainGui()
         })
     end
     
+    Fn.track(UserInputService.InputChanged, function(input)
+        if input.UserInputType == Enum.UserInputType.MouseWheel then
+            local mouse = UserInputService:GetMouseLocation()
+            for _, sf in ipairs(self._STATE.ScrollFrames) do
+                if sf and sf.Parent and sf.Visible then
+                    local pos, size = sf.AbsolutePosition, sf.AbsoluteSize
+                    if mouse.X >= pos.X and mouse.X <= pos.X + size.X and
+                       mouse.Y >= pos.Y and mouse.Y <= pos.Y + size.Y then
+                        
+                        local scrollAmount = 50
+                        local targetY = sf.CanvasPosition.Y - (input.Position.Z * scrollAmount)
+                        local maxScroll = math.max(0, sf.AbsoluteCanvasSize.Y - sf.AbsoluteSize.Y)
+                        targetY = math.clamp(targetY, 0, maxScroll)
+                        
+                        TweenService:Create(sf, TweenInfo.new(0.15, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {
+                            CanvasPosition = Vector2.new(sf.CanvasPosition.X, targetY)
+                        }):Play()
+                        break
+                    end
+                end
+            end
+        end
+    end, self)
+
     self._particleBGConn = RunService.RenderStepped:Connect(function(dt)
         if not UI.ParticleBG.Visible then return end
         for _, data in ipairs(particles) do
@@ -1771,6 +1853,7 @@ function Library:_initKeybindOverlay()
     list.AutomaticCanvasSize = Enum.AutomaticSize.Y
     list.CanvasSize = UDim2.new(0, 0, 0, 0)
     list.ZIndex = 251
+    table.insert(self._STATE.ScrollFrames, list)
     local layout = Instance.new("UIListLayout", list)
     layout.SortOrder = Enum.SortOrder.LayoutOrder
     layout.Padding = UDim.new(0, 4)
@@ -4254,6 +4337,7 @@ function Library:CreateTab(categoryName, tabName)
     page.VerticalScrollBarInset = Enum.ScrollBarInset.None
     page.HorizontalScrollBarInset = Enum.ScrollBarInset.None
     page.ElasticBehavior = Enum.ElasticBehavior.Never
+    table.insert(self._STATE.ScrollFrames, page)
 
     local pagePad = Instance.new("UIPadding", page)
     pagePad.PaddingTop = UDim.new(0, 6)
@@ -5695,6 +5779,7 @@ function Library:AddDropdown(page, text, options, defaultIndex, callback)
     popupScroll.CanvasSize = UDim2.new(0, 0, 0, 0)
     popupScroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
     popupScroll.ZIndex = 201
+    table.insert(self._STATE.ScrollFrames, popupScroll)
 
     local optionButtons = {}
 
@@ -5999,6 +6084,7 @@ function Library:AddMultiDropdown(page, text, options, defaults, callback)
     popupScroll.CanvasSize = UDim2.new(0, 0, 0, 0)
     popupScroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
     popupScroll.ZIndex = 201
+    table.insert(self._STATE.ScrollFrames, popupScroll)
 
     local popupList = Instance.new("UIListLayout", popupScroll)
     popupList.SortOrder = Enum.SortOrder.LayoutOrder
@@ -7152,6 +7238,7 @@ function Library:Minimize()
     local UI = self._UI
     if not STATE.GuiVisible or STATE.AnimatingGui then return end
     STATE.AnimatingGui = true
+    STATE.GuiVisible = false
     
     self:PlaySound("Click")
     
@@ -7253,6 +7340,7 @@ function Library:Toggle()
 
     if STATE.GuiVisible then
         -- CLOSE ANIMATION (Smooth Slide Down + Fade Out)
+        STATE.GuiVisible = false
         UserInputService.MouseIconEnabled = true
         if UI.CustomCursor then UI.CustomCursor.Visible = false end
         
