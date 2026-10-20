@@ -820,6 +820,8 @@ function Library.new(opts)
         ReducedMotion       = false,
         SectionTransparency = 0.15,
         ScrollFrames        = {},
+        TooltipEnabled      = true,
+        TooltipTransparency = 0.15,
     }
 
     self:_initNotifications()
@@ -2573,41 +2575,25 @@ function Library:_initTooltip()
     local frame = Instance.new("Frame", gui)
     frame.Name = "Tooltip"
     frame.BackgroundColor3 = self._Colors.Bg2
-    frame.BackgroundTransparency = 0.05
+    frame.BackgroundTransparency = self._STATE.TooltipTransparency or 0.15
     frame.BorderSizePixel = 0
-    frame.Size = UDim2.fromOffset(120, 28)
+    frame.Size = UDim2.fromOffset(120, 26)
     frame.Visible = false
     frame.ZIndex = 100
     frame.ClipsDescendants = true
-    Instance.new("UICorner", frame).CornerRadius = UDim.new(0, 8)
+    Instance.new("UICorner", frame).CornerRadius = UDim.new(0, 6)
 
     local stroke = Instance.new("UIStroke", frame)
-    stroke.Color = self._Colors.Accent
+    stroke.Color = self._Colors.Border
     stroke.Thickness = 1
-    stroke.Transparency = 0.3
-
-    local glow = Instance.new("Frame", frame)
-    glow.Size = UDim2.new(1, 0, 1, 0)
-    glow.BackgroundColor3 = self._Colors.Accent
-    glow.BackgroundTransparency = 0.92
-    glow.BorderSizePixel = 0
-    glow.ZIndex = 100
-    Instance.new("UICorner", glow).CornerRadius = UDim.new(0, 8)
-
-    local accentBar = Instance.new("Frame", frame)
-    accentBar.Size = UDim2.new(0, 3, 1, -8)
-    accentBar.Position = UDim2.new(0, 4, 0, 4)
-    accentBar.BackgroundColor3 = self._Colors.Accent
-    accentBar.BorderSizePixel = 0
-    accentBar.ZIndex = 102
-    Instance.new("UICorner", accentBar).CornerRadius = UDim.new(1, 0)
+    stroke.Transparency = 0.55
 
     local label = Instance.new("TextLabel", frame)
-    label.Size = UDim2.new(1, -18, 1, 0)
-    label.Position = UDim2.new(0, 12, 0, 0)
+    label.Size = UDim2.new(1, -16, 1, 0)
+    label.Position = UDim2.new(0, 8, 0, 0)
     label.BackgroundTransparency = 1
     label.Font = Enum.Font.GothamMedium
-    label.TextSize = 12
+    label.TextSize = 11
     label.TextColor3 = self._Colors.Text
     label.TextXAlignment = Enum.TextXAlignment.Left
     label.Text = ""
@@ -2615,12 +2601,12 @@ function Library:_initTooltip()
 
     local hint = Instance.new("TextLabel", frame)
     hint.Name = "Hint"
-    hint.Size = UDim2.new(1, -18, 0, 12)
-    hint.Position = UDim2.new(0, 12, 0, 24)
+    hint.Size = UDim2.new(1, -16, 0, 11)
+    hint.Position = UDim2.new(0, 8, 0, 22)
     hint.BackgroundTransparency = 1
     hint.Font = Enum.Font.GothamMedium
-    hint.TextSize = 10
-    hint.TextColor3 = Color3.fromRGB(136, 136, 136)
+    hint.TextSize = 9
+    hint.TextColor3 = self._Colors.TextDim
     hint.TextXAlignment = Enum.TextXAlignment.Left
     hint.TextTruncate = Enum.TextTruncate.AtEnd
     hint.Text = ""
@@ -2631,16 +2617,13 @@ function Library:_initTooltip()
     UI.TooltipLabel = label
     UI.TooltipHint = hint
     UI.TooltipStroke = stroke
-    UI.TooltipAccent = accentBar
-    UI.TooltipGlow = glow
 
     self:_registerThemeRefresher(function()
         if not frame.Parent then return end
         frame.BackgroundColor3 = self._Colors.Bg2
-        stroke.Color = self._Colors.Accent
-        accentBar.BackgroundColor3 = self._Colors.Accent
-        glow.BackgroundColor3 = self._Colors.Accent
+        stroke.Color = self._Colors.Border
         label.TextColor3 = self._Colors.Text
+        hint.TextColor3 = self._Colors.TextDim
     end)
 
     Fn.track(UserInputService.InputChanged, function(input)
@@ -2667,6 +2650,30 @@ function Library:_updateTooltipPosition(mousePos)
     frame.Position = UDim2.fromOffset(math.max(4, x), math.max(4, y))
 end
 
+function Library:SetTooltipEnabled(enabled)
+    if self:_isDead() then return end
+    self._STATE.TooltipEnabled = enabled and true or false
+    if not self._STATE.TooltipEnabled then
+        local frame = self._UI.TooltipFrame
+        if frame then
+            frame.Visible = false
+            frame.BackgroundTransparency = 1
+        end
+        local stroke = self._UI.TooltipStroke
+        if stroke then stroke.Transparency = 1 end
+    end
+end
+
+function Library:SetTooltipTransparency(transparency)
+    if self:_isDead() then return end
+    local trans = math.clamp(tonumber(transparency) or 0.15, 0, 1)
+    self._STATE.TooltipTransparency = trans
+    local frame = self._UI.TooltipFrame
+    if frame and frame.Visible then
+        frame.BackgroundTransparency = trans
+    end
+end
+
 function Library:_bindTooltip(element, text)
     if not text or text == "" then return end
     local favoritable = false
@@ -2680,28 +2687,30 @@ function Library:_bindTooltip(element, text)
     end
     local showThread
     element.MouseEnter:Connect(function()
+        if not self._STATE.TooltipEnabled then return end
         if showThread then task.cancel(showThread) end
         showThread = task.delay(0.3, function()
+            if not self._STATE.TooltipEnabled then return end
             local frame = self._UI.TooltipFrame
             if not frame then return end
             local lbl = self._UI.TooltipLabel
             local hint = self._UI.TooltipHint
             lbl.Text = tostring(text)
             local charCount = utf8.len(tostring(text)) or #tostring(text)
-            local w = math.clamp(charCount * 7 + 32, 100, 320)
+            local w = math.clamp(charCount * 6.5 + 24, 90, 300)
             if favoritable then
-                w = math.max(w, 220)
-                frame.Size = UDim2.fromOffset(w, 42)
-                lbl.Size = UDim2.new(1, -18, 0, 16)
-                lbl.Position = UDim2.new(0, 12, 0, 6)
+                w = math.max(w, 200)
+                frame.Size = UDim2.fromOffset(w, 40)
+                lbl.Size = UDim2.new(1, -16, 0, 16)
+                lbl.Position = UDim2.new(0, 8, 0, 5)
                 if hint then
-                    hint.Text = "RightClick Mouse ★ For Favorite"
+                    hint.Text = "Right-click to favorite"
                     hint.Visible = true
                 end
             else
-                frame.Size = UDim2.fromOffset(w, 28)
-                lbl.Size = UDim2.new(1, -18, 1, 0)
-                lbl.Position = UDim2.new(0, 12, 0, 0)
+                frame.Size = UDim2.fromOffset(w, 26)
+                lbl.Size = UDim2.new(1, -16, 1, 0)
+                lbl.Position = UDim2.new(0, 8, 0, 0)
                 if hint then
                     hint.Visible = false
                     hint.Text = ""
@@ -2710,8 +2719,9 @@ function Library:_bindTooltip(element, text)
             frame.Visible = true
             frame.BackgroundTransparency = 1
             self._UI.TooltipStroke.Transparency = 1
-            TweenService:Create(frame, TweenInfo.new(0.15), {BackgroundTransparency = 0.05}):Play()
-            TweenService:Create(self._UI.TooltipStroke, TweenInfo.new(0.15), {Transparency = 0.3}):Play()
+            local targetTrans = self._STATE.TooltipTransparency or 0.15
+            TweenService:Create(frame, TweenInfo.new(0.15), {BackgroundTransparency = targetTrans}):Play()
+            TweenService:Create(self._UI.TooltipStroke, TweenInfo.new(0.15), {Transparency = 0.55}):Play()
             local mouse = UserInputService:GetMouseLocation()
             self:_updateTooltipPosition(mouse)
         end)
@@ -3668,7 +3678,7 @@ function Library:_applyNavigationLayout()
             if UI.SearchInput then
                 UI.SearchInput.Size = UDim2.new(1, -82, 1, 0)
                 UI.SearchInput.Position = UDim2.new(0, 36, 0, 0)
-                UI.SearchInput.PlaceholderText = (sideWidth - 16) >= 130 and "Search settings..." or ""
+                UI.SearchInput.PlaceholderText = (sideWidth - 16) >= 130 and "Search..." or ""
             end
             if UI.SearchIcon then UI.SearchIcon.ZIndex = 2 end
             if UI.FavoritesToggle then
@@ -4567,6 +4577,21 @@ function Library:_createWeather(weatherType)
         end
 
         local depth = randomFloat(0.65, 1.2)
+        local baseSizeX = frame.Size.X
+        local baseSizeY = frame.Size.Y
+        local shape = preset.shape
+        local breathAmp = 0
+        local breathFreq = 0
+        if shape == "Aurora" then
+            breathAmp = 0.18
+            breathFreq = randomFloat(0.15, 0.35)
+        elseif shape == "Mist" then
+            breathAmp = 0.08
+            breathFreq = randomFloat(0.1, 0.25)
+        elseif shape == "Glow" then
+            breathAmp = 0.22
+            breathFreq = randomFloat(0.6, 1.2)
+        end
         table.insert(STATE.SnowParticles, {
             frame = frame,
             x = frame.Position.X.Scale,
@@ -4576,14 +4601,26 @@ function Library:_createWeather(weatherType)
             sway = (preset.sway or 0) * depth,
             phase = math.random() * math.pi * 2,
             frequency = randomFloat(0.7, 1.8),
+            sway2Amp = (preset.sway or 0) * depth * randomFloat(0.35, 0.7),
+            sway2Phase = math.random() * math.pi * 2,
+            sway2Freq = randomFloat(1.6, 2.8),
             rotation = randomFloat(preset.rotationMin or 0, preset.rotationMax or 0),
             rotationSpeed = randomFloat(preset.rotationSpeedMin or 0, preset.rotationSpeedMax or 0),
             baseTransparency = baseTransparency,
             twinkle = preset.twinkle or false,
             twinkleSpeed = randomFloat(1.5, 4),
+            twinklePhase = math.random() * math.pi * 2,
             color = color,
             gradient = gradient,
             index = index,
+            depth = depth,
+            windFactor = randomFloat(0.3, 1.0),
+            baseSizeX = baseSizeX,
+            baseSizeY = baseSizeY,
+            breathAmp = breathAmp,
+            breathFreq = breathFreq,
+            breathPhase = math.random() * math.pi * 2,
+            fadeAlpha = 1,
         })
     end
 
@@ -4597,36 +4634,69 @@ function Library:_createWeather(weatherType)
         if not STATE.GuiVisible then return end
 
         STATE.WeatherClock = STATE.WeatherClock + dt
+        local T = STATE.WeatherClock
         local currentIntensity = math.clamp(tonumber(STATE.WeatherIntensity) or 65, 0, 100)
         local activeCount = math.floor(#STATE.SnowParticles * currentIntensity / 100 + 0.5)
         local speedScale = 0.45 + currentIntensity / 100 * 0.9
 
+        local windX = math.sin(T * 0.32) * 0.008 + math.sin(T * 0.77) * 0.005
+        local windY = math.sin(T * 0.21) * 0.002
+
         for _, particle in ipairs(STATE.SnowParticles) do
             local frame = particle.frame
-            frame.Visible = particle.index <= activeCount
-            if frame.Visible then
-                particle.y = particle.y + particle.speed * speedScale * dt
-                particle.x = particle.x + particle.drift * speedScale * dt
+            local active = particle.index <= activeCount
+            frame.Visible = active and (particle.fadeAlpha or 1) > 0.01
+            if active then
+                particle.y = particle.y + (particle.speed * speedScale + windY) * dt
+                particle.x = particle.x + (particle.drift * speedScale + windX * particle.windFactor) * dt
 
+                local wrapped = false
                 if particle.speed > 0 then
-                    if particle.y > 1.05 then particle.y = -0.05 end
+                    if particle.y > 1.08 then particle.y = -0.08; wrapped = true end
                 else
-                    if particle.y < -0.05 then particle.y = 1.05 end
+                    if particle.y < -0.08 then particle.y = 1.08; wrapped = true end
                 end
-                if particle.x > 1.05 then particle.x = -0.05 end
-                if particle.x < -0.05 then particle.x = 1.05 end
+                if particle.x > 1.08 then particle.x = -0.08; wrapped = true end
+                if particle.x < -0.08 then particle.x = 1.08; wrapped = true end
+                if wrapped then particle.fadeAlpha = 0 end
 
+                local edgeDist = math.min(
+                    math.clamp(particle.y, 0, 1),
+                    math.clamp(1 - particle.y, 0, 1),
+                    math.clamp(particle.x, 0, 1),
+                    math.clamp(1 - particle.x, 0, 1)
+                )
+                local targetFade = edgeDist < 0.08 and (edgeDist / 0.08) or 1
+                particle.fadeAlpha = particle.fadeAlpha + (targetFade - particle.fadeAlpha) * math.min(1, dt * 2.5)
+
+                local baseTrans = particle.baseTransparency
                 if particle.twinkle then
-                    local pulse = (math.sin(STATE.WeatherClock * particle.twinkleSpeed + particle.phase) + 1) * 0.5
-                    frame.BackgroundTransparency = math.clamp(particle.baseTransparency + (1 - pulse) * 0.24, 0, 0.98)
+                    local raw = math.sin(T * particle.twinkleSpeed + particle.twinklePhase)
+                    local pulse = raw * raw
+                    baseTrans = baseTrans + (1 - pulse) * 0.32
                 end
+                local depthFade = math.clamp(0.45 + particle.depth * 0.55, 0, 1)
+                baseTrans = baseTrans + (1 - depthFade) * 0.12
+                local finalTrans = baseTrans + (1 - particle.fadeAlpha) * (1 - baseTrans)
+                frame.BackgroundTransparency = math.clamp(finalTrans, 0, 1)
 
-                local swayOffset = math.sin(STATE.WeatherClock * particle.frequency + particle.phase) * particle.sway
-                frame.Position = UDim2.fromScale(particle.x + swayOffset, particle.y)
+                local swayA = math.sin(T * particle.frequency + particle.phase) * particle.sway
+                local swayB = math.sin(T * particle.sway2Freq + particle.sway2Phase) * particle.sway2Amp
+                frame.Position = UDim2.fromScale(particle.x + swayA + swayB, particle.y)
+
                 particle.rotation = particle.rotation + particle.rotationSpeed * dt
                 frame.Rotation = particle.rotation
+
+                if particle.breathAmp and particle.breathAmp > 0 then
+                    local breath = 1 + math.sin(T * particle.breathFreq + particle.breathPhase) * particle.breathAmp
+                    frame.Size = UDim2.new(
+                        particle.baseSizeX.Scale * breath, particle.baseSizeX.Offset * breath,
+                        particle.baseSizeY.Scale * breath, particle.baseSizeY.Offset * breath
+                    )
+                end
+
                 if particle.gradient and weatherType == "Aurora" then
-                    particle.gradient.Rotation = 75 + math.sin(STATE.WeatherClock * 0.22 + particle.phase) * 18
+                    particle.gradient.Rotation = 78 + math.sin(T * 0.28 + particle.phase) * 22 + math.cos(T * 0.17 + particle.sway2Phase) * 8
                 end
             end
         end
@@ -6299,6 +6369,12 @@ function Library:CreateThemeCustomizer(tabName)
     end)
     self:AddSlider(section, "Section Transparency", 0, 1, self._STATE.SectionTransparency or 0.15, 2, function(value)
         self:SetSectionTransparency(value)
+    end)
+    self:AddToggle(section, "Tooltip", self._STATE.TooltipEnabled ~= false, function(enabled)
+        self:SetTooltipEnabled(enabled)
+    end)
+    self:AddSlider(section, "Tooltip Background Transparency", 0, 1, self._STATE.TooltipTransparency or 0.15, 2, function(value)
+        self:SetTooltipTransparency(value)
     end)
     self:AddButton(section, "Clear Wallpaper Cache", function()
         self:ClearWallpaperCache()
