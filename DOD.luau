@@ -6524,6 +6524,16 @@ function Library:CreateThemeCustomizer(tabName)
     self:AddSlider(section, "Section Transparency", 0, 1, self._STATE.SectionTransparency or 0.15, 2, function(value)
         self:SetSectionTransparency(value)
     end)
+    local notifPositionLabels = { "Top Right", "Top Left", "Bottom Right", "Bottom Left" }
+    local notifPositionKeys = { "TopRight", "TopLeft", "BottomRight", "BottomLeft" }
+    local notifCurrentKey = self._NotifPosition or "TopRight"
+    local notifCurrentIdx = 1
+    for i, key in ipairs(notifPositionKeys) do
+        if key == notifCurrentKey then notifCurrentIdx = i; break end
+    end
+    self:AddDropdown(section, "Notification Position", notifPositionLabels, notifCurrentIdx, function(idx, _)
+        self:SetNotificationPosition(notifPositionKeys[idx])
+    end)
     self:AddToggle(section, "Tooltip", self._STATE.TooltipEnabled ~= false, function(enabled)
         self:SetTooltipEnabled(enabled)
     end)
