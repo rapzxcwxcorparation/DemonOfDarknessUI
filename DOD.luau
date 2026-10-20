@@ -38,9 +38,19 @@ local UserInputService   = game:GetService("UserInputService")
 local TweenService       = game:GetService("TweenService")
 local CoreGui            = game:GetService("CoreGui")
 local Lighting           = game:GetService("Lighting")
+local SoundService       = game:GetService("SoundService")
 local LocalPlayer        = Players.LocalPlayer
 
 local function getCam() return workspace.CurrentCamera end
+
+local GuiSound = {
+    Click     = { id = "rbxassetid://6895079853", pitch = 1.10, vol = 0.32 },
+    ToggleOn  = { id = "rbxassetid://6895079853", pitch = 1.40, vol = 0.35 },
+    ToggleOff = { id = "rbxassetid://6895079853", pitch = 0.88, vol = 0.28 },
+    TabSwitch = { id = "rbxassetid://6895079853", pitch = 1.25, vol = 0.30 },
+    Dropdown  = { id = "rbxassetid://6895079853", pitch = 1.00, vol = 0.30 },
+    Notify    = { id = "rbxassetid://4590662766", pitch = 1.35, vol = 0.38 }
+}
 
 -- =========================================================
 -- SHARED STATE / UTILITIES
@@ -444,6 +454,7 @@ local SUBTAB_DEFAULT_THEME = {
 function SubTabModule.new(config)
     local self = setmetatable({}, SubTabModule)
     self.Parent = config.Parent
+    self.Owner = config.Owner
     self.Data = config.Data or {}
     self.OnChanged = config.OnChanged or function() end
     self.Theme = config.Theme or SUBTAB_DEFAULT_THEME
@@ -525,6 +536,7 @@ function SubTabModule:_createSubGroup(mainCategory, subList)
         btn.MouseButton1Click:Connect(function()
             local currentActiveIdx = self.ActiveSubIndices[mainCategory]
             if currentActiveIdx == i then return end
+            if self.Owner then self.Owner:PlaySound("TabSwitch") end
             local prevBtn = subElements[currentActiveIdx]
             self.ActiveSubIndices[mainCategory] = i
             local targetX = (i - 1) * (self.TabWidth + self.Padding)
@@ -663,6 +675,17 @@ function Library.new(opts)
     self.ToggleKey   = opts.ToggleKey or Enum.KeyCode.RightShift
     self._TitleIconName = (type(opts.TitleIcon) == "string" and opts.TitleIcon ~= "")
         and opts.TitleIcon or "hexagon"
+        
+    self._Sounds = {}
+    for name, data in pairs(GuiSound) do
+        local s = Instance.new("Sound")
+        s.Name = "DoD_Sound_" .. name
+        s.SoundId = data.id
+        s.PlaybackSpeed = data.pitch
+        s.Volume = data.vol
+        s.Parent = SoundService
+        self._Sounds[name] = s
+    end
     self.CategoryAlign = opts.CategoryAlign or "Center"
     if self.CategoryAlign ~= "Center" and self.CategoryAlign ~= "Left" and self.CategoryAlign ~= "Right" then
         self.CategoryAlign = "Center"
@@ -1140,6 +1163,7 @@ end
 function Library:Notify(title, text, notifyType)
     local STATE = self._STATE
     if STATE.Destroyed then return end
+    self:PlaySound("Notify")
     title = tostring(title or "")
     text = tostring(text or "")
     notifyType = tostring(notifyType or "info")
@@ -2358,88 +2382,29 @@ function Library:_initSidebar()
     spAvatar.Image = "rbxthumb://type=AvatarHeadShot&id=" .. tostring(LocalPlayer.UserId) .. "&w=150&h=150&filters=circular"
     Instance.new("UICorner", spAvatar).CornerRadius = UDim.new(1, 0)
 
-    local spTextRow = Instance.new("Frame", miniProfile)
-    spTextRow.Name = "TextRow"
-    spTextRow.Size = UDim2.new(1, -44, 1, 0)
-    spTextRow.Position = UDim2.new(0, 36, 0, 0)
-    spTextRow.BackgroundTransparency = 1
-    spTextRow.ClipsDescendants = true
-    spTextRow.ZIndex = 11
-
-    local spRowLayout = Instance.new("UIListLayout", spTextRow)
-    spRowLayout.FillDirection = Enum.FillDirection.Horizontal
-    spRowLayout.SortOrder = Enum.SortOrder.LayoutOrder
-    spRowLayout.VerticalAlignment = Enum.VerticalAlignment.Center
-    spRowLayout.Padding = UDim.new(0, 6)
-
-    local spName = Instance.new("TextLabel", spTextRow)
+    local spName = Instance.new("TextLabel", miniProfile)
     spName.Name = "Name"
-    spName.LayoutOrder = 1
-    spName.AutomaticSize = Enum.AutomaticSize.X
-    spName.Size = UDim2.new(0, 0, 1, 0)
+    spName.Size = UDim2.new(1, -44, 1, 0)
+    spName.Position = UDim2.new(0, 36, 0, 0)
     spName.BackgroundTransparency = 1
     spName.Text = LocalPlayer.Name
     spName.TextColor3 = self._Colors.Text
     spName.Font = Enum.Font.GothamBold
-    spName.TextSize = 11
+    spName.TextSize = 12
     spName.TextXAlignment = Enum.TextXAlignment.Left
+    spName.TextTruncate = Enum.TextTruncate.AtEnd
     spName.ZIndex = 11
-
-    local spDash = Instance.new("TextLabel", spTextRow)
-    spDash.Name = "Dash"
-    spDash.LayoutOrder = 2
-    spDash.AutomaticSize = Enum.AutomaticSize.X
-    spDash.Size = UDim2.new(0, 0, 1, 0)
-    spDash.BackgroundTransparency = 1
-    spDash.Text = "-"
-    spDash.TextColor3 = self._Colors.TextDim
-    spDash.Font = Enum.Font.GothamMedium
-    spDash.TextSize = 11
-    spDash.TextXAlignment = Enum.TextXAlignment.Center
-    spDash.ZIndex = 11
-
-    local spDisplay = Instance.new("TextLabel", spTextRow)
-    spDisplay.Name = "Display"
-    spDisplay.LayoutOrder = 3
-    spDisplay.AutomaticSize = Enum.AutomaticSize.X
-    spDisplay.Size = UDim2.new(0, 0, 1, 0)
-    spDisplay.BackgroundTransparency = 1
-    spDisplay.TextColor3 = self._Colors.TextDim
-    spDisplay.Font = Enum.Font.GothamMedium
-    spDisplay.TextSize = 11
-    spDisplay.TextXAlignment = Enum.TextXAlignment.Left
-    spDisplay.ZIndex = 11
-
-    local function _syncProfileText()
-        local user = LocalPlayer.Name
-        local display = LocalPlayer.DisplayName or ""
-        spName.Text = user
-        if display ~= "" and display ~= user then
-            spDisplay.Text = display
-            spDisplay.Visible = true
-            spDash.Visible = true
-        else
-            spDisplay.Visible = false
-            spDash.Visible = false
-        end
-    end
-    _syncProfileText()
 
     UI.SideProfileMini = miniProfile
     UI.SideProfileAvatar = spAvatar
     UI.SideProfileName = spName
-    UI.SideProfileDisplay = spDisplay
-    UI.SideProfileDash = spDash
     UI.SideProfileStroke = spStroke
-    UI._syncProfileText = _syncProfileText
 
     self:_registerThemeRefresher(function()
         if not miniProfile.Parent then return end
         miniProfile.BackgroundColor3 = self._Colors.Card
         spStroke.Color = self._Colors.Border
         spName.TextColor3 = self._Colors.Text
-        spDash.TextColor3 = self._Colors.TextDim
-        spDisplay.TextColor3 = self._Colors.TextDim
         spAvatar.BackgroundColor3 = self._Colors.Bg2
         if accordionScroll and accordionScroll.Parent then
             accordionScroll.ScrollBarImageColor3 = self._Colors.Accent
@@ -2564,7 +2529,23 @@ function Library:_setAccordionState(categoryName, expanded)
     local data = STATE.CategoryButtons and STATE.CategoryButtons[categoryName]
     if not data or not data.isAccordion then return end
     STATE.AccordionExpanded[categoryName] = expanded
-    data.tabList.Visible = expanded
+    if expanded then
+        data.tabList.Visible = true
+        local targetH = data.layout.AbsoluteContentSize.Y
+        TweenService:Create(data.tabList, TweenInfo.new(0.28, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
+            Size = UDim2.new(1, 0, 0, targetH)
+        }):Play()
+    else
+        local tw = TweenService:Create(data.tabList, TweenInfo.new(0.28, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
+            Size = UDim2.new(1, 0, 0, 0)
+        })
+        tw.Completed:Connect(function()
+            if not STATE.AccordionExpanded[categoryName] then
+                data.tabList.Visible = false
+            end
+        end)
+        tw:Play()
+    end
     if data.chevron then
         data.chevron.Image = GetIcon(expanded and "arrow-up" or "arrow-down")
     end
@@ -3428,7 +3409,7 @@ function Library:CreateCategory(categoryName, iconSpec)
         tabList.LayoutOrder = 2
         tabList.Size = UDim2.new(1, 0, 0, 0)
         tabList.BackgroundTransparency = 1
-        tabList.AutomaticSize = Enum.AutomaticSize.Y
+        tabList.ClipsDescendants = true
         tabList.Visible = false
         tabList.ZIndex = 5
 
@@ -3449,6 +3430,7 @@ function Library:CreateCategory(categoryName, iconSpec)
             chevron = chevron,
             group = group,
             tabList = tabList,
+            layout = tlLayout,
             stroke = hStroke,
             isAccordion = true,
         }
@@ -3711,6 +3693,7 @@ function Library:SetActiveCategory(categoryName, preferredTab)
             TextActive = Color3.fromRGB(255, 255, 255), TextInactive = self._Colors.TextDim,
             FontActive = Enum.Font.GothamBold, FontInactive = Enum.Font.GothamMedium,
         },
+        Owner = self,
         OnChanged = function(_, subName)
             if suppress then return end
             for idx, name in ipairs(tabs) do
@@ -3910,6 +3893,7 @@ function Library:CreateTab(categoryName, tabName)
                 if STATE.ActiveCategory ~= categoryName then
                     STATE.ActiveCategory = categoryName
                 end
+                self:PlaySound("TabSwitch")
                 local allSubs = catData.tabList:GetChildren()
                 for _, otherSub in ipairs(allSubs) do
                     if otherSub:IsA("TextButton") then
@@ -3957,6 +3941,8 @@ function Library:SwitchTab(tabName)
     if STATE.ActiveTab == tabName and page.Visible then
         return
     end
+
+    self:PlaySound("TabSwitch")
 
     for _, p in pairs(STATE.ContentPages) do
         if p ~= page then p.Visible = false end
@@ -4634,6 +4620,7 @@ function Library:AddToggle(page, text, default, callback)
             if now - lastToggle < 0.15 then return end
             lastToggle = now
             state = not state
+            self:PlaySound(state and "ToggleOn" or "ToggleOff")
             updateVisual(true)
             callback(state)
             self:_triggerAutoSave()
@@ -5207,6 +5194,7 @@ function Library:AddDropdown(page, text, options, defaultIndex, callback)
     end
 
     valueChip.MouseButton1Click:Connect(function()
+        self:PlaySound("Dropdown")
         if popup.Visible then
             popup.Visible = false
         else
@@ -5500,6 +5488,7 @@ function Library:AddMultiDropdown(page, text, options, defaults, callback)
     end
 
     valueChip.MouseButton1Click:Connect(function()
+        self:PlaySound("Dropdown")
         if popup.Visible then
             popup.Visible = false
         else
@@ -5725,6 +5714,7 @@ function Library:AddKeybind(page, text, default, callback)
     self:_refreshKeybindOverlay()
 
     btn.MouseButton1Click:Connect(function()
+        self:PlaySound("Click")
         if listener.active then
             listener.active = false
             btnText.Text = listener.keyName
@@ -5856,7 +5846,10 @@ function Library:AddButton(page, text, callback)
 
     btn.MouseEnter:Connect(function() btn.BackgroundTransparency = 0 end)
     btn.MouseLeave:Connect(function() btn.BackgroundTransparency = 0.15 end)
-    btn.MouseButton1Click:Connect(callback)
+    btn.MouseButton1Click:Connect(function()
+        self:PlaySound("Click")
+        callback()
+    end)
 
     self:_registerThemeRefresher(function()
         holder.BackgroundColor3 = self._Colors.Card
@@ -6299,6 +6292,14 @@ end
 
 function Library:_isDead()
     return self._STATE ~= nil and self._STATE.Destroyed == true
+end
+
+function Library:PlaySound(soundName)
+    if self:_isDead() then return end
+    local s = self._Sounds and self._Sounds[soundName]
+    if s then
+        s:Play()
+    end
 end
 
 function Library:Toggle()
