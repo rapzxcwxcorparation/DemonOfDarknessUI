@@ -662,7 +662,7 @@ function Library.new(opts)
     self.TabWidth    = opts.TabWidth or 130
     self.ToggleKey   = opts.ToggleKey or Enum.KeyCode.RightShift
     self._TitleIconName = (type(opts.TitleIcon) == "string" and opts.TitleIcon ~= "")
-        and opts.TitleIcon or "sparkles"
+        and opts.TitleIcon or "hexagon"
     self.CategoryAlign = opts.CategoryAlign or "Center"
     if self.CategoryAlign ~= "Center" and self.CategoryAlign ~= "Left" and self.CategoryAlign ~= "Right" then
         self.CategoryAlign = "Center"
@@ -854,8 +854,7 @@ function Library:SetTheme(themeName, silent)
             if UI.TitleLogoIcon then UI.TitleLogoIcon.ImageColor3 = Fn.accentTextColor(self._Colors.Accent) end
         end
         if UI.TitleVersionBadge then
-            UI.TitleVersionBadge.BackgroundColor3 = self._Colors.Accent
-            UI.TitleVersionBadge.TextColor3 = Fn.accentTextColor(self._Colors.Accent)
+            UI.TitleVersionBadge.TextColor3 = self._Colors.TextDim
         end
         if UI.MainStroke then UI.MainStroke.Color = self._Colors.Border end
         if UI.TitleGradient then
@@ -1305,71 +1304,131 @@ function Library:_initKeybindOverlay()
     local UI = self._UI
     local overlay = Instance.new("Frame", UI.MainGui)
     overlay.Name = "KeybindOverlay"
-    overlay.Size = UDim2.fromOffset(250, 210)
+    overlay.Size = UDim2.fromOffset(290, 300)
     overlay.AnchorPoint = Vector2.new(1, 1)
-    overlay.Position = UDim2.new(1, -18, 1, -62)
+    overlay.Position = UDim2.new(1, -18, 1, -58)
     overlay.BackgroundColor3 = self._Colors.Bg2
-    overlay.BackgroundTransparency = 0.12
+    overlay.BackgroundTransparency = 0.08
     overlay.BorderSizePixel = 0
     overlay.Visible = false
     overlay.ZIndex = 250
     overlay.ClipsDescendants = true
-    Instance.new("UICorner", overlay).CornerRadius = UDim.new(0, 12)
+    Instance.new("UICorner", overlay).CornerRadius = UDim.new(0, 14)
     local stroke = Instance.new("UIStroke", overlay)
     stroke.Color = self._Colors.Border
     stroke.Thickness = 1
+    stroke.Transparency = 0.3
 
     local heading = Instance.new("TextLabel", overlay)
     heading.Name = "Heading"
-    heading.Size = UDim2.new(1, -46, 0, 34)
-    heading.Position = UDim2.new(0, 12, 0, 0)
+    heading.Size = UDim2.new(1, -60, 0, 18)
+    heading.Position = UDim2.new(0, 16, 0, 12)
     heading.BackgroundTransparency = 1
-    heading.Text = "ACTIVE KEYBINDS"
+    heading.Text = "KEYBINDS"
     heading.TextColor3 = self._Colors.Text
     heading.Font = Enum.Font.GothamBold
-    heading.TextSize = 11
+    heading.TextSize = 12
     heading.TextXAlignment = Enum.TextXAlignment.Left
     heading.ZIndex = 251
 
-    local closeButton = Instance.new("ImageButton", overlay)
+    local subtitle = Instance.new("TextLabel", overlay)
+    subtitle.Name = "Subtitle"
+    subtitle.Size = UDim2.new(1, -60, 0, 14)
+    subtitle.Position = UDim2.new(0, 16, 0, 30)
+    subtitle.BackgroundTransparency = 1
+    subtitle.Text = "No active keybinds"
+    subtitle.TextColor3 = self._Colors.TextDim
+    subtitle.Font = Enum.Font.GothamMedium
+    subtitle.TextSize = 10
+    subtitle.TextXAlignment = Enum.TextXAlignment.Left
+    subtitle.ZIndex = 251
+
+    local closeButton = Instance.new("TextButton", overlay)
     closeButton.Name = "Close"
-    closeButton.Size = UDim2.fromOffset(20, 20)
-    closeButton.Position = UDim2.new(1, -28, 0, 7)
-    closeButton.BackgroundTransparency = 1
-    closeButton.Image = GetIcon("x")
-    closeButton.ImageColor3 = self._Colors.TextDim
+    closeButton.Size = UDim2.fromOffset(24, 24)
+    closeButton.Position = UDim2.new(1, -34, 0, 16)
+    closeButton.BackgroundColor3 = self._Colors.Card
+    closeButton.BackgroundTransparency = 0.4
+    closeButton.Text = ""
+    closeButton.AutoButtonColor = false
     closeButton.ZIndex = 252
+    Instance.new("UICorner", closeButton).CornerRadius = UDim.new(0, 6)
+
+    local closeIcon = Instance.new("ImageLabel", closeButton)
+    closeIcon.Size = UDim2.fromOffset(12, 12)
+    closeIcon.Position = UDim2.new(0.5, -6, 0.5, -6)
+    closeIcon.BackgroundTransparency = 1
+    closeIcon.Image = GetIcon("x")
+    closeIcon.ImageColor3 = self._Colors.TextDim
+    closeIcon.ZIndex = 253
+
+    closeButton.MouseEnter:Connect(function()
+        TweenService:Create(closeButton, TweenInfo.new(0.15), {BackgroundTransparency = 0.1}):Play()
+        TweenService:Create(closeIcon, TweenInfo.new(0.15), {ImageColor3 = self._Colors.Text}):Play()
+    end)
+    closeButton.MouseLeave:Connect(function()
+        TweenService:Create(closeButton, TweenInfo.new(0.15), {BackgroundTransparency = 0.4}):Play()
+        TweenService:Create(closeIcon, TweenInfo.new(0.15), {ImageColor3 = self._Colors.TextDim}):Play()
+    end)
+
+    local divider = Instance.new("Frame", overlay)
+    divider.Name = "Divider"
+    divider.Size = UDim2.new(1, -32, 0, 1)
+    divider.Position = UDim2.new(0, 16, 0, 52)
+    divider.BackgroundColor3 = self._Colors.Border
+    divider.BackgroundTransparency = 0.5
+    divider.BorderSizePixel = 0
+    divider.ZIndex = 251
 
     local list = Instance.new("ScrollingFrame", overlay)
     list.Name = "KeybindList"
-    list.Size = UDim2.new(1, -16, 1, -44)
-    list.Position = UDim2.new(0, 8, 0, 38)
+    list.Size = UDim2.new(1, -20, 1, -64)
+    list.Position = UDim2.new(0, 10, 0, 56)
     list.BackgroundTransparency = 1
     list.BorderSizePixel = 0
     list.ScrollBarThickness = 3
     list.ScrollBarImageColor3 = self._Colors.Accent
+    list.ScrollBarImageTransparency = 0.3
     list.AutomaticCanvasSize = Enum.AutomaticSize.Y
     list.CanvasSize = UDim2.new(0, 0, 0, 0)
     list.ZIndex = 251
     local layout = Instance.new("UIListLayout", list)
     layout.SortOrder = Enum.SortOrder.LayoutOrder
-    layout.Padding = UDim.new(0, 4)
-    
-    local emptyMessage = Instance.new("TextLabel", list)
+    layout.Padding = UDim.new(0, 6)
+    local listPad = Instance.new("UIPadding", list)
+    listPad.PaddingTop = UDim.new(0, 2)
+    listPad.PaddingBottom = UDim.new(0, 8)
+
+    local emptyMessage = Instance.new("Frame", list)
     emptyMessage.Name = "EmptyMessage"
     emptyMessage.LayoutOrder = 0
-    emptyMessage.Size = UDim2.new(1, -8, 0, 32)
+    emptyMessage.Size = UDim2.new(1, -8, 0, 80)
     emptyMessage.BackgroundTransparency = 1
-    emptyMessage.Text = "No keybinds assigned"
-    emptyMessage.TextColor3 = self._Colors.TextDim
-    emptyMessage.Font = Enum.Font.GothamMedium
-    emptyMessage.TextSize = 10
-    emptyMessage.TextXAlignment = Enum.TextXAlignment.Center
     emptyMessage.ZIndex = 252
+
+    local emptyIcon = Instance.new("ImageLabel", emptyMessage)
+    emptyIcon.Size = UDim2.fromOffset(28, 28)
+    emptyIcon.Position = UDim2.new(0.5, -14, 0, 12)
+    emptyIcon.BackgroundTransparency = 1
+    emptyIcon.Image = GetIcon("keyboard")
+    emptyIcon.ImageColor3 = self._Colors.TextDim
+    emptyIcon.ImageTransparency = 0.4
+    emptyIcon.ZIndex = 252
+
+    local emptyText = Instance.new("TextLabel", emptyMessage)
+    emptyText.Size = UDim2.new(1, -16, 0, 14)
+    emptyText.Position = UDim2.new(0, 8, 0, 48)
+    emptyText.BackgroundTransparency = 1
+    emptyText.Text = "No keybinds assigned yet"
+    emptyText.TextColor3 = self._Colors.TextDim
+    emptyText.Font = Enum.Font.GothamMedium
+    emptyText.TextSize = 10
+    emptyText.TextXAlignment = Enum.TextXAlignment.Center
+    emptyText.ZIndex = 252
 
     local toggle = Instance.new("TextButton", UI.MainGui)
     toggle.Name = "KeybindOverlayToggle"
-    toggle.Size = UDim2.fromOffset(100, 32)
+    toggle.Size = UDim2.fromOffset(110, 34)
     toggle.AnchorPoint = Vector2.new(1, 1)
     toggle.Position = UDim2.new(1, -18, 1, -18)
     toggle.BackgroundColor3 = self._Colors.Card
@@ -1388,16 +1447,16 @@ function Library:_initKeybindOverlay()
 
     local toggleIcon = Instance.new("ImageLabel", toggle)
     toggleIcon.Size = UDim2.fromOffset(14, 14)
-    toggleIcon.Position = UDim2.new(0, 12, 0.5, -7)
+    toggleIcon.Position = UDim2.new(0, 14, 0.5, -7)
     toggleIcon.BackgroundTransparency = 1
     toggleIcon.Image = GetIcon("keyboard")
     toggleIcon.ImageColor3 = self._Colors.Accent
 
     local toggleText = Instance.new("TextLabel", toggle)
-    toggleText.Size = UDim2.new(1, -32, 1, 0)
-    toggleText.Position = UDim2.new(0, 32, 0, 0)
+    toggleText.Size = UDim2.new(1, -40, 1, 0)
+    toggleText.Position = UDim2.new(0, 34, 0, 0)
     toggleText.BackgroundTransparency = 1
-    toggleText.Text = "KEYS"
+    toggleText.Text = "KEYBINDS"
     toggleText.TextColor3 = self._Colors.Accent
     toggleText.Font = Enum.Font.GothamBold
     toggleText.TextSize = 10
@@ -1429,13 +1488,22 @@ function Library:_initKeybindOverlay()
     UI.KeybindOverlayToggleStroke = toggleStroke
     UI.KeybindOverlayToggleIcon = toggleIcon
     UI.KeybindOverlayToggleText = toggleText
+    UI.KeybindOverlaySubtitle = subtitle
+    UI.KeybindOverlayCloseIcon = closeIcon
+    UI.KeybindOverlayDivider = divider
+    UI.KeybindOverlayEmptyIcon = emptyIcon
+    UI.KeybindOverlayEmptyText = emptyText
 
     self:_registerThemeRefresher(function()
         overlay.BackgroundColor3 = self._Colors.Bg2
         stroke.Color = self._Colors.Border
         heading.TextColor3 = self._Colors.Text
-        emptyMessage.TextColor3 = self._Colors.TextDim
-        closeButton.ImageColor3 = self._Colors.TextDim
+        subtitle.TextColor3 = self._Colors.TextDim
+        emptyText.TextColor3 = self._Colors.TextDim
+        emptyIcon.ImageColor3 = self._Colors.TextDim
+        closeIcon.ImageColor3 = self._Colors.TextDim
+        closeButton.BackgroundColor3 = self._Colors.Card
+        divider.BackgroundColor3 = self._Colors.Border
         list.ScrollBarImageColor3 = self._Colors.Accent
         toggle.BackgroundColor3 = self._Colors.Card
         toggleStroke.Color = self._Colors.Accent
@@ -1443,11 +1511,15 @@ function Library:_initKeybindOverlay()
         toggleText.TextColor3 = self._Colors.Accent
         for _, row in pairs(self._STATE.KeybindOverlayRows) do
             if row.frame then row.frame.BackgroundColor3 = self._Colors.Card end
-            row.name.TextColor3 = self._Colors.Text
-            row.key.BackgroundColor3 = self._Colors.Card
-            row.key.TextColor3 = self._Colors.Accent
-            if row.icon then row.icon.ImageColor3 = self._Colors.TextDim end
-            if row.keyStroke then row.keyStroke.Color = self._Colors.Border end
+            if row.stroke then row.stroke.Color = self._Colors.Border end
+            if row.iconBg then row.iconBg.BackgroundColor3 = self._Colors.Bg2 end
+            if row.name then row.name.TextColor3 = self._Colors.Text end
+            if row.key then
+                row.key.BackgroundColor3 = self._Colors.Bg2
+                row.key.TextColor3 = self._Colors.Accent
+            end
+            if row.icon then row.icon.ImageColor3 = self._Colors.Accent end
+            if row.keyStroke then row.keyStroke.Color = self._Colors.Accent end
         end
     end)
 end
@@ -1456,73 +1528,92 @@ function Library:_refreshKeybindOverlay()
     local UI = self._UI
     local list = UI.KeybindOverlayList
     if not list then return end
-    UI.KeybindOverlayEmpty.Visible = #self._STATE.activeKeybindListeners == 0
+    local count = #self._STATE.activeKeybindListeners
+    UI.KeybindOverlayEmpty.Visible = count == 0
+    if UI.KeybindOverlaySubtitle then
+        if count == 0 then
+            UI.KeybindOverlaySubtitle.Text = "No active keybinds"
+        elseif count == 1 then
+            UI.KeybindOverlaySubtitle.Text = "1 active keybind"
+        else
+            UI.KeybindOverlaySubtitle.Text = tostring(count) .. " active keybinds"
+        end
+    end
     for index, listener in ipairs(self._STATE.activeKeybindListeners) do
         local row = self._STATE.KeybindOverlayRows[listener]
         if not row or not row.frame.Parent then
             local frame = Instance.new("Frame", list)
             frame.Name = "Keybind_" .. tostring(index)
             frame.LayoutOrder = index
-            frame.Size = UDim2.new(1, -4, 0, 32)
+            frame.Size = UDim2.new(1, -6, 0, 40)
             frame.BackgroundColor3 = self._Colors.Card
             frame.BackgroundTransparency = 0.35
             frame.BorderSizePixel = 0
             frame.ZIndex = 252
-            Instance.new("UICorner", frame).CornerRadius = UDim.new(0, 8)
+            Instance.new("UICorner", frame).CornerRadius = UDim.new(0, 10)
 
-            local icon = Instance.new("ImageLabel", frame)
+            local rowStroke = Instance.new("UIStroke", frame)
+            rowStroke.Color = self._Colors.Border
+            rowStroke.Thickness = 1
+            rowStroke.Transparency = 0.6
+
+            local iconBg = Instance.new("Frame", frame)
+            iconBg.Size = UDim2.fromOffset(24, 24)
+            iconBg.Position = UDim2.new(0, 10, 0.5, -12)
+            iconBg.BackgroundColor3 = self._Colors.Bg2
+            iconBg.BackgroundTransparency = 0.3
+            iconBg.BorderSizePixel = 0
+            iconBg.ZIndex = 253
+            Instance.new("UICorner", iconBg).CornerRadius = UDim.new(0, 6)
+
+            local icon = Instance.new("ImageLabel", iconBg)
             icon.Size = UDim2.fromOffset(12, 12)
-            icon.Position = UDim2.new(0, 10, 0.5, -6)
+            icon.Position = UDim2.new(0.5, -6, 0.5, -6)
             icon.BackgroundTransparency = 1
-            icon.Image = GetIcon("activity")
-            icon.ImageColor3 = self._Colors.TextDim
-            icon.ZIndex = 253
+            icon.Image = GetIcon("command")
+            icon.ImageColor3 = self._Colors.Accent
+            icon.ZIndex = 254
 
             local name = Instance.new("TextLabel", frame)
             name.Name = "Action"
-            name.Size = UDim2.new(1, -90, 1, 0)
-            name.Position = UDim2.new(0, 28, 0, 0)
+            name.Size = UDim2.new(1, -120, 1, 0)
+            name.Position = UDim2.new(0, 42, 0, 0)
             name.BackgroundTransparency = 1
             name.TextColor3 = self._Colors.Text
             name.Font = Enum.Font.GothamMedium
-            name.TextSize = 11
+            name.TextSize = 12
             name.TextXAlignment = Enum.TextXAlignment.Left
             name.TextTruncate = Enum.TextTruncate.AtEnd
             name.ZIndex = 253
 
             local key = Instance.new("TextLabel", frame)
             key.Name = "Shortcut"
-            key.Size = UDim2.new(0, 70, 0, 24)
-            key.Position = UDim2.new(1, -80, 0.5, -12)
-            key.BackgroundColor3 = self._Colors.Bg
+            key.Size = UDim2.new(0, 68, 0, 24)
+            key.Position = UDim2.new(1, -78, 0.5, -12)
+            key.BackgroundColor3 = self._Colors.Bg2
+            key.BackgroundTransparency = 0.2
             key.BorderSizePixel = 0
             key.TextColor3 = self._Colors.Accent
             key.Font = Enum.Font.GothamBold
             key.TextSize = 10
             key.TextTruncate = Enum.TextTruncate.AtEnd
             key.ZIndex = 253
-            Instance.new("UICorner", key).CornerRadius = UDim.new(0, 6)
+            Instance.new("UICorner", key).CornerRadius = UDim.new(0, 7)
 
-            local keyGrad = Instance.new("UIGradient", key)
-            keyGrad.Color = ColorSequence.new(self._Colors.Bg2, self._Colors.Bg)
-            keyGrad.Rotation = 90
-            
             local keyStroke = Instance.new("UIStroke", key)
-            keyStroke.Color = self._Colors.Border
+            keyStroke.Color = self._Colors.Accent
             keyStroke.Thickness = 1
-            keyStroke.Transparency = 0.5
-            keyStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+            keyStroke.Transparency = 0.65
 
-            local keyShadow = Instance.new("Frame", key)
-            keyShadow.Size = UDim2.new(1, 0, 0, 2)
-            keyShadow.Position = UDim2.new(0, 0, 1, -2)
-            keyShadow.BackgroundColor3 = Color3.new(0, 0, 0)
-            keyShadow.BackgroundTransparency = 0.5
-            keyShadow.BorderSizePixel = 0
-            keyShadow.ZIndex = 252
-            Instance.new("UICorner", keyShadow).CornerRadius = UDim.new(0, 2)
-
-            row = {frame = frame, name = name, key = key, icon = icon, keyStroke = keyStroke}
+            row = {
+                frame = frame,
+                stroke = rowStroke,
+                iconBg = iconBg,
+                icon = icon,
+                name = name,
+                key = key,
+                keyStroke = keyStroke,
+            }
             self._STATE.KeybindOverlayRows[listener] = row
         end
         row.frame.LayoutOrder = index
@@ -1779,28 +1870,51 @@ function Library:_initTitleBar()
     UI.TitleLogoStroke = logoStroke
     UI.TitleLogoIcon = logoIcon
 
+    local mainTitle, subTitle = self.Title:match("^(.-)%s*|%s*(.+)$")
+    if not mainTitle then
+        mainTitle = self.Title
+        subTitle = ""
+    end
+
     UI.TitleLabel = Instance.new("TextLabel", UI.TitleBar)
     UI.TitleLabel.Size = UDim2.new(0, 200, 1, 0)
     UI.TitleLabel.Position = UDim2.new(0, 40, 0, 0)
     UI.TitleLabel.BackgroundTransparency = 1
-    UI.TitleLabel.Text = self.Title
+    UI.TitleLabel.Text = mainTitle
     UI.TitleLabel.TextColor3 = self._Colors.Text
-    UI.TitleLabel.Font = Enum.Font.GothamBlack
+    UI.TitleLabel.Font = Enum.Font.GothamBold
     UI.TitleLabel.TextSize = 14
     UI.TitleLabel.TextXAlignment = Enum.TextXAlignment.Left
+    UI.TitleLabel.TextYAlignment = Enum.TextYAlignment.Center
+
+    UI.TitleSubtitle = Instance.new("TextLabel", UI.TitleBar)
+    UI.TitleSubtitle.Size = UDim2.new(0, 200, 1, 0)
+    UI.TitleSubtitle.Position = UDim2.new(0, 40, 0, 0)
+    UI.TitleSubtitle.BackgroundTransparency = 1
+    UI.TitleSubtitle.Text = subTitle
+    UI.TitleSubtitle.TextColor3 = self._Colors.TextDim
+    UI.TitleSubtitle.Font = Enum.Font.GothamMedium
+    UI.TitleSubtitle.TextSize = 12
+    UI.TitleSubtitle.TextXAlignment = Enum.TextXAlignment.Left
+    UI.TitleSubtitle.TextYAlignment = Enum.TextYAlignment.Center
 
     UI.TitleVersionBadge = Instance.new("TextLabel", UI.TitleBar)
     UI.TitleVersionBadge.Size = UDim2.new(0, 0, 0, 20)
     UI.TitleVersionBadge.AutomaticSize = Enum.AutomaticSize.X
     UI.TitleVersionBadge.Position = UDim2.new(0, 170, 0.5, -10)
-    UI.TitleVersionBadge.BackgroundColor3 = self._Colors.Accent
-    UI.TitleVersionBadge.BackgroundTransparency = 0.15
+    UI.TitleVersionBadge.BackgroundColor3 = Color3.new(1, 1, 1)
+    UI.TitleVersionBadge.BackgroundTransparency = 0.94
     UI.TitleVersionBadge.Text = self.Version
-    UI.TitleVersionBadge.TextColor3 = Fn.accentTextColor(self._Colors.Accent)
-    UI.TitleVersionBadge.Font = Enum.Font.GothamBold
-    UI.TitleVersionBadge.TextSize = 11
+    UI.TitleVersionBadge.TextColor3 = self._Colors.TextDim
+    UI.TitleVersionBadge.Font = Enum.Font.RobotoMono
+    UI.TitleVersionBadge.TextSize = 10
     UI.TitleVersionBadge.BorderSizePixel = 0
-    Instance.new("UICorner", UI.TitleVersionBadge).CornerRadius = UDim.new(0, 6)
+    Instance.new("UICorner", UI.TitleVersionBadge).CornerRadius = UDim.new(1, 0)
+
+    local vStroke = Instance.new("UIStroke", UI.TitleVersionBadge)
+    vStroke.Color = Color3.new(1, 1, 1)
+    vStroke.Transparency = 0.9
+    vStroke.Thickness = 1
 
     local vPad = Instance.new("UIPadding", UI.TitleVersionBadge)
     vPad.PaddingLeft = UDim.new(0, 10)
@@ -1831,23 +1945,39 @@ function Library:_initTitleBar()
         if UI.TitleToggleHint then
             UI.TitleToggleHint.TextColor3 = self._Colors.TextDim
         end
+        if UI.TitleSubtitle then
+            UI.TitleSubtitle.TextColor3 = self._Colors.TextDim
+        end
     end)
 
     local function updateTitleLayout()
         local width = UI.MainContainer.AbsoluteSize.X
         if width <= 0 then width = 640 end
-        local titleWidth = math.clamp(width - 400, 80, 200)
-        UI.TitleLabel.Size = UDim2.new(0, titleWidth, 1, 0)
-
-        local actualTextW = UI.TitleLabel.TextBounds.X
-        if actualTextW <= 0 then
-            actualTextW = math.min(#UI.TitleLabel.Text * 7.5, titleWidth)
+        local maxTitleWidth = math.clamp(width - 400, 80, 300)
+        
+        local mainTextW = UI.TitleLabel.TextBounds.X
+        if mainTextW <= 0 then
+            mainTextW = #UI.TitleLabel.Text * 7.5
         end
-        actualTextW = math.min(actualTextW, titleWidth)
+        mainTextW = math.min(mainTextW, maxTitleWidth)
+        UI.TitleLabel.Size = UDim2.new(0, mainTextW, 1, 0)
+        
+        local subTextW = 0
+        if UI.TitleSubtitle.Text ~= "" then
+            subTextW = UI.TitleSubtitle.TextBounds.X
+            if subTextW <= 0 then subTextW = #UI.TitleSubtitle.Text * 6 end
+            local maxSubWidth = math.max(10, maxTitleWidth - mainTextW - 6)
+            subTextW = math.min(subTextW, maxSubWidth)
+            UI.TitleSubtitle.Size = UDim2.new(0, subTextW, 1, 0)
+            UI.TitleSubtitle.Position = UDim2.new(0, 40 + mainTextW + 6, 0, 0)
+            UI.TitleSubtitle.Visible = true
+        else
+            UI.TitleSubtitle.Visible = false
+        end
 
         local badgeW = UI.TitleVersionBadge.AbsoluteSize.X
-        if badgeW <= 0 then badgeW = 60 end
-        local badgeStart = UI.TitleLabel.Position.X.Offset + actualTextW + 8
+        if badgeW <= 0 then badgeW = 40 end
+        local badgeStart = 40 + mainTextW + (subTextW > 0 and subTextW + 10 or 8)
         local badgeEnd = badgeStart + badgeW
 
         local hintStart = width - 300
@@ -2242,9 +2372,7 @@ function Library:_setAccordionState(categoryName, expanded)
     STATE.AccordionExpanded[categoryName] = expanded
     data.tabList.Visible = expanded
     if data.chevron then
-        TweenService:Create(data.chevron, TweenInfo.new(0.18, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {
-            Rotation = expanded and 90 or 0,
-        }):Play()
+        data.chevron.Image = GetIcon(expanded and "arrow-up" or "arrow-down")
     end
     if data.button and data.stroke then
         TweenService:Create(data.stroke, TweenInfo.new(0.18), {
@@ -3064,14 +3192,14 @@ function Library:CreateCategory(categoryName, iconSpec)
         hStroke.Thickness = 1
         hStroke.Transparency = 0.7
 
-        local chevron = Instance.new("TextLabel", header)
+        local chevron = Instance.new("ImageLabel", header)
+        chevron.Name = "Chevron"
         chevron.Size = UDim2.fromOffset(12, 12)
         chevron.Position = UDim2.new(0, 8, 0.5, -6)
         chevron.BackgroundTransparency = 1
-        chevron.Text = "▶"
-        chevron.Font = Enum.Font.GothamBold
-        chevron.TextSize = 9
-        chevron.TextColor3 = self._Colors.TextDim
+        chevron.Image = GetIcon("arrow-down")
+        chevron.ImageColor3 = self._Colors.TextDim
+        chevron.ScaleType = Enum.ScaleType.Fit
         chevron.ZIndex = 7
 
         local iconImg = Instance.new("ImageLabel", header)
@@ -3154,7 +3282,7 @@ function Library:CreateCategory(categoryName, iconSpec)
             hStroke.Color = categoryName == STATE.ActiveCategory and self._Colors.Accent or self._Colors.Border
             label.TextColor3 = categoryName == STATE.ActiveCategory and self._Colors.Text or self._Colors.TextDim
             iconImg.ImageColor3 = categoryName == STATE.ActiveCategory and self._Colors.Accent or self._Colors.TextDim
-            chevron.TextColor3 = categoryName == STATE.ActiveCategory and self._Colors.Accent or self._Colors.TextDim
+            chevron.ImageColor3 = categoryName == STATE.ActiveCategory and self._Colors.Accent or self._Colors.TextDim
         end)
 
         return header
@@ -3741,16 +3869,15 @@ function Library:CreateSection(tabName, title, summary, defaultOpen, columnName)
     summaryLabel.TextXAlignment = Enum.TextXAlignment.Left
     summaryLabel.TextTruncate = Enum.TextTruncate.AtEnd
 
-    local indicator = Instance.new("TextLabel", header)
-    indicator.Size = UDim2.new(0, 32, 0, 32)
+    local indicator = Instance.new("ImageLabel", header)
+    indicator.Name = "ExpandIndicator"
+    indicator.Size = UDim2.fromOffset(16, 16)
     indicator.AnchorPoint = Vector2.new(0.5, 0.5)
     indicator.Position = UDim2.new(1, -26, 0.5, 0)
     indicator.BackgroundTransparency = 1
-    indicator.Text = "↑"
-    indicator.Rotation = -90
-    indicator.TextColor3 = self._Colors.TextDim
-    indicator.Font = Enum.Font.GothamBlack
-    indicator.TextSize = 18
+    indicator.Image = GetIcon(defaultOpen and "arrow-up" or "arrow-down")
+    indicator.ImageColor3 = defaultOpen and self._Colors.Accent or self._Colors.TextDim
+    indicator.ScaleType = Enum.ScaleType.Fit
 
     local separator = Instance.new("Frame", section)
     separator.Size = UDim2.new(1, -32, 0, 1)
@@ -3814,10 +3941,10 @@ function Library:CreateSection(tabName, title, summary, defaultOpen, columnName)
         TweenService:Create(separator, TweenInfo.new(0.2), {
             BackgroundTransparency = expanded and 0.6 or 1
         }):Play()
+        indicator.Image = GetIcon(expanded and "arrow-up" or "arrow-down")
         TweenService:Create(indicator,
             TweenInfo.new(0.32, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {
-                Rotation = expanded and 0 or -90,
-                TextColor3 = expanded and self._Colors.Accent or self._Colors.TextDim,
+                ImageColor3 = expanded and self._Colors.Accent or self._Colors.TextDim,
             }):Play()
     end
 
@@ -3890,7 +4017,8 @@ function Library:CreateSection(tabName, title, summary, defaultOpen, columnName)
         cardStroke.Color = self._Colors.Border
         titleLabel.TextColor3 = self._Colors.Text
         summaryLabel.TextColor3 = self._Colors.TextDim
-        indicator.TextColor3 = expanded and self._Colors.Accent or self._Colors.TextDim
+        indicator.Image = GetIcon(expanded and "arrow-up" or "arrow-down")
+        indicator.ImageColor3 = expanded and self._Colors.Accent or self._Colors.TextDim
         separator.BackgroundColor3 = self._Colors.Border
     end)
 
