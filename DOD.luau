@@ -713,8 +713,8 @@ function Library.new(opts)
         s.Parent = SoundService
         self._Sounds[name] = s
     end
-    self._SoundsEnabled = true
-    self._SoundVolume = 1
+    self._SoundsEnabled = opts.SoundsEnabled ~= false
+    self._SoundVolume = opts.SoundVolume or 1
     self.CategoryAlign = opts.CategoryAlign or "Center"
     if self.CategoryAlign ~= "Center" and self.CategoryAlign ~= "Left" and self.CategoryAlign ~= "Right" then
         self.CategoryAlign = "Center"
@@ -750,11 +750,51 @@ function Library.new(opts)
         error('[DoD UI] TabPosition must be "Top", "Side", or "Bottom".')
     end
 
+    if opts.AccentColor ~= nil and typeof(opts.AccentColor) ~= "Color3" then
+        error("[DoD UI] AccentColor must be a Color3 value.")
+    end
+    if opts.VersionBadgeColor ~= nil and typeof(opts.VersionBadgeColor) ~= "Color3" then
+        error("[DoD UI] VersionBadgeColor must be a Color3 value.")
+    end
+    if opts.SoundsEnabled ~= nil and type(opts.SoundsEnabled) ~= "boolean" then
+        error("[DoD UI] SoundsEnabled must be a boolean.")
+    end
+    if opts.SoundVolume ~= nil and (type(opts.SoundVolume) ~= "number" or opts.SoundVolume < 0 or opts.SoundVolume > 1 or opts.SoundVolume ~= opts.SoundVolume) then
+        error("[DoD UI] SoundVolume must be a number between 0 and 1.")
+    end
+    if opts.ReducedMotion ~= nil and type(opts.ReducedMotion) ~= "boolean" then
+        error("[DoD UI] ReducedMotion must be a boolean.")
+    end
+    if opts.LayoutDensity ~= nil and opts.LayoutDensity ~= "Compact" and opts.LayoutDensity ~= "Normal" and opts.LayoutDensity ~= "Spacious" then
+        error("[DoD UI] LayoutDensity must be 'Compact', 'Normal', or 'Spacious'.")
+    end
+    if opts.SectionTransparency ~= nil and (type(opts.SectionTransparency) ~= "number" or opts.SectionTransparency < 0 or opts.SectionTransparency > 1 or opts.SectionTransparency ~= opts.SectionTransparency) then
+        error("[DoD UI] SectionTransparency must be a number between 0 and 1.")
+    end
+    if opts.NotificationPosition ~= nil and opts.NotificationPosition ~= "TopRight" and opts.NotificationPosition ~= "TopLeft" and opts.NotificationPosition ~= "BottomRight" and opts.NotificationPosition ~= "BottomLeft" then
+        error("[DoD UI] NotificationPosition must be 'TopRight', 'TopLeft', 'BottomRight', or 'BottomLeft'.")
+    end
+    if opts.Tooltip ~= nil and type(opts.Tooltip) ~= "boolean" then
+        error("[DoD UI] Tooltip must be a boolean.")
+    end
+    if opts.TooltipTransparency ~= nil and (type(opts.TooltipTransparency) ~= "number" or opts.TooltipTransparency < 0 or opts.TooltipTransparency > 1 or opts.TooltipTransparency ~= opts.TooltipTransparency) then
+        error("[DoD UI] TooltipTransparency must be a number between 0 and 1.")
+    end
+    if opts.ThemeAutoLoad ~= nil and type(opts.ThemeAutoLoad) ~= "boolean" then
+        error("[DoD UI] ThemeAutoLoad must be a boolean.")
+    end
+
     self._UI = {}
     self._isMobile = UserInputService.TouchEnabled
     self._CustomColorOverrides = {}
-    self._NotifPosition = "TopRight"
+    self._NotifPosition = opts.NotificationPosition or "TopRight"
     self._Colors = table.clone(D.Colors)
+    if opts.AccentColor then
+        self._AccentOverride = opts.AccentColor
+    end
+    if opts.VersionBadgeColor then
+        self._VersionBadgeOverride = opts.VersionBadgeColor
+    end
     if opts.FocusOverlay ~= nil and type(opts.FocusOverlay) ~= "boolean" then
         error("[DoD UI] FocusOverlay must be a boolean.")
     end
@@ -820,12 +860,12 @@ function Library.new(opts)
         Favorites           = {},
         FavoritesOnly       = false,
         FavoriteHolders     = {},
-        LayoutDensity       = "Normal",
+        LayoutDensity       = opts.LayoutDensity or "Normal",
         ReducedMotion       = false,
-        SectionTransparency = 0.15,
+        SectionTransparency = opts.SectionTransparency or 0.15,
         ScrollFrames        = {},
-        TooltipEnabled      = true,
-        TooltipTransparency = 0.15,
+        TooltipEnabled      = opts.Tooltip ~= false,
+        TooltipTransparency = opts.TooltipTransparency or 0.15,
         StandaloneTabs      = {},
     }
 
@@ -845,6 +885,9 @@ function Library.new(opts)
     self:_initTooltip()
     self:_bindToggleKey()
 
+    if opts.ReducedMotion == true then
+        self:SetReducedMotion(true)
+    end
     self:SetTheme(self.ThemeName, true)
     if self.Acrylic then
         self:_updateAcrylicBlur()
@@ -892,7 +935,9 @@ function Library.new(opts)
 
     self._initialized = true
 
-    self:LoadThemeConfig("settings", true)
+    if opts.ThemeAutoLoad ~= false then
+        self:LoadThemeConfig("settings", true)
+    end
 
     return self
 end
