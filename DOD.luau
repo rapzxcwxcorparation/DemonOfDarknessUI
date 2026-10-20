@@ -35,7 +35,16 @@ local RunService         = game:GetService("RunService")
 local MarketplaceService = game:GetService("MarketplaceService")
 local Stats              = game:GetService("Stats")
 local UserInputService   = game:GetService("UserInputService")
-local TweenService       = game:GetService("TweenService")
+local _ReducedMotion     = false
+local _RealTweenService  = game:GetService("TweenService")
+local TweenService = {
+    Create = function(_, obj, info, props)
+        if _ReducedMotion and info then
+            info = TweenInfo.new(0, info.EasingStyle, info.EasingDirection, info.RepeatCount, info.Reverses, info.DelayTime)
+        end
+        return _RealTweenService:Create(obj, info, props)
+    end,
+}
 local CoreGui            = game:GetService("CoreGui")
 local Lighting           = game:GetService("Lighting")
 local SoundService       = game:GetService("SoundService")
@@ -698,6 +707,8 @@ function Library.new(opts)
         s.Parent = SoundService
         self._Sounds[name] = s
     end
+    self._SoundsEnabled = true
+    self._SoundVolume = 1
     self.CategoryAlign = opts.CategoryAlign or "Center"
     if self.CategoryAlign ~= "Center" and self.CategoryAlign ~= "Left" and self.CategoryAlign ~= "Right" then
         self.CategoryAlign = "Center"
@@ -800,6 +811,11 @@ function Library.new(opts)
         ConfigRegistry      = {},
         ConfigCounter       = {},
         ConfigAutoSave      = nil,
+        Favorites           = {},
+        FavoritesOnly       = false,
+        FavoriteHolders     = {},
+        LayoutDensity       = "Normal",
+        ReducedMotion       = false,
         ScrollFrames        = {},
     }
 
@@ -955,6 +971,9 @@ function Library:SetTheme(themeName, silent)
             UI.SearchInput.PlaceholderColor3 = self._Colors.TextDim
         end
         if UI.SearchIcon then UI.SearchIcon.ImageColor3 = self._Colors.TextDim end
+        if UI.FavoritesToggleIcon then
+            UI.FavoritesToggleIcon.ImageColor3 = self._STATE.FavoritesOnly and self._Colors.Accent or self._Colors.TextDim
+        end
         if UI.MobileToggle then
             UI.MobileToggle.BackgroundColor3 = self._Colors.Card
             UI.MobileToggle.TextColor3 = self._Colors.Text
@@ -1057,6 +1076,46 @@ function Library:SetAcrylicIntensity(intensity)
     self:_updateAcrylicBlur()
 end
 
+function Library:SetReducedMotion(enabled)
+    if self:_isDead() then return end
+    _ReducedMotion = enabled and true or false
+    self._STATE.ReducedMotion = _ReducedMotion
+end
+
+function Library:_densityPadding(base)
+    local mode = self._STATE.LayoutDensity or "Normal"
+    if mode == "Compact" then return math.max(2, math.floor(base / 2)) end
+    if mode == "Spacious" then return base + 4 end
+    return base
+end
+
+function Library:SetLayoutDensity(density)
+    if self:_isDead() then return end
+    local mode = tostring(density or "Normal")
+    if mode ~= "Compact" and mode ~= "Spacious" then mode = "Normal" end
+    self._STATE.LayoutDensity = mode
+    local function applyPadding(layout, base)
+        if layout then
+            layout.Padding = UDim.new(0, self:_densityPadding(base))
+        end
+    end
+    for body, _ in pairs(self._STATE.SearchBodies) do
+        if body and body.Parent then
+            applyPadding(body:FindFirstChildOfClass("UIListLayout"), 8)
+        end
+    end
+    for name, page in pairs(self._STATE.ContentPages) do
+        if page and page.Parent then
+            applyPadding(page:FindFirstChildOfClass("UIListLayout"), 10)
+            local cols = self._STATE.TabColumns[name]
+            if cols then
+                if cols.Left then applyPadding(cols.Left:FindFirstChildOfClass("UIListLayout"), 10) end
+                if cols.Right then applyPadding(cols.Right:FindFirstChildOfClass("UIListLayout"), 10) end
+            end
+        end
+    end
+end
+
 function Library:_registerThemeRefresher(fn)
     table.insert(self._STATE.ThemeRefreshers, fn)
 end
@@ -1109,6 +1168,166 @@ function Library:SetNotificationPosition(pos)
     self._NotifPosition = tostring(pos or "TopRight")
 end
 
+function Library:SetFavoritesOnly(enabled)
+    if self:_isDead() then return end
+    self._STATE.FavoritesOnly = enabled and true or false
+    local icon = self._UI.FavoritesToggleIcon
+    if icon then
+        TweenService:Create(icon, TweenInfo.new(0.15), {
+            ImageColor3 = self._STATE.FavoritesOnly and self._Colors.Accent or self._Colors.TextDim,
+            ImageTransparency = self._STATE.FavoritesOnly and 0 or 0.4,
+        }):Play()
+    end
+    self:_applySearchFilter()
+end
+
+function Library:Confirm(title, text, onYes, onNo)
+    if self:_isDead() then return end
+    if not self._UI.MainGui or not self._UI.MainGui.Parent then return end
+
+    if self._ActiveConfirm and self._ActiveConfirm.Parent then
+        self._ActiveConfirm:Destroy()
+    end
+
+    local overlay = Instance.new("TextButton")
+    overlay.Name = "DoD_ConfirmOverlay"
+    overlay.Size = UDim2.fromScale(1, 1)
+    overlay.BackgroundColor3 = Color3.new(0, 0, 0)
+    overlay.BackgroundTransparency = 1
+    overlay.Text = ""
+    overlay.AutoButtonColor = false
+    overlay.ZIndex = 9500
+    overlay.Parent = self._UI.MainGui
+
+    local panel = Instance.new("Frame", overlay)
+    panel.Size = UDim2.fromOffset(340, 176)
+    panel.Position = UDim2.new(0.5, 0, 0.5, 30)
+    panel.AnchorPoint = Vector2.new(0.5, 0.5)
+    panel.BackgroundColor3 = self._Colors.Bg2
+    panel.BackgroundTransparency = 1
+    panel.BorderSizePixel = 0
+    panel.ZIndex = 9501
+    Instance.new("UICorner", panel).CornerRadius = UDim.new(0, 12)
+
+    local panelStroke = Instance.new("UIStroke", panel)
+    panelStroke.Color = self._Colors.Accent
+    panelStroke.Thickness = 1
+    panelStroke.Transparency = 0.2
+    panelStroke.ZIndex = 9501
+
+    local icon = Instance.new("ImageLabel", panel)
+    icon.Size = UDim2.fromOffset(28, 28)
+    icon.Position = UDim2.new(0, 16, 0, 16)
+    icon.BackgroundTransparency = 1
+    icon.Image = GetIcon("alert-triangle")
+    icon.ImageColor3 = self._Colors.Accent
+    icon.ImageTransparency = 1
+    icon.ZIndex = 9502
+
+    local titleLbl = Instance.new("TextLabel", panel)
+    titleLbl.Size = UDim2.new(1, -58, 0, 22)
+    titleLbl.Position = UDim2.new(0, 52, 0, 18)
+    titleLbl.BackgroundTransparency = 1
+    titleLbl.Text = tostring(title or "Confirm")
+    titleLbl.TextColor3 = self._Colors.Text
+    titleLbl.Font = Enum.Font.GothamBold
+    titleLbl.TextSize = 14
+    titleLbl.TextXAlignment = Enum.TextXAlignment.Left
+    titleLbl.TextTransparency = 1
+    titleLbl.ZIndex = 9502
+
+    local textLbl = Instance.new("TextLabel", panel)
+    textLbl.Size = UDim2.new(1, -32, 0, 60)
+    textLbl.Position = UDim2.new(0, 16, 0, 48)
+    textLbl.BackgroundTransparency = 1
+    textLbl.Text = tostring(text or "")
+    textLbl.TextColor3 = self._Colors.TextDim
+    textLbl.Font = Enum.Font.GothamMedium
+    textLbl.TextSize = 11
+    textLbl.TextWrapped = true
+    textLbl.TextXAlignment = Enum.TextXAlignment.Left
+    textLbl.TextYAlignment = Enum.TextYAlignment.Top
+    textLbl.TextTransparency = 1
+    textLbl.ZIndex = 9502
+
+    local cancel = Instance.new("TextButton", panel)
+    cancel.Size = UDim2.fromOffset(148, 34)
+    cancel.Position = UDim2.new(0, 16, 1, -50)
+    cancel.BackgroundColor3 = self._Colors.Card
+    cancel.Text = "Cancel"
+    cancel.TextColor3 = self._Colors.Text
+    cancel.Font = Enum.Font.GothamBold
+    cancel.TextSize = 12
+    cancel.AutoButtonColor = false
+    cancel.ZIndex = 9502
+    Instance.new("UICorner", cancel).CornerRadius = UDim.new(0, 8)
+
+    local cancelStroke = Instance.new("UIStroke", cancel)
+    cancelStroke.Color = self._Colors.Border
+    cancelStroke.Thickness = 1
+    cancelStroke.ZIndex = 9502
+
+    local confirm = Instance.new("TextButton", panel)
+    confirm.Size = UDim2.fromOffset(148, 34)
+    confirm.Position = UDim2.new(1, -164, 1, -50)
+    confirm.BackgroundColor3 = self._Colors.Accent
+    confirm.Text = "Confirm"
+    confirm.TextColor3 = Fn.accentTextColor(self._Colors.Accent)
+    confirm.Font = Enum.Font.GothamBold
+    confirm.TextSize = 12
+    confirm.AutoButtonColor = false
+    confirm.ZIndex = 9502
+    Instance.new("UICorner", confirm).CornerRadius = UDim.new(0, 8)
+
+    local confirmStroke = Instance.new("UIStroke", confirm)
+    confirmStroke.Color = self._Colors.Accent
+    confirmStroke.Thickness = 1
+    confirmStroke.ZIndex = 9502
+
+    Fn.bindPressAnimation(cancel)
+    Fn.bindPressAnimation(confirm)
+
+    local closed = false
+    local function close(confirmed)
+        if closed then return end
+        closed = true
+        if self._ActiveConfirm == overlay then self._ActiveConfirm = nil end
+        TweenService:Create(overlay, TweenInfo.new(0.15), {BackgroundTransparency = 1}):Play()
+        local info = TweenInfo.new(0.15)
+        TweenService:Create(panel, info, {BackgroundTransparency = 1}):Play()
+        TweenService:Create(titleLbl, info, {TextTransparency = 1}):Play()
+        TweenService:Create(textLbl, info, {TextTransparency = 1}):Play()
+        TweenService:Create(icon, info, {ImageTransparency = 1}):Play()
+        TweenService:Create(cancel, info, {BackgroundTransparency = 1, TextTransparency = 1}):Play()
+        TweenService:Create(confirm, info, {BackgroundTransparency = 1, TextTransparency = 1}):Play()
+        task.delay(0.18, function()
+            if overlay.Parent then overlay:Destroy() end
+            if confirmed then
+                if onYes then pcall(onYes) end
+            else
+                if onNo then pcall(onNo) end
+            end
+        end)
+    end
+
+    cancel.MouseButton1Click:Connect(function() close(false) end)
+    confirm.MouseButton1Click:Connect(function() close(true) end)
+    overlay.MouseButton1Click:Connect(function() close(false) end)
+
+    self._ActiveConfirm = overlay
+
+    TweenService:Create(overlay, TweenInfo.new(0.2), {BackgroundTransparency = 0.4}):Play()
+    TweenService:Create(panel, TweenInfo.new(0.25, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {
+        BackgroundTransparency = 0,
+        Position = UDim2.new(0.5, 0, 0.5, 0),
+    }):Play()
+    TweenService:Create(titleLbl, TweenInfo.new(0.2), {TextTransparency = 0}):Play()
+    TweenService:Create(textLbl, TweenInfo.new(0.2), {TextTransparency = 0}):Play()
+    TweenService:Create(icon, TweenInfo.new(0.2), {ImageTransparency = 0}):Play()
+
+    return overlay
+end
+
 function Library:_updateNotifPositions()
     local pos = self._NotifPosition or "TopRight"
     for index, frame in ipairs(self._STATE.activeNotifs) do
@@ -1140,6 +1359,10 @@ function Library:ExportConfig()
             out._controls[id] = val
         end
     end
+    out._favorites = {}
+    for id, val in pairs(self._STATE.Favorites or {}) do
+        if val then table.insert(out._favorites, id) end
+    end
     return out
 end
 
@@ -1148,6 +1371,15 @@ function Library:ImportConfig(config, silent)
     if type(config) ~= "table" then return end
     if config._theme and D.Themes[config._theme] then
         self:SetTheme(config._theme, true)
+    end
+    if type(config._favorites) == "table" then
+        table.clear(self._STATE.Favorites)
+        for _, id in ipairs(config._favorites) do
+            if type(id) == "string" then
+                self._STATE.Favorites[id] = true
+            end
+        end
+        self:_applySearchFilter()
     end
     local applied, total = 0, 0
     for id, val in pairs(config._controls or {}) do
@@ -1439,6 +1671,105 @@ function Library:Notify(title, text, notifyType)
         local nxt = table.remove(STATE.NotifQueue, 1)
         if nxt and not STATE.Destroyed then self:Notify(nxt.title, nxt.text, nxt.nType) end
     end)
+end
+
+function Library:ShowLoading(label)
+    if self:_isDead() then return end
+    local UI = self._UI
+    if not UI.LoadingFrame or not UI.LoadingFrame.Parent then
+        local frame = Instance.new("Frame", UI.MainContainer)
+        frame.Name = "LoadingFrame"
+        frame.Size = UDim2.fromOffset(220, 42)
+        frame.Position = UDim2.new(1, -16, 1, -16)
+        frame.AnchorPoint = Vector2.new(1, 1)
+        frame.BackgroundColor3 = self._Colors.Bg2
+        frame.BackgroundTransparency = 0.1
+        frame.BorderSizePixel = 0
+        frame.ZIndex = 500
+        Instance.new("UICorner", frame).CornerRadius = UDim.new(0, 8)
+        local stroke = Instance.new("UIStroke", frame)
+        stroke.Color = self._Colors.Accent
+        stroke.Thickness = 1
+        stroke.Transparency = 0.3
+        stroke.ZIndex = 500
+        local spinner = Instance.new("ImageLabel", frame)
+        spinner.Name = "Spinner"
+        spinner.Size = UDim2.fromOffset(20, 20)
+        spinner.Position = UDim2.new(0, 10, 0.5, -10)
+        spinner.BackgroundTransparency = 1
+        spinner.Image = GetIcon("loader")
+        spinner.ImageColor3 = self._Colors.Accent
+        spinner.ZIndex = 501
+        local lbl = Instance.new("TextLabel", frame)
+        lbl.Name = "LoadingLabel"
+        lbl.Size = UDim2.new(1, -42, 1, -6)
+        lbl.Position = UDim2.new(0, 36, 0, 0)
+        lbl.BackgroundTransparency = 1
+        lbl.Text = tostring(label or "Loading...")
+        lbl.TextColor3 = self._Colors.Text
+        lbl.Font = Enum.Font.GothamBold
+        lbl.TextSize = 11
+        lbl.TextXAlignment = Enum.TextXAlignment.Left
+        lbl.TextTruncate = Enum.TextTruncate.AtEnd
+        lbl.ZIndex = 501
+        local bar = Instance.new("Frame", frame)
+        bar.Name = "ProgressBar"
+        bar.Size = UDim2.new(0, 0, 0, 2)
+        bar.Position = UDim2.new(0, 4, 1, -3)
+        bar.BackgroundColor3 = self._Colors.Accent
+        bar.BorderSizePixel = 0
+        bar.ZIndex = 501
+        Instance.new("UICorner", bar).CornerRadius = UDim.new(1, 0)
+        UI.LoadingFrame = frame
+        UI.LoadingSpinner = spinner
+        UI.LoadingLabel = lbl
+        UI.LoadingBar = bar
+        local angle = 0
+        if self._loadingSpinConn then
+            pcall(function() self._loadingSpinConn:Disconnect() end)
+            self._loadingSpinConn = nil
+        end
+        self._loadingSpinConn = RunService.RenderStepped:Connect(function(dt)
+            if not spinner or not spinner.Parent then
+                if self._loadingSpinConn then
+                    self._loadingSpinConn:Disconnect()
+                    self._loadingSpinConn = nil
+                end
+                return
+            end
+            angle = (angle + dt * 360) % 360
+            spinner.Rotation = angle
+        end)
+    else
+        UI.LoadingLabel.Text = tostring(label or "Loading...")
+    end
+end
+
+function Library:SetProgress(value)
+    if self:_isDead() then return end
+    local bar = self._UI.LoadingBar
+    if not bar or not bar.Parent then return end
+    local v = math.clamp(tonumber(value) or 0, 0, 1)
+    bar.Size = UDim2.new(v, 0, 0, 2)
+end
+
+function Library:HideLoading()
+    if self:_isDead() then return end
+    local frame = self._UI.LoadingFrame
+    if not frame or not frame.Parent then return end
+    if self._loadingSpinConn then
+        self._loadingSpinConn:Disconnect()
+        self._loadingSpinConn = nil
+    end
+    local out = TweenService:Create(frame, TweenInfo.new(0.2), {BackgroundTransparency = 1})
+    out:Play()
+    out.Completed:Connect(function()
+        if frame and frame.Parent then frame:Destroy() end
+    end)
+    self._UI.LoadingFrame = nil
+    self._UI.LoadingSpinner = nil
+    self._UI.LoadingLabel = nil
+    self._UI.LoadingBar = nil
 end
 
 -- =========================================================
@@ -2313,6 +2644,26 @@ function Library:_bindToggleKey()
             self:Toggle()
         end
     end, self)
+    Fn.track(UserInputService.InputBegan, function(input, gameProcessed)
+        if gameProcessed then return end
+        if input.UserInputType ~= Enum.UserInputType.MouseButton2 then return end
+        local mp = UserInputService:GetMouseLocation()
+        for configId, holder in pairs(self._STATE.FavoriteHolders or {}) do
+            if holder and holder.Parent then
+                local p, s = holder.AbsolutePosition, holder.AbsoluteSize
+                if mp.X >= p.X and mp.X <= p.X + s.X and mp.Y >= p.Y and mp.Y <= p.Y + s.Y then
+                    if self._STATE.Favorites[configId] then
+                        self._STATE.Favorites[configId] = nil
+                    else
+                        self._STATE.Favorites[configId] = true
+                    end
+                    self:_applySearchFilter()
+                    self:_triggerAutoSave()
+                    break
+                end
+            end
+        end
+    end, self)
 end
 
 function Library:SetVersion(text)
@@ -2372,6 +2723,54 @@ function Library:_generateAutoTheme(imageStr)
     self:SetTheme("Auto", true)
 end
 
+function Library:_wallpaperCachePath(url)
+    local hash = 0
+    for i = 1, #url do
+        hash = (hash * 31 + string.byte(url, i)) % 2147483647
+    end
+    return "DoD_Wallpaper_" .. tostring(hash) .. ".url"
+end
+
+function Library:_getCachedWallpaper(url)
+    if type(url) ~= "string" then return nil end
+    local cacheFile = self:_wallpaperCachePath(url)
+    local cached = nil
+    pcall(function()
+        if isfile and type(isfile) == "function" and readfile and type(readfile) == "function" then
+            if isfile(cacheFile) then
+                cached = readfile(cacheFile)
+            end
+        end
+    end)
+    return cached
+end
+
+function Library:_setWallpaperCache(url, result)
+    if type(url) ~= "string" or type(result) ~= "string" then return end
+    local cacheFile = self:_wallpaperCachePath(url)
+    pcall(function()
+        if writefile and type(writefile) == "function" then
+            writefile(cacheFile, result)
+        end
+    end)
+end
+
+function Library:ClearWallpaperCache()
+    if self:_isDead() then return end
+    local removed = 0
+    pcall(function()
+        if listfiles and type(listfiles) == "function" and delfile and type(delfile) == "function" then
+            for _, f in ipairs(listfiles()) do
+                if string.find(f, "DoD_Wallpaper_", 1, true) and string.sub(f, -4) == ".url" then
+                    pcall(delfile, f)
+                    removed = removed + 1
+                end
+            end
+        end
+    end)
+    self:Notify("WALLPAPER", "Cleared " .. removed .. " cached entries", "success")
+end
+
 function Library:SetWallpaper(assetId, transparency)
     if self:_isDead() then return end
     local UI = self._UI
@@ -2384,22 +2783,27 @@ function Library:SetWallpaper(assetId, transparency)
     local img = tostring(assetId)
     
     if string.sub(img, 1, 4) == "http" then
-        -- Web URL (GitHub, Imgur, etc)
-        self:Notify("WALLPAPER", "Downloading 4K image...", "info")
-        local success, content = pcall(function()
-            if getcustomasset and type(getcustomasset) == "function" then
-                return getcustomasset(img)
-            else
-                return nil
-            end
-        end)
-        
-        if success and content then
-            UI.Wallpaper.Image = content
+        local cached = self:_getCachedWallpaper(img)
+        if cached and #cached > 0 then
+            UI.Wallpaper.Image = cached
+            self:Notify("WALLPAPER", "Loaded from cache", "info")
         else
-            warn("[DoD UI] Gagal memuat wallpaper dari URL. Executor lu mungkin tidak support 'getcustomasset', atau link-nya invalid.")
-            UI.Wallpaper.Visible = false
-            return
+            self:Notify("WALLPAPER", "Downloading 4K image...", "info")
+            local success, content = pcall(function()
+                if getcustomasset and type(getcustomasset) == "function" then
+                    return getcustomasset(img)
+                else
+                    return nil
+                end
+            end)
+            if success and content then
+                UI.Wallpaper.Image = content
+                self:_setWallpaperCache(img, content)
+            else
+                warn("[DoD UI] Gagal memuat wallpaper dari URL. Executor lu mungkin tidak support 'getcustomasset', atau link-nya invalid.")
+                UI.Wallpaper.Visible = false
+                return
+            end
         end
     elseif string.sub(img, 1, 13) == "rbxassetid://" then
         UI.Wallpaper.Image = img
@@ -3258,7 +3662,7 @@ function Library:_initSearchBar()
     UI.SearchIcon.ImageColor3 = self._Colors.TextDim
 
     UI.SearchInput = Instance.new("TextBox", UI.SearchBar)
-    UI.SearchInput.Size = UDim2.new(1, -50, 1, 0)
+    UI.SearchInput.Size = UDim2.new(1, -72, 1, 0)
     UI.SearchInput.Position = UDim2.new(0, 36, 0, 0)
     UI.SearchInput.BackgroundTransparency = 1
     UI.SearchInput.Text = ""
@@ -3269,6 +3673,25 @@ function Library:_initSearchBar()
     UI.SearchInput.TextSize = 12
     UI.SearchInput.TextXAlignment = Enum.TextXAlignment.Left
     UI.SearchInput.ClearTextOnFocus = false
+
+    local starBtn = Instance.new("TextButton", UI.SearchBar)
+    starBtn.Name = "FavoritesToggle"
+    starBtn.Size = UDim2.fromOffset(16, 16)
+    starBtn.Position = UDim2.new(1, -48, 0.5, -8)
+    starBtn.BackgroundTransparency = 1
+    starBtn.Text = ""
+    starBtn.AutoButtonColor = false
+    local starIcon = Instance.new("ImageLabel", starBtn)
+    starIcon.Size = UDim2.fromScale(1, 1)
+    starIcon.BackgroundTransparency = 1
+    starIcon.Image = GetIcon("star")
+    starIcon.ImageColor3 = self._Colors.TextDim
+    starIcon.ImageTransparency = 0.4
+    starBtn.MouseButton1Click:Connect(function()
+        self:SetFavoritesOnly(not self._STATE.FavoritesOnly)
+    end)
+    UI.FavoritesToggle = starBtn
+    UI.FavoritesToggleIcon = starIcon
 
     local clearBtn = Instance.new("TextButton", UI.SearchBar)
     clearBtn.Size = UDim2.fromOffset(16, 16)
@@ -3323,6 +3746,7 @@ function Library:_applySearchFilter(tabName)
 
     local query = string.lower(STATE.SearchQuery or ""):match("^%s*(.-)%s*$")
     local searching = query ~= ""
+    local favoritesOnly = STATE.FavoritesOnly == true
     local totalMatches = 0
 
     for _, sectionData in ipairs(STATE.SearchSections[tabName] or {}) do
@@ -3337,9 +3761,12 @@ function Library:_applySearchFilter(tabName)
         local anyControlMatches = false
 
         for _, control in ipairs(sectionData.controls) do
-            local matches = not searching
+            local textMatch = not searching
                 or sectionMatches
                 or string.find(string.lower(control.searchText), query, 1, true) ~= nil
+            local ctrlId = control.instance:GetAttribute("DoD_CtrlId")
+            local favMatch = not favoritesOnly or (ctrlId ~= nil and STATE.Favorites[ctrlId] ~= nil)
+            local matches = textMatch and favMatch
             if matches then
                 if control.instance.Parent == nil and control.parent and control.parent.Parent then
                     control.instance.Parent = control.parent
@@ -3375,8 +3802,11 @@ function Library:_applySearchFilter(tabName)
     local pool = STATE.SearchTopLevel and STATE.SearchTopLevel[tabName]
     if pool then
         for _, ctrl in ipairs(pool) do
-            local matches = not searching
+            local textMatch = not searching
                 or string.find(string.lower(ctrl.searchText), query, 1, true) ~= nil
+            local ctrlId = ctrl.instance:GetAttribute("DoD_CtrlId")
+            local favMatch = not favoritesOnly or (ctrlId ~= nil and STATE.Favorites[ctrlId] ~= nil)
+            local matches = textMatch and favMatch
             if matches then
                 if ctrl.instance.Parent == nil and ctrl.parent and ctrl.parent.Parent then
                     ctrl.instance.Parent = ctrl.parent
@@ -3461,6 +3891,13 @@ function Library:_registerSearchControl(instance, searchText)
     })
     self:_applySearchFilter(sectionData.tabName)
     return instance
+end
+
+function Library:_attachFavorite(holder, configId)
+    if not holder or not configId then return end
+    if holder:GetAttribute("DoD_CtrlId") then return end
+    holder:SetAttribute("DoD_CtrlId", configId)
+    self._STATE.FavoriteHolders[configId] = holder
 end
 
 -- =========================================================
@@ -4525,7 +4962,7 @@ function Library:CreateTab(categoryName, tabName)
 
     local pageList = Instance.new("UIListLayout", page)
     pageList.SortOrder = Enum.SortOrder.LayoutOrder
-    pageList.Padding = UDim.new(0, 10)
+    pageList.Padding = UDim.new(0, self:_densityPadding(10))
 
     -- Top container (full width) for banners
     local topContainer = Instance.new("Frame", page)
@@ -4556,7 +4993,7 @@ function Library:CreateTab(categoryName, tabName)
     leftCol.ClipsDescendants = false
     local leftLayout = Instance.new("UIListLayout", leftCol)
     leftLayout.SortOrder = Enum.SortOrder.LayoutOrder
-    leftLayout.Padding = UDim.new(0, 10)
+    leftLayout.Padding = UDim.new(0, self:_densityPadding(10))
 
     -- Right Column
     local rightCol = Instance.new("Frame", columnsContainer)
@@ -4568,7 +5005,7 @@ function Library:CreateTab(categoryName, tabName)
     rightCol.ClipsDescendants = false
     local rightLayout = Instance.new("UIListLayout", rightCol)
     rightLayout.SortOrder = Enum.SortOrder.LayoutOrder
-    rightLayout.Padding = UDim.new(0, 10)
+    rightLayout.Padding = UDim.new(0, self:_densityPadding(10))
 
     -- Auto-scale height for columns container
     local function updateColumnsSize()
@@ -4727,7 +5164,7 @@ function Library:SwitchTab(tabName)
     end
 end
 
-function Library:CreateSection(tabName, title, summary, defaultOpen, columnName)
+function Library:CreateSection(tabName, title, summary, defaultOpen, columnName, iconName)
     if self:_isDead() then return end
     if type(title) ~= "string" or title == "" then
         error("[DoD UI] CreateSection requires a non-empty title.")
@@ -4739,6 +5176,9 @@ function Library:CreateSection(tabName, title, summary, defaultOpen, columnName)
         error("[DoD UI] CreateSection column must be 'Left' or 'Right'.")
     end
     columnName = columnName or "Left"
+    local hasIcon = iconName ~= nil and iconName ~= ""
+    local labelOffset = hasIcon and 42 or 16
+    local labelWidth = hasIcon and -76 or -50
 
     local columns = self._STATE.TabColumns[tabName]
     if not columns then
@@ -4771,9 +5211,21 @@ function Library:CreateSection(tabName, title, summary, defaultOpen, columnName)
     header.AutoButtonColor = false
     Fn.bindPressAnimation(header)
 
+    local sectionIcon
+    if hasIcon then
+        sectionIcon = Instance.new("ImageLabel", header)
+        sectionIcon.Name = "SectionIcon"
+        sectionIcon.Size = UDim2.fromOffset(18, 18)
+        sectionIcon.Position = UDim2.new(0, 16, 0, 10)
+        sectionIcon.BackgroundTransparency = 1
+        sectionIcon.Image = GetIcon(iconName)
+        sectionIcon.ImageColor3 = self._Colors.Accent
+        sectionIcon.ScaleType = Enum.ScaleType.Fit
+    end
+
     local titleLabel = Instance.new("TextLabel", header)
-    titleLabel.Size = UDim2.new(1, -50, 0, 18)
-    titleLabel.Position = UDim2.new(0, 16, 0, 10)
+    titleLabel.Size = UDim2.new(1, labelWidth, 0, 18)
+    titleLabel.Position = UDim2.new(0, labelOffset, 0, 10)
     titleLabel.BackgroundTransparency = 1
     titleLabel.Text = title
     titleLabel.TextColor3 = self._Colors.Text
@@ -4783,8 +5235,8 @@ function Library:CreateSection(tabName, title, summary, defaultOpen, columnName)
     titleLabel.TextTruncate = Enum.TextTruncate.AtEnd
 
     local summaryLabel = Instance.new("TextLabel", header)
-    summaryLabel.Size = UDim2.new(1, -50, 0, 14)
-    summaryLabel.Position = UDim2.new(0, 16, 0, 28)
+    summaryLabel.Size = UDim2.new(1, labelWidth, 0, 14)
+    summaryLabel.Position = UDim2.new(0, labelOffset, 0, 28)
     summaryLabel.BackgroundTransparency = 1
     summaryLabel.Text = summary or ""
     summaryLabel.TextColor3 = self._Colors.TextDim
@@ -4829,7 +5281,7 @@ function Library:CreateSection(tabName, title, summary, defaultOpen, columnName)
 
     local bodyLayout = Instance.new("UIListLayout", body)
     bodyLayout.SortOrder = Enum.SortOrder.LayoutOrder
-    bodyLayout.Padding = UDim.new(0, 8)
+    bodyLayout.Padding = UDim.new(0, self:_densityPadding(8))
 
     local bodyPad = Instance.new("UIPadding", body)
     bodyPad.PaddingLeft = UDim.new(0, 12)
@@ -4955,6 +5407,7 @@ function Library:CreateSection(tabName, title, summary, defaultOpen, columnName)
         cardStroke.Color = self._Colors.Border
         titleLabel.TextColor3 = self._Colors.Text
         summaryLabel.TextColor3 = self._Colors.TextDim
+        if sectionIcon then sectionIcon.ImageColor3 = self._Colors.Accent end
         indicator.Image = GetIcon(expanded and "arrow-up" or "arrow-down")
         indicator.ImageColor3 = expanded and self._Colors.Accent or self._Colors.TextDim
         separator.BackgroundColor3 = self._Colors.Border
@@ -5376,6 +5829,25 @@ function Library:CreateThemeCustomizer(tabName)
     self:AddToggle(section, "Weather effects", self._STATE.WeatherEnabled, function(enabled)
         self:SetWeather(enabled, self._STATE.WeatherType, self._STATE.WeatherIntensity)
     end)
+    self:AddToggle(section, "UI Sounds", self._SoundsEnabled, function(enabled)
+        self:SetSoundsEnabled(enabled)
+    end)
+    self:AddSlider(section, "Sound Volume", 0, 1, self._SoundVolume or 1, 2, function(value)
+        self:SetSoundVolume(value)
+    end)
+    self:AddToggle(section, "Reduced Motion", self._STATE.ReducedMotion or false, function(enabled)
+        self:SetReducedMotion(enabled)
+    end)
+    local _densityIdx = 2
+    local _curDensity = self._STATE.LayoutDensity or "Normal"
+    if _curDensity == "Compact" then _densityIdx = 1
+    elseif _curDensity == "Spacious" then _densityIdx = 3 end
+    self:AddDropdown(section, "Layout Density", { "Compact", "Normal", "Spacious" }, _densityIdx, function(idx, val)
+        self:SetLayoutDensity(val)
+    end)
+    self:AddButton(section, "Clear Wallpaper Cache", function()
+        self:ClearWallpaperCache()
+    end)
     return section
 end
 
@@ -5459,7 +5931,8 @@ function Library:AddToggle(page, text, default, callback)
         end
     end)
 
-    self:_registerConfigState(self:_getConfigId("toggle", text),
+    local _favId = self:_getConfigId("toggle", text)
+    self:_registerConfigState(_favId,
         function() return state end,
         function(v, silent)
             if type(v) ~= "boolean" then return end
@@ -5472,6 +5945,7 @@ function Library:AddToggle(page, text, default, callback)
             end
         end
     )
+    self:_attachFavorite(holder, _favId)
 
     holder.MouseEnter:Connect(function()
         self:PlaySound("Hover")
@@ -5826,7 +6300,8 @@ function Library:AddSlider(page, text, minVal, maxVal, default, decimals, callba
         end
     end, self)
 
-    self:_registerConfigState(self:_getConfigId("slider", text),
+    local _favId = self:_getConfigId("slider", text)
+    self:_registerConfigState(_favId,
         function() return val end,
         function(v, silent)
             if type(v) ~= "number" or v ~= v then return end
@@ -5837,6 +6312,7 @@ function Library:AddSlider(page, text, minVal, maxVal, default, decimals, callba
             end
         end
     )
+    self:_attachFavorite(holder, _favId)
 
     holder.MouseEnter:Connect(function()
         self:PlaySound("Hover")
@@ -6075,7 +6551,8 @@ function Library:AddDropdown(page, text, options, defaultIndex, callback)
         end
     end
 
-    self:_registerConfigState(self:_getConfigId("dropdown", text),
+    local _favId = self:_getConfigId("dropdown", text)
+    self:_registerConfigState(_favId,
         function() return currentIndex end,
         function(v, silent)
             if type(v) ~= "number" or v < 1 or v > #options then return end
@@ -6088,6 +6565,7 @@ function Library:AddDropdown(page, text, options, defaultIndex, callback)
             end
         end
     )
+    self:_attachFavorite(holder, _favId)
 
     local function updatePopupPosition()
         local camera = getCam()
@@ -6446,7 +6924,8 @@ function Library:AddMultiDropdown(page, text, options, defaults, callback)
         end
     end)
 
-    self:_registerConfigState(self:_getConfigId("multi_dropdown", text),
+    local _favId = self:_getConfigId("multi_dropdown", text)
+    self:_registerConfigState(_favId,
         function() return getSelectedIndices() end,
         function(v, silent)
             if type(v) ~= "table" then return end
@@ -6463,6 +6942,7 @@ function Library:AddMultiDropdown(page, text, options, defaults, callback)
             end
         end
     )
+    self:_attachFavorite(holder, _favId)
 
     self:_registerThemeRefresher(function()
         holder.BackgroundColor3 = self._Colors.Card
@@ -6931,6 +7411,8 @@ function Library:AddKeybind(page, text, default, callback)
         setKey = setLabel,
     }
     table.insert(STATE.activeKeybindListeners, listener)
+    local _favId = self:_getConfigId("keybind", text)
+    self:_attachFavorite(holder, _favId)
     if not STATE._overlayAutoShown then
         STATE._overlayAutoShown = true
         self._UI.KeybindOverlayToggle.Visible = true
@@ -7102,6 +7584,15 @@ function Library:AddButton(page, text, callback)
     return self:_registerSearchControl(holder, text)
 end
 
+function Library:_convertRichText(text)
+    if type(text) ~= "string" then text = tostring(text or "") end
+    local s = text
+    s = s:gsub("%*%*(.-)%*%*", "<b>%1</b>")
+    s = s:gsub("__(.-)__", "<i>%1</i>")
+    s = s:gsub("`(.-)`", '<font name="RobotoMono">%1</font>')
+    return s
+end
+
 function Library:AddLabel(page, text)
     if self:_isDead() then return end
     local label = Instance.new("TextLabel", page)
@@ -7109,7 +7600,8 @@ function Library:AddLabel(page, text)
     label.Size = UDim2.new(1, 0, 0, 0)
     label.AutomaticSize = Enum.AutomaticSize.Y
     label.BackgroundTransparency = 1
-    label.Text = tostring(text)
+    label.RichText = true
+    label.Text = self:_convertRichText(text)
     label.TextColor3 = self._Colors.Text
     label.Font = Enum.Font.GothamMedium
     label.TextSize = 12
@@ -7150,7 +7642,8 @@ function Library:AddParagraph(page, title, desc)
     titleLabel.LayoutOrder = 1
     titleLabel.Size = UDim2.new(1, 0, 0, 18)
     titleLabel.BackgroundTransparency = 1
-    titleLabel.Text = tostring(title)
+    titleLabel.RichText = true
+    titleLabel.Text = self:_convertRichText(title)
     titleLabel.TextColor3 = self._Colors.Text
     titleLabel.Font = Enum.Font.GothamBold
     titleLabel.TextSize = 12
@@ -7163,7 +7656,8 @@ function Library:AddParagraph(page, title, desc)
     description.Size = UDim2.new(1, 0, 0, 0)
     description.AutomaticSize = Enum.AutomaticSize.Y
     description.BackgroundTransparency = 1
-    description.Text = tostring(desc)
+    description.RichText = true
+    description.Text = self:_convertRichText(desc)
     description.TextColor3 = self._Colors.TextDim
     description.Font = Enum.Font.Gotham
     description.TextSize = 11
@@ -7245,7 +7739,8 @@ function Library:AddTextbox(page, text, placeholder, callback)
         self:_triggerAutoSave()
     end)
 
-    self:_registerConfigState(self:_getConfigId("textbox", text),
+    local _favId = self:_getConfigId("textbox", text)
+    self:_registerConfigState(_favId,
         function() return input.Text end,
         function(v, silent)
             if type(v) ~= "string" then return end
@@ -7257,6 +7752,7 @@ function Library:AddTextbox(page, text, placeholder, callback)
             end
         end
     )
+    self:_attachFavorite(holder, _favId)
 
     self:_registerThemeRefresher(function()
         holder.BackgroundColor3 = self._Colors.Card
@@ -7472,7 +7968,8 @@ function Library:AddColorPicker(page, text, defaultColor3, callback)
         updateColor(false)
     end)
 
-    self:_registerConfigState(self:_getConfigId("colorpicker", text),
+    local _favId = self:_getConfigId("colorpicker", text)
+    self:_registerConfigState(_favId,
         function() return { currentColor.R, currentColor.G, currentColor.B } end,
         function(v, silent)
             if type(v) ~= "table" or type(v[1]) ~= "number" or type(v[2]) ~= "number" or type(v[3]) ~= "number" then return end
@@ -7485,6 +7982,7 @@ function Library:AddColorPicker(page, text, defaultColor3, callback)
             end
         end
     )
+    self:_attachFavorite(holder, _favId)
 
     local function pickFromPosition(mode, position)
         if mode == "SV" then
@@ -7680,10 +8178,24 @@ end
 
 function Library:PlaySound(soundName)
     if self:_isDead() then return end
+    if not self._SoundsEnabled then return end
     local s = self._Sounds and self._Sounds[soundName]
     if s then
+        local baseVol = (GuiSound[soundName] and GuiSound[soundName].vol) or 1
+        s.Volume = baseVol * (self._SoundVolume or 1)
         s:Play()
     end
+end
+
+function Library:SetSoundsEnabled(enabled)
+    if self:_isDead() then return end
+    self._SoundsEnabled = enabled and true or false
+end
+
+function Library:SetSoundVolume(volume)
+    if self:_isDead() then return end
+    local v = tonumber(volume) or 1
+    self._SoundVolume = math.clamp(v, 0, 1)
 end
 
 function Library:Toggle()
