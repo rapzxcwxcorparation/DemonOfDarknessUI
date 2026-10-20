@@ -777,7 +777,6 @@ function Library.new(opts)
     self:_initMobileToggle()
     self:_initDrag()
     self:_initShadowSync()
-    self:_initProfileCard()
     self:_initTooltip()
     self:_bindToggleKey()
 
@@ -1708,137 +1707,7 @@ function Library:SetToggleKey(key)
     self:Notify("KEYBIND", "Toggle GUI: " .. key.Name)
 end
 
-function Library:_initProfileCard()
-    local UI = self._UI
-    local STATE = self._STATE
-
-    local card = Instance.new("Frame", UI.MainContainer)
-    card.Name = "ProfileCard"
-    card.Size = UDim2.new(0, 210, 0, 54)
-    card.Position = UDim2.new(0, 15, 1, -69)
-    card.BackgroundColor3 = self._Colors.Card
-    card.BackgroundTransparency = 0.1
-    card.BorderSizePixel = 0
-    card.ZIndex = 100
-    card.ClipsDescendants = true
-    Instance.new("UICorner", card).CornerRadius = UDim.new(0, 12)
-
-    local cardStroke = Instance.new("UIStroke", card)
-    cardStroke.Color = self._Colors.Border
-    cardStroke.Thickness = 1
-    cardStroke.Transparency = 0.3
-
-    local avatarWrap = Instance.new("Frame", card)
-    avatarWrap.Size = UDim2.fromOffset(38, 38)
-    avatarWrap.Position = UDim2.new(0, 8, 0.5, -19)
-    avatarWrap.BackgroundColor3 = self._Colors.Bg2
-    avatarWrap.BorderSizePixel = 0
-    avatarWrap.ZIndex = 101
-    Instance.new("UICorner", avatarWrap).CornerRadius = UDim.new(1, 0)
-
-    local avStroke = Instance.new("UIStroke", avatarWrap)
-    avStroke.Color = self._Colors.Accent
-    avStroke.Thickness = 1.5
-    avStroke.Transparency = 0.2
-
-    local avatar = Instance.new("ImageLabel", avatarWrap)
-    avatar.Size = UDim2.fromScale(1, 1)
-    avatar.BackgroundTransparency = 1
-    avatar.ScaleType = Enum.ScaleType.Crop
-    avatar.ZIndex = 101
-    Instance.new("UICorner", avatar).CornerRadius = UDim.new(1, 0)
-
-    local name = Instance.new("TextLabel", card)
-    name.Size = UDim2.new(1, -58, 0, 15)
-    name.Position = UDim2.new(0, 54, 0, 10)
-    name.BackgroundTransparency = 1
-    name.Text = LocalPlayer.DisplayName or LocalPlayer.Name
-    name.TextColor3 = self._Colors.Text
-    name.Font = Enum.Font.GothamBold
-    name.TextSize = 12
-    name.TextXAlignment = Enum.TextXAlignment.Left
-    name.TextTruncate = Enum.TextTruncate.AtEnd
-    name.ZIndex = 101
-
-    local badge = Instance.new("TextLabel", card)
-    badge.Size = UDim2.fromOffset(38, 14)
-    badge.Position = UDim2.new(1, -46, 0, 12)
-    badge.BackgroundColor3 = self._Colors.Accent
-    badge.BackgroundTransparency = 0.85
-    badge.Text = "USER"
-    badge.TextColor3 = self._Colors.Accent
-    badge.Font = Enum.Font.GothamBlack
-    badge.TextSize = 8
-    badge.BorderSizePixel = 0
-    badge.ZIndex = 102
-    Instance.new("UICorner", badge).CornerRadius = UDim.new(1, 0)
-    
-    local badgeStroke = Instance.new("UIStroke", badge)
-    badgeStroke.Color = self._Colors.Accent
-    badgeStroke.Thickness = 1
-    badgeStroke.Transparency = 0.5
-    badgeStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
-
-    local username = Instance.new("TextLabel", card)
-    username.Size = UDim2.new(1, -58, 0, 12)
-    username.Position = UDim2.new(0, 54, 0, 24)
-    username.BackgroundTransparency = 1
-    username.Text = "@" .. LocalPlayer.Name
-    username.TextColor3 = self._Colors.TextDim
-    username.Font = Enum.Font.GothamMedium
-    username.TextSize = 9
-    username.TextXAlignment = Enum.TextXAlignment.Left
-    username.TextTruncate = Enum.TextTruncate.AtEnd
-    username.ZIndex = 101
-
-    local executor = Instance.new("TextLabel", card)
-    executor.Size = UDim2.new(1, -58, 0, 10)
-    executor.Position = UDim2.new(0, 54, 0, 36)
-    executor.BackgroundTransparency = 1
-    executor.Text = "Fetching..."
-    executor.TextColor3 = self._Colors.Accent
-    executor.Font = Enum.Font.GothamBold
-    executor.TextSize = 8
-    executor.TextXAlignment = Enum.TextXAlignment.Left
-    executor.ZIndex = 101
-
-    task.spawn(function()
-        local ok, content = pcall(function()
-            return Players:GetUserThumbnailAsync(LocalPlayer.UserId, Enum.ThumbnailType.HeadShot, Enum.ThumbnailSize.Size100x100)
-        end)
-        if ok and content and avatar and avatar.Parent then
-            avatar.Image = content
-        end
-    end)
-
-    task.spawn(function()
-        local execName = "Unknown"
-        if type(identifyexecutor) == "function" then
-            local ok, res = pcall(identifyexecutor)
-            if ok and type(res) == "string" and res ~= "" then execName = res end
-        end
-        if executor and executor.Parent then
-            local device = UserInputService.TouchEnabled and not UserInputService.KeyboardEnabled and "Mobile" or "PC"
-            executor.Text = execName .. "  |  " .. device
-        end
-    end)
-
-    self:_registerThemeRefresher(function()
-        if not card.Parent then return end
-        card.BackgroundColor3 = self._Colors.Card
-        cardStroke.Color = self._Colors.Border
-        avatarWrap.BackgroundColor3 = self._Colors.Bg2
-        avStroke.Color = self._Colors.Accent
-        name.TextColor3 = self._Colors.Text
-        username.TextColor3 = self._Colors.TextDim
-        executor.TextColor3 = self._Colors.Accent
-        badge.BackgroundColor3 = self._Colors.Accent
-        badge.TextColor3 = self._Colors.Accent
-        badgeStroke.Color = self._Colors.Accent
-    end)
-
-    UI.ProfileCard = card
-end
+-- Removed _initProfileCard
 
 function Library:CreateKeybindOverlay()
     if self:_isDead() then return end
@@ -2137,7 +2006,6 @@ function Library:_applyNavigationLayout()
     local hasContent = UI.ContentArea ~= nil
 
     local BOTTOM_PADDING = 15
-    local PROFILE_CARD_HEIGHT = 68
 
     if position == "Side" then
         UI.CategoryBar.Size = UDim2.new(0, sideWidth, 1, -62)
@@ -2155,7 +2023,7 @@ function Library:_applyNavigationLayout()
         end
         if hasContent then
             local contentTop = 121
-            local contentH = math.max(120, mainH - contentTop - BOTTOM_PADDING - PROFILE_CARD_HEIGHT)
+            local contentH = math.max(120, mainH - contentTop - BOTTOM_PADDING)
             UI.ContentArea.Size = UDim2.new(1, -(sideWidth + 45), 0, contentH)
             UI.ContentArea.Position = UDim2.new(0, sideWidth + 20, 0, contentTop)
         end
@@ -2201,7 +2069,7 @@ function Library:_applyNavigationLayout()
         end
         if hasContent then
             local contentTop = 162
-            local contentH = math.max(150, mainH - contentTop - BOTTOM_PADDING - PROFILE_CARD_HEIGHT)
+            local contentH = math.max(150, mainH - contentTop - BOTTOM_PADDING)
             UI.ContentArea.Size = UDim2.new(1, -30, 0, contentH)
             UI.ContentArea.Position = UDim2.new(0, 15, 0, contentTop)
         end
@@ -2439,7 +2307,7 @@ end
 function Library:_initContentArea()
     local UI = self._UI
     UI.ContentArea = Instance.new("Frame", UI.MainContainer)
-    UI.ContentArea.Size = UDim2.new(1, -30, 1, -234)
+    UI.ContentArea.Size = UDim2.new(1, -30, 1, -177)
     UI.ContentArea.Position = UDim2.new(0, 15, 0, 162)
     UI.ContentArea.BackgroundTransparency = 1
     UI.ContentArea.ClipsDescendants = false
