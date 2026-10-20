@@ -316,7 +316,11 @@ D.Colors = {
     Red       = Color3.fromRGB(248, 113, 113),
 }
 
-D.FocusOverlayTypes = { "None", "Grid", "Dots", "Diagonal", "Crosshatch", "Radial" }
+D.FocusOverlayTypes = {
+    "None", "Grid", "Dots", "Diagonal", "Crosshatch", "Radial",
+    "Scanlines", "Bricks", "Concentric", "Stars", "Plus", "Zigzag",
+    "Matrix", "Waves"
+}
 D.WeatherTypes = {
     "Snow", "Rain", "Leaves", "Stars", "Bubbles",
     "Petals", "Embers", "Fireflies", "Mist", "Aurora",
@@ -657,6 +661,8 @@ function Library.new(opts)
     self.TabPosition = opts.TabPosition or "Top"
     self.TabWidth    = opts.TabWidth or 130
     self.ToggleKey   = opts.ToggleKey or Enum.KeyCode.RightShift
+    self._TitleIconName = (type(opts.TitleIcon) == "string" and opts.TitleIcon ~= "")
+        and opts.TitleIcon or "sparkles"
     self.CategoryAlign = opts.CategoryAlign or "Center"
     if self.CategoryAlign ~= "Center" and self.CategoryAlign ~= "Left" and self.CategoryAlign ~= "Right" then
         self.CategoryAlign = "Center"
@@ -836,7 +842,17 @@ function Library:SetTheme(themeName, silent)
         if UI.TabBarDivider then UI.TabBarDivider.BackgroundColor3 = self._Colors.Border end
         if UI.TitleLabel then UI.TitleLabel.TextColor3 = self._Colors.Text end
         if UI.TitleDiscord then UI.TitleDiscord.TextColor3 = self._Colors.TextDim end
-        if UI.TitleLogoDot then UI.TitleLogoDot.BackgroundColor3 = self._Colors.Accent end
+        if UI.TitleLogoBadge then
+            UI.TitleLogoBadge.BackgroundColor3 = self._Colors.Accent
+            if UI.TitleLogoGradient then
+                UI.TitleLogoGradient.Color = ColorSequence.new({
+                    ColorSequenceKeypoint.new(0, self._Colors.Accent),
+                    ColorSequenceKeypoint.new(1, self._Colors.Accent2),
+                })
+            end
+            if UI.TitleLogoStroke then UI.TitleLogoStroke.Color = self._Colors.Accent end
+            if UI.TitleLogoIcon then UI.TitleLogoIcon.ImageColor3 = Fn.accentTextColor(self._Colors.Accent) end
+        end
         if UI.TitleVersionBadge then
             UI.TitleVersionBadge.BackgroundColor3 = self._Colors.Accent
             UI.TitleVersionBadge.TextColor3 = Fn.accentTextColor(self._Colors.Accent)
@@ -1279,59 +1295,10 @@ function Library:_initMainGui()
     UI.MainStroke.Thickness = 1.5
 
     self._shadowLayers = {}
-    local shadow = Instance.new("ImageLabel", UI.MainGui)
-    shadow.Name = "LibShadow"
-    shadow.AnchorPoint = MC.AnchorPoint
-    shadow.Size = UDim2.new(1, 40, 1, 40)
-    shadow.Position = MC.Position
-    shadow.BackgroundTransparency = 1
-    shadow.Image = "rbxassetid://1316045217"
-    shadow.ImageColor3 = Color3.new(0, 0, 0)
-    shadow.ImageTransparency = 0.45
-    shadow.ScaleType = Enum.ScaleType.Slice
-    shadow.SliceCenter = Rect.new(10, 10, 118, 118)
-    shadow.ZIndex = 9
-    local scale = Instance.new("UIScale", shadow)
-    scale.Scale = 1
-    table.insert(self._shadowLayers, {
-        frame = shadow, offset = 0, scale = scale, baseTransparency = 0.45,
-    })
 end
 
 function Library:_initShadowSync()
-    local SHADOW_PADDING = 32
-    local function sync()
-        local pos = self._UI.MainContainer.Position
-        for _, layer in ipairs(self._shadowLayers) do
-            layer.frame.Position = UDim2.new(
-                pos.X.Scale, pos.X.Offset + layer.offset,
-                pos.Y.Scale, pos.Y.Offset + layer.offset
-            )
-        end
-    end
-    local function syncSize()
-        local sz = self._UI.MainContainer.Size
-        for _, layer in ipairs(self._shadowLayers) do
-            layer.frame.Size = UDim2.fromOffset(sz.X.Offset + SHADOW_PADDING, sz.Y.Offset + SHADOW_PADDING)
-        end
-    end
-    local function syncScale()
-        local scale = self._UI.MainScale.Scale
-        for _, layer in ipairs(self._shadowLayers) do
-            layer.scale.Scale = scale
-        end
-    end
-    sync()
-    syncSize()
-    syncScale()
-    Fn.track(self._UI.MainContainer:GetPropertyChangedSignal("Position"), sync, self)
-    Fn.track(self._UI.MainContainer:GetPropertyChangedSignal("Size"), syncSize, self)
-    Fn.track(self._UI.MainContainer:GetPropertyChangedSignal("Visible"), function()
-        for _, layer in ipairs(self._shadowLayers) do
-            layer.frame.Visible = self._UI.MainContainer.Visible
-        end
-    end, self)
-    Fn.track(self._UI.MainScale:GetPropertyChangedSignal("Scale"), syncScale, self)
+    self._shadowLayers = {}
 end
 
 function Library:_initKeybindOverlay()
@@ -1718,6 +1685,17 @@ function Library:SetToggleKey(key)
     self:Notify("KEYBIND", "Toggle GUI: " .. key.Name)
 end
 
+function Library:SetTitleIcon(iconName)
+    if self:_isDead() then return end
+    if type(iconName) ~= "string" or iconName == "" then
+        error("[DoD UI] SetTitleIcon expects a non-empty icon name string.")
+    end
+    self._TitleIconName = iconName
+    if self._UI.TitleLogoIcon then
+        self._UI.TitleLogoIcon.Image = GetIcon(iconName)
+    end
+end
+
 -- Removed _initProfileCard
 
 function Library:CreateKeybindOverlay()
@@ -1755,16 +1733,55 @@ function Library:_initTitleBar()
     UI.TitleGradient.Rotation = 90
     UI.TitleGradient.Transparency = NumberSequence.new(0.85)
 
-    UI.TitleLogoDot = Instance.new("Frame", UI.TitleBar)
-    UI.TitleLogoDot.Size = UDim2.new(0, 8, 0, 8)
-    UI.TitleLogoDot.Position = UDim2.new(0, 16, 0.5, -4)
-    UI.TitleLogoDot.BackgroundColor3 = self._Colors.Accent
-    UI.TitleLogoDot.BorderSizePixel = 0
-    Instance.new("UICorner", UI.TitleLogoDot).CornerRadius = UDim.new(1, 0)
+    local logoBadge = Instance.new("Frame", UI.TitleBar)
+    logoBadge.Name = "TitleLogoBadge"
+    logoBadge.Size = UDim2.fromOffset(20, 20)
+    logoBadge.Position = UDim2.new(0, 12, 0.5, -10)
+    logoBadge.BackgroundColor3 = self._Colors.Accent
+    logoBadge.BorderSizePixel = 0
+    Instance.new("UICorner", logoBadge).CornerRadius = UDim.new(0, 6)
+
+    local logoGradient = Instance.new("UIGradient", logoBadge)
+    logoGradient.Rotation = 135
+    logoGradient.Color = ColorSequence.new({
+        ColorSequenceKeypoint.new(0, self._Colors.Accent),
+        ColorSequenceKeypoint.new(1, self._Colors.Accent2),
+    })
+
+    local logoStroke = Instance.new("UIStroke", logoBadge)
+    logoStroke.Color = self._Colors.Accent
+    logoStroke.Thickness = 1
+    logoStroke.Transparency = 0.5
+
+    local logoIcon = Instance.new("ImageLabel", logoBadge)
+    logoIcon.Name = "Icon"
+    logoIcon.Size = UDim2.fromOffset(12, 12)
+    logoIcon.Position = UDim2.new(0.5, -6, 0.5, -6)
+    logoIcon.BackgroundTransparency = 1
+    logoIcon.Image = GetIcon(self._TitleIconName)
+    logoIcon.ImageColor3 = Fn.accentTextColor(self._Colors.Accent)
+    logoIcon.ScaleType = Enum.ScaleType.Fit
+
+    local logoScale = Instance.new("UIScale", logoBadge)
+    logoScale.Scale = 1
+
+    logoBadge.MouseEnter:Connect(function()
+        TweenService:Create(logoScale, TweenInfo.new(0.15, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Scale = 1.08}):Play()
+        TweenService:Create(logoStroke, TweenInfo.new(0.15), {Transparency = 0}):Play()
+    end)
+    logoBadge.MouseLeave:Connect(function()
+        TweenService:Create(logoScale, TweenInfo.new(0.15, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Scale = 1}):Play()
+        TweenService:Create(logoStroke, TweenInfo.new(0.15), {Transparency = 0.5}):Play()
+    end)
+
+    UI.TitleLogoBadge = logoBadge
+    UI.TitleLogoGradient = logoGradient
+    UI.TitleLogoStroke = logoStroke
+    UI.TitleLogoIcon = logoIcon
 
     UI.TitleLabel = Instance.new("TextLabel", UI.TitleBar)
     UI.TitleLabel.Size = UDim2.new(0, 200, 1, 0)
-    UI.TitleLabel.Position = UDim2.new(0, 32, 0, 0)
+    UI.TitleLabel.Position = UDim2.new(0, 40, 0, 0)
     UI.TitleLabel.BackgroundTransparency = 1
     UI.TitleLabel.Text = self.Title
     UI.TitleLabel.TextColor3 = self._Colors.Text
@@ -2569,6 +2586,129 @@ function Library:_rebuildFocusPattern()
             line.BackgroundColor3 = pickColor(index)
             line.BackgroundTransparency = 0.9
             line.BorderSizePixel = 0
+        end
+    elseif patternType == "Scanlines" then
+        local count = 30
+        for index = 1, count do
+            local line = Instance.new("Frame", UI.GridPattern)
+            line.Size = UDim2.new(1, 0, 0, 1)
+            line.Position = UDim2.new(0, 0, index / count, 0)
+            line.BackgroundColor3 = pickColor(index)
+            line.BackgroundTransparency = 0.88
+            line.BorderSizePixel = 0
+        end
+    elseif patternType == "Bricks" then
+        local rows, cols = 10, 8
+        local rowH = 1 / rows
+        for r = 1, rows do
+            local hLine = Instance.new("Frame", UI.GridPattern)
+            hLine.Size = UDim2.new(1, 0, 0, 1)
+            hLine.Position = UDim2.new(0, 0, r * rowH, 0)
+            hLine.BackgroundColor3 = pickColor(r)
+            hLine.BackgroundTransparency = 0.88
+            hLine.BorderSizePixel = 0
+            local isOdd = (r % 2 == 1)
+            local limit = isOdd and cols or (cols - 1)
+            local offset = isOdd and 0 or (0.5 / cols)
+            for c = 1, limit do
+                local vLine = Instance.new("Frame", UI.GridPattern)
+                vLine.Size = UDim2.new(0, 1, rowH, 0)
+                vLine.Position = UDim2.new((c / cols) + offset, 0, (r - 1) * rowH, 0)
+                vLine.BackgroundColor3 = pickColor(r + c)
+                vLine.BackgroundTransparency = 0.88
+                vLine.BorderSizePixel = 0
+            end
+        end
+    elseif patternType == "Concentric" then
+        local rings = 10
+        for index = 1, rings do
+            local ring = Instance.new("Frame", UI.GridPattern)
+            ring.AnchorPoint = Vector2.new(0.5, 0.5)
+            ring.Position = UDim2.new(0.5, 0, 0.5, 0)
+            local scale = index / rings
+            ring.Size = UDim2.new(scale, 0, scale, 0)
+            ring.BackgroundTransparency = 1
+            ring.BorderSizePixel = 0
+            local stroke = Instance.new("UIStroke", ring)
+            stroke.Color = pickColor(index)
+            stroke.Thickness = 1
+            stroke.Transparency = 0.88
+            Instance.new("UICorner", ring).CornerRadius = UDim.new(1, 0)
+        end
+    elseif patternType == "Stars" then
+        for index = 1, 60 do
+            local dot = Instance.new("Frame", UI.GridPattern)
+            local sz = math.random(1, 3)
+            dot.Size = UDim2.fromOffset(sz, sz)
+            dot.Position = UDim2.new(math.random(), 0, math.random(), 0)
+            dot.BackgroundColor3 = pickColor(index)
+            dot.BackgroundTransparency = math.random(30, 70) / 100
+            dot.BorderSizePixel = 0
+            Instance.new("UICorner", dot).CornerRadius = UDim.new(1, 0)
+        end
+    elseif patternType == "Plus" then
+        for xi = 1, 8 do
+            for yi = 1, 6 do
+                local plus = Instance.new("TextLabel", UI.GridPattern)
+                plus.Size = UDim2.fromOffset(14, 14)
+                plus.Position = UDim2.new(xi / 9, 0, yi / 7, 0)
+                plus.BackgroundTransparency = 1
+                plus.Text = "+"
+                plus.TextColor3 = pickColor(xi + yi)
+                plus.TextTransparency = 0.7
+                plus.Font = Enum.Font.GothamBold
+                plus.TextSize = 16
+            end
+        end
+    elseif patternType == "Zigzag" then
+        local rows, segments = 10, 14
+        for r = 1, rows do
+            local y = r / (rows + 1)
+            for s = 1, segments do
+                local seg = Instance.new("Frame", UI.GridPattern)
+                seg.AnchorPoint = Vector2.new(0.5, 0.5)
+                seg.Size = UDim2.new(0.1, 0, 0, 1)
+                local x = s / (segments + 1)
+                local dir = (s % 2 == 0) and 40 or -40
+                seg.Position = UDim2.new(x, 0, y, 0)
+                seg.Rotation = dir
+                seg.BackgroundColor3 = pickColor(r + s)
+                seg.BackgroundTransparency = 0.88
+                seg.BorderSizePixel = 0
+            end
+        end
+    elseif patternType == "Matrix" then
+        for index = 1, 20 do
+            local col = Instance.new("Frame", UI.GridPattern)
+            col.Size = UDim2.new(0, 1, 1, 0)
+            col.Position = UDim2.new(index / 21, 0, 0, 0)
+            col.BackgroundColor3 = pickColor(index)
+            col.BorderSizePixel = 0
+            local grad = Instance.new("UIGradient", col)
+            grad.Rotation = 90
+            grad.Transparency = NumberSequence.new({
+                NumberSequenceKeypoint.new(0, 1),
+                NumberSequenceKeypoint.new(0.5, 0.85),
+                NumberSequenceKeypoint.new(1, 1),
+            })
+        end
+    elseif patternType == "Waves" then
+        local waveCount = 4
+        local points = 40
+        for w = 1, waveCount do
+            local baseY = w / (waveCount + 1)
+            for p = 1, points do
+                local seg = Instance.new("Frame", UI.GridPattern)
+                seg.AnchorPoint = Vector2.new(0.5, 0.5)
+                seg.Size = UDim2.new(0.04, 0, 0, 1)
+                local x = p / (points + 1)
+                local y = baseY + math.sin(x * math.pi * 6) * 0.04
+                seg.Position = UDim2.new(x, 0, y, 0)
+                seg.Rotation = math.cos(x * math.pi * 6) * 35
+                seg.BackgroundColor3 = pickColor(w + p)
+                seg.BackgroundTransparency = 0.88
+                seg.BorderSizePixel = 0
+            end
         end
     end
 end
@@ -4052,6 +4192,15 @@ function Library:CreateThemeCustomizer(tabName)
     self:AddColorPicker(section, "Accent color", self._Colors.Accent, function(color)
         self:SetAccentColor(color)
     end)
+    self:AddDropdown(section, "Focus overlay pattern", D.FocusOverlayTypes,
+        math.max(1, table.find(D.FocusOverlayTypes, self._STATE.FocusOverlayType) or 2),
+        function(_, overlayType)
+            self:SetFocusOverlay(self._STATE.FocusOverlayEnabled, overlayType)
+        end
+    )
+    self:AddToggle(section, "Focus overlay", self._STATE.FocusOverlayEnabled, function(enabled)
+        self:SetFocusOverlay(enabled, self._STATE.FocusOverlayType)
+    end)
     self:AddToggle(section, "Acrylic blur", self.Acrylic, function(enabled)
         self:SetAcrylic(enabled)
     end)
@@ -4213,7 +4362,7 @@ function Library:AddSlider(page, text, minVal, maxVal, default, decimals, callba
     Instance.new("UICorner", holder).CornerRadius = UDim.new(0, 8)
 
     local lab = Instance.new("TextLabel", holder)
-    lab.Size = UDim2.new(1, -100, 0, 18)
+    lab.Size = UDim2.new(1, -112, 0, 18)
     lab.Position = UDim2.new(0, 14, 0, 6)
     lab.BackgroundTransparency = 1
     lab.Text = text
@@ -4224,23 +4373,28 @@ function Library:AddSlider(page, text, minVal, maxVal, default, decimals, callba
     lab.TextTruncate = Enum.TextTruncate.AtEnd
 
     local valBox = Instance.new("TextBox", holder)
-    valBox.Size = UDim2.new(0, 72, 0, 22)
-    valBox.Position = UDim2.new(1, -86, 0, 4)
+    valBox.Name = "ValueBox"
+    valBox.Size = UDim2.new(0, 80, 0, 24)
+    valBox.Position = UDim2.new(1, -94, 0, 3)
     valBox.BackgroundColor3 = self._Colors.Bg2
-    valBox.BackgroundTransparency = 0.3
-    valBox.TextColor3 = self._Colors.Accent
+    valBox.BackgroundTransparency = 0.5
+    valBox.TextColor3 = self._Colors.Text
     valBox.Font = Enum.Font.GothamBold
     valBox.TextSize = 12
     valBox.Text = tostring(default)
     valBox.TextXAlignment = Enum.TextXAlignment.Center
     valBox.ClearTextOnFocus = false
     valBox.BorderSizePixel = 0
-    Instance.new("UICorner", valBox).CornerRadius = UDim.new(0, 6)
+    Instance.new("UICorner", valBox).CornerRadius = UDim.new(0, 8)
+
+    local valBoxPad = Instance.new("UIPadding", valBox)
+    valBoxPad.PaddingLeft = UDim.new(0, 10)
+    valBoxPad.PaddingRight = UDim.new(0, 10)
 
     local valBoxStroke = Instance.new("UIStroke", valBox)
     valBoxStroke.Color = self._Colors.Border
     valBoxStroke.Thickness = 1
-    valBoxStroke.Transparency = 0.5
+    valBoxStroke.Transparency = 0.6
 
     local sliderBg = Instance.new("Frame", holder)
     sliderBg.Size = UDim2.new(1, -28, 0, 8)
@@ -4352,13 +4506,26 @@ function Library:AddSlider(page, text, minVal, maxVal, default, decimals, callba
         editing = true
         originalText = valBox.Text
         TweenService:Create(valBoxStroke, TweenInfo.new(0.15), {Color = self._Colors.Accent, Transparency = 0}):Play()
-        TweenService:Create(valBox, TweenInfo.new(0.15), {BackgroundTransparency = 0.1}):Play()
+        TweenService:Create(valBox, TweenInfo.new(0.15), {BackgroundTransparency = 0.15}):Play()
+    end)
+
+    valBox.MouseEnter:Connect(function()
+        if not editing then
+            TweenService:Create(valBox, TweenInfo.new(0.15), {BackgroundTransparency = 0.35}):Play()
+            TweenService:Create(valBoxStroke, TweenInfo.new(0.15), {Transparency = 0.4}):Play()
+        end
+    end)
+    valBox.MouseLeave:Connect(function()
+        if not editing then
+            TweenService:Create(valBox, TweenInfo.new(0.15), {BackgroundTransparency = 0.5}):Play()
+            TweenService:Create(valBoxStroke, TweenInfo.new(0.15), {Transparency = 0.6}):Play()
+        end
     end)
 
     valBox.FocusLost:Connect(function(enterPressed)
         editing = false
-        TweenService:Create(valBoxStroke, TweenInfo.new(0.15), {Color = self._Colors.Border, Transparency = 0.5}):Play()
-        TweenService:Create(valBox, TweenInfo.new(0.15), {BackgroundTransparency = 0.3}):Play()
+        TweenService:Create(valBoxStroke, TweenInfo.new(0.15), {Color = self._Colors.Border, Transparency = 0.6}):Play()
+        TweenService:Create(valBox, TweenInfo.new(0.15), {BackgroundTransparency = 0.5}):Play()
         if valBox.Text == originalText then
             valBox.Text = formatValue(val)
             return
@@ -4418,7 +4585,7 @@ function Library:AddSlider(page, text, minVal, maxVal, default, decimals, callba
     self:_registerThemeRefresher(function()
         holder.BackgroundColor3 = self._Colors.Card
         lab.TextColor3 = self._Colors.Text
-        valBox.TextColor3 = self._Colors.Accent
+        valBox.TextColor3 = self._Colors.Text
         valBox.BackgroundColor3 = self._Colors.Bg2
         valBoxStroke.Color = self._Colors.Border
         fill.BackgroundColor3 = self._Colors.Accent
@@ -4690,6 +4857,21 @@ function Library:AddDropdown(page, text, options, defaultIndex, callback)
         popup.BackgroundColor3 = self._Colors.Bg2
         popupStroke.Color = self._Colors.Accent
         popupScroll.ScrollBarImageColor3 = self._Colors.Accent
+        popupSearch.BackgroundColor3 = self._Colors.Card
+        searchBox.TextColor3 = self._Colors.Text
+        searchBox.PlaceholderColor3 = self._Colors.TextDim
+        for _, btn in ipairs(optionButtons) do
+            btn.BackgroundColor3 = self._Colors.Card
+            for _, child in ipairs(btn:GetChildren()) do
+                if child:IsA("TextLabel") then
+                    if child.Size.X.Offset == 24 and child.Size.X.Scale == 0 then
+                        child.TextColor3 = self._Colors.Accent
+                    else
+                        child.TextColor3 = self._Colors.Text
+                    end
+                end
+            end
+        end
     end)
 
     local searchableOptions = {}
