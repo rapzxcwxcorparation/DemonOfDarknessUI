@@ -731,8 +731,6 @@ function Library.new(opts)
 
     self._UI = {}
     self._isMobile = UserInputService.TouchEnabled
-    self._SavedMouseBehavior = nil
-    self._SavedMouseIconEnabled = nil
     self._Colors = table.clone(D.Colors)
     if opts.FocusOverlay ~= nil and type(opts.FocusOverlay) ~= "boolean" then
         error("[DoD UI] FocusOverlay must be a boolean.")
@@ -825,6 +823,15 @@ function Library.new(opts)
     Fn.track(self._UI.MainContainer:GetPropertyChangedSignal("AbsoluteSize"), function()
         self:_applyNavigationLayout()
     end, self)
+
+    -- Force initial mouse state on load
+    if self._STATE.GuiVisible then
+        if not self._isMobile then
+            UserInputService.MouseIconEnabled = false
+            if self._UI.CustomCursor then self._UI.CustomCursor.Visible = true end
+        end
+        UserInputService.MouseBehavior = Enum.MouseBehavior.Default
+    end
 
     return self
 end
@@ -1342,6 +1349,17 @@ function Library:_initMainGui()
     UI.CustomCursor.Visible = false
 
     Fn.track(RunService.RenderStepped, function()
+        if self._STATE and self._STATE.GuiVisible then
+            if UserInputService.MouseBehavior ~= Enum.MouseBehavior.Default then
+                UserInputService.MouseBehavior = Enum.MouseBehavior.Default
+            end
+            if not self._isMobile and UserInputService.MouseIconEnabled then
+                UserInputService.MouseIconEnabled = false
+            end
+            if UI.CustomCursor and not UI.CustomCursor.Visible and not self._isMobile then
+                UI.CustomCursor.Visible = true
+            end
+        end
         if UI.CustomCursor.Visible then
             local mouse = UserInputService:GetMouseLocation()
             UI.CustomCursor.Position = UDim2.fromOffset(mouse.X, mouse.Y)
@@ -2777,10 +2795,13 @@ function Library:_setAccordionState(categoryName, expanded)
     STATE.AccordionExpanded[categoryName] = expanded
     if expanded then
         data.tabList.Visible = true
-        local targetH = data.layout.AbsoluteContentSize.Y + 4
-        TweenService:Create(data.tabList, TweenInfo.new(0.28, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
-            Size = UDim2.new(1, 0, 0, targetH)
-        }):Play()
+        data.tabList.Size = UDim2.new(1, 0, 0, 0)
+        task.defer(function()
+            local targetH = data.layout.AbsoluteContentSize.Y + 4
+            TweenService:Create(data.tabList, TweenInfo.new(0.28, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
+                Size = UDim2.new(1, 0, 0, targetH)
+            }):Play()
+        end)
     else
         local tw = TweenService:Create(data.tabList, TweenInfo.new(0.28, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
             Size = UDim2.new(1, 0, 0, 0)
@@ -6665,15 +6686,7 @@ function Library:Minimize()
     
     self:PlaySound("Click")
     
-    if self._SavedMouseBehavior ~= nil then
-        UserInputService.MouseBehavior = self._SavedMouseBehavior
-        UserInputService.MouseIconEnabled = self._SavedMouseIconEnabled
-        self._SavedMouseBehavior = nil
-        self._SavedMouseIconEnabled = nil
-    else
-        UserInputService.MouseBehavior = Enum.MouseBehavior.Default
-        UserInputService.MouseIconEnabled = true
-    end
+    UserInputService.MouseIconEnabled = true
     if UI.CustomCursor then UI.CustomCursor.Visible = false end
     
     local centerX = 0.5
@@ -6771,15 +6784,7 @@ function Library:Toggle()
 
     if STATE.GuiVisible then
         -- CLOSE ANIMATION (Smooth Slide Down + Fade Out)
-        if self._SavedMouseBehavior ~= nil then
-            UserInputService.MouseBehavior = self._SavedMouseBehavior
-            UserInputService.MouseIconEnabled = self._SavedMouseIconEnabled
-            self._SavedMouseBehavior = nil
-            self._SavedMouseIconEnabled = nil
-        else
-            UserInputService.MouseBehavior = Enum.MouseBehavior.Default
-            UserInputService.MouseIconEnabled = true
-        end
+        UserInputService.MouseIconEnabled = true
         if UI.CustomCursor then UI.CustomCursor.Visible = false end
         
         STATE.SavedPos = UI.MainContainer.Position
@@ -6806,11 +6811,6 @@ function Library:Toggle()
         end)
     else
         -- OPEN ANIMATION (Smooth Slide Up + Fade In)
-        if self._SavedMouseBehavior == nil then
-            self._SavedMouseBehavior = UserInputService.MouseBehavior
-            self._SavedMouseIconEnabled = UserInputService.MouseIconEnabled
-        end
-        UserInputService.MouseBehavior = Enum.MouseBehavior.Default
         UserInputService.MouseIconEnabled = false
         if not self._isMobile and UI.CustomCursor then 
             UI.CustomCursor.Visible = true 
@@ -6866,13 +6866,7 @@ function Library:Destroy()
     if STATE.Destroyed then return end
     STATE.Destroyed = true
     
-    if self._SavedMouseBehavior ~= nil then
-        UserInputService.MouseBehavior = self._SavedMouseBehavior
-        UserInputService.MouseIconEnabled = self._SavedMouseIconEnabled
-    else
-        UserInputService.MouseBehavior = Enum.MouseBehavior.Default
-        UserInputService.MouseIconEnabled = true
-    end
+    UserInputService.MouseIconEnabled = true
     STATE.WeatherEnabled = false
     if STATE.GuiTween then
         STATE.GuiTween:Cancel()
