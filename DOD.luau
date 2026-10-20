@@ -816,6 +816,7 @@ function Library.new(opts)
         FavoriteHolders     = {},
         LayoutDensity       = "Normal",
         ReducedMotion       = false,
+        SectionTransparency = 0.15,
         ScrollFrames        = {},
     }
 
@@ -951,11 +952,7 @@ function Library:SetTheme(themeName, silent)
         if UI.TitleVersionBadge then
             local badgeColor = self._VersionBadgeOverride or self._Colors.Accent
             UI.TitleVersionBadge.BackgroundColor3 = badgeColor
-            UI.TitleVersionBadge.TextColor3 = self._Colors.TextDim
-            local vStroke = UI.TitleVersionBadge:FindFirstChildOfClass("UIStroke")
-            if vStroke then
-                vStroke.Color = badgeColor
-            end
+            UI.TitleVersionBadge.TextColor3 = Color3.fromRGB(255, 255, 255)
         end
         if UI.MainStroke then UI.MainStroke.Color = self._Colors.Border end
         if UI.TitleGradient then
@@ -1111,6 +1108,19 @@ function Library:SetLayoutDensity(density)
             if cols then
                 if cols.Left then applyPadding(cols.Left:FindFirstChildOfClass("UIListLayout"), 10) end
                 if cols.Right then applyPadding(cols.Right:FindFirstChildOfClass("UIListLayout"), 10) end
+            end
+        end
+    end
+end
+
+function Library:SetSectionTransparency(transparency)
+    if self:_isDead() then return end
+    local trans = math.clamp(tonumber(transparency) or 0.15, 0, 1)
+    self._STATE.SectionTransparency = trans
+    for _, sections in pairs(self._STATE.SearchSections) do
+        for _, sec in ipairs(sections) do
+            if sec.section and sec.section.Parent then
+                TweenService:Create(sec.section, TweenInfo.new(0.18), {BackgroundTransparency = trans}):Play()
             end
         end
     end
@@ -3052,16 +3062,11 @@ function Library:_initTitleBar()
     UI.TitleVersionBadge.BackgroundColor3 = self._Colors.Accent
     UI.TitleVersionBadge.BackgroundTransparency = 0.85
     UI.TitleVersionBadge.Text = self.Version
-    UI.TitleVersionBadge.TextColor3 = self._Colors.TextDim
-    UI.TitleVersionBadge.Font = Enum.Font.RobotoMono
+    UI.TitleVersionBadge.TextColor3 = Color3.fromRGB(255, 255, 255)
+    UI.TitleVersionBadge.Font = Enum.Font.GothamBold
     UI.TitleVersionBadge.TextSize = 10
     UI.TitleVersionBadge.BorderSizePixel = 0
     Instance.new("UICorner", UI.TitleVersionBadge).CornerRadius = UDim.new(1, 0)
-
-    local vStroke = Instance.new("UIStroke", UI.TitleVersionBadge)
-    vStroke.Color = self._Colors.Accent
-    vStroke.Transparency = 0.7
-    vStroke.Thickness = 1
 
     local vPad = Instance.new("UIPadding", UI.TitleVersionBadge)
     vPad.PaddingLeft = UDim.new(0, 8)
@@ -3532,6 +3537,8 @@ function Library:_applyNavigationLayout()
         if hasSearch then
             UI.SearchBar.Size = UDim2.new(1, -16, 0, 32)
             UI.SearchBar.Position = UDim2.new(0, 8, 0, 8)
+            if UI.SearchInput then UI.SearchInput.Size = UDim2.new(1, -90, 1, 0) end
+            if UI.FavoritesToggle then UI.FavoritesToggle.Position = UDim2.new(1, -48, 0.5, -8) end
         end
 
         UI.Sidebar.Visible = false
@@ -3569,6 +3576,8 @@ function Library:_applyNavigationLayout()
         if hasSearch then
             UI.SearchBar.Size = UDim2.new(1, -30, 0, 28)
             UI.SearchBar.Position = UDim2.new(0, 15, 0, 86)
+            if UI.SearchInput then UI.SearchInput.Size = UDim2.new(1, -100, 1, 0) end
+            if UI.FavoritesToggle then UI.FavoritesToggle.Position = UDim2.new(1, -48, 0.5, -8) end
         end
         if hasContent then
             local contentTop = 119
@@ -3593,6 +3602,8 @@ function Library:_applyNavigationLayout()
         if hasSearch then
             UI.SearchBar.Size = UDim2.new(1, -30, 0, 28)
             UI.SearchBar.Position = UDim2.new(0, 15, 0, 129)
+            if UI.SearchInput then UI.SearchInput.Size = UDim2.new(1, -100, 1, 0) end
+            if UI.FavoritesToggle then UI.FavoritesToggle.Position = UDim2.new(1, -48, 0.5, -8) end
         end
         if hasContent then
             local contentTop = 162
@@ -5266,7 +5277,7 @@ function Library:CreateSection(tabName, title, summary, defaultOpen, columnName,
     section.LayoutOrder = sectionOrder
     section.Size = UDim2.new(1, 0, 0, HEADER_HEIGHT)
     section.BackgroundColor3 = self._Colors.Card
-    section.BackgroundTransparency = 0.15
+    section.BackgroundTransparency = self._STATE.SectionTransparency or 0.15
     section.BorderSizePixel = 0
     section.ClipsDescendants = true
     Instance.new("UICorner", section).CornerRadius = UDim.new(0, 12) -- Softer corners
@@ -5434,8 +5445,9 @@ function Library:CreateSection(tabName, title, summary, defaultOpen, columnName,
     end)
 
     header.MouseEnter:Connect(function()
+        local baseTrans = self._STATE.SectionTransparency or 0.15
         TweenService:Create(section, TweenInfo.new(0.18),
-            {BackgroundColor3 = self._Colors.CardHover, BackgroundTransparency = 0.05}):Play()
+            {BackgroundColor3 = self._Colors.CardHover, BackgroundTransparency = math.max(0, baseTrans - 0.1)}):Play()
         TweenService:Create(cardStroke, TweenInfo.new(0.18),
             {Transparency = 0, Color = self._Colors.Accent, Thickness = 1.2}):Play()
         TweenService:Create(hoverBar, TweenInfo.new(0.2, Enum.EasingStyle.Quart, Enum.EasingDirection.Out),
@@ -5446,8 +5458,9 @@ function Library:CreateSection(tabName, title, summary, defaultOpen, columnName,
         end
     end)
     header.MouseLeave:Connect(function()
+        local baseTrans = self._STATE.SectionTransparency or 0.15
         TweenService:Create(section, TweenInfo.new(0.18),
-            {BackgroundColor3 = self._Colors.Card, BackgroundTransparency = 0.15}):Play()
+            {BackgroundColor3 = self._Colors.Card, BackgroundTransparency = baseTrans}):Play()
         TweenService:Create(cardStroke, TweenInfo.new(0.18),
             {Transparency = 0.4, Color = self._Colors.Border, Thickness = 1}):Play()
         TweenService:Create(hoverBar, TweenInfo.new(0.18, Enum.EasingStyle.Quart, Enum.EasingDirection.Out),
@@ -5476,6 +5489,7 @@ function Library:CreateSection(tabName, title, summary, defaultOpen, columnName,
 
     self:_registerThemeRefresher(function()
         section.BackgroundColor3 = self._Colors.Card
+        section.BackgroundTransparency = self._STATE.SectionTransparency or 0.15
         cardStroke.Color = self._Colors.Border
         titleLabel.TextColor3 = self._Colors.Text
         summaryLabel.TextColor3 = self._Colors.TextDim
@@ -5935,6 +5949,9 @@ function Library:CreateThemeCustomizer(tabName)
     elseif _curDensity == "Spacious" then _densityIdx = 3 end
     self:AddDropdown(section, "Layout Density", { "Compact", "Normal", "Spacious" }, _densityIdx, function(idx, val)
         self:SetLayoutDensity(val)
+    end)
+    self:AddSlider(section, "Section Transparency", 0, 1, self._STATE.SectionTransparency or 0.15, 2, function(value)
+        self:SetSectionTransparency(value)
     end)
     self:AddButton(section, "Clear Wallpaper Cache", function()
         self:ClearWallpaperCache()
