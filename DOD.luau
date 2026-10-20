@@ -822,6 +822,7 @@ function Library.new(opts)
         ScrollFrames        = {},
         TooltipEnabled      = true,
         TooltipTransparency = 0.15,
+        StandaloneTabs      = {},
     }
 
     self:_initNotifications()
@@ -3651,6 +3652,8 @@ end
 function Library:_applyNavigationLayout()
     local UI = self._UI
     if not (UI.CategoryBar and UI.Sidebar and UI.TabBarDivider) then return end
+    UI.Sidebar.Visible = true
+    UI.TabBarDivider.Visible = true
     local position = self.TabPosition
     local mainSize = UI.MainContainer.AbsoluteSize
     local mainW = mainSize.X
@@ -3767,6 +3770,28 @@ function Library:_applyNavigationLayout()
 
     self:_layoutCategoryButtons()
     self:_resizeSubTabs()
+
+    local activeIsStandalone = false
+    local activeCatName = self._STATE.ActiveCategory
+    if activeCatName and self._STATE.CategoryButtons and self._STATE.CategoryButtons[activeCatName] then
+        activeIsStandalone = self._STATE.CategoryButtons[activeCatName].isStandalone == true
+    end
+    if activeIsStandalone and position ~= "Side" then
+        UI.Sidebar.Visible = false
+        UI.TabBarDivider.Visible = false
+        if hasSearch then
+            local searchY = (position == "Top") and 94 or 86
+            UI.SearchBar.Size = UDim2.new(1, -30, 0, 28)
+            UI.SearchBar.Position = UDim2.new(0, 15, 0, searchY)
+        end
+        if hasContent then
+            local contentTop = hasSearch and ((position == "Top") and 127 or 119) or ((position == "Top") and 94 or 86)
+            local bottomReserve = (position == "Bottom") and 76 or BOTTOM_PADDING
+            local contentH = math.max(120, mainH - contentTop - bottomReserve)
+            UI.ContentArea.Size = UDim2.new(1, -30, 0, contentH)
+            UI.ContentArea.Position = UDim2.new(0, 15, 0, contentTop)
+        end
+    end
 end
 
 function Library:_setAccordionState(categoryName, expanded)
@@ -5132,6 +5157,100 @@ function Library:SetActiveCategory(categoryName, preferredTab)
     if self:_isDead() then return end
     local STATE = self._STATE
     if not STATE.CategoryButtons or not STATE.CategoryButtons[categoryName] then return end
+    local targetData = STATE.CategoryButtons[categoryName]
+    if targetData.isStandalone then
+        if STATE.ActiveCategory == categoryName and STATE.ActiveTab then
+            return
+        end
+        for name, data in pairs(STATE.CategoryButtons or {}) do
+            local active = (name == categoryName)
+            if data.isStandalone then
+                if data.isAccordion then
+                    if data.stroke then
+                        TweenService:Create(data.stroke, TweenInfo.new(0.2), {
+                            Transparency = active and 0.3 or 0.7,
+                            Color = active and self._Colors.Accent or self._Colors.Border,
+                        }):Play()
+                    end
+                    if data.button then
+                        TweenService:Create(data.button, TweenInfo.new(0.2), {
+                            BackgroundTransparency = active and 0.4 or 0.75,
+                        }):Play()
+                    end
+                    if data.label then
+                        data.label.TextColor3 = active and self._Colors.Text or self._Colors.TextDim
+                        data.label.Font = active and Enum.Font.GothamBold or Enum.Font.GothamMedium
+                    end
+                    if data.icon then
+                        data.icon.ImageColor3 = active and self._Colors.Accent or self._Colors.TextDim
+                    end
+                else
+                    if data.button then
+                        TweenService:Create(data.button, TweenInfo.new(0.22, Enum.EasingStyle.Quart), {
+                            BackgroundTransparency = active and 0.55 or 1,
+                        }):Play()
+                    end
+                    if data.label then
+                        TweenService:Create(data.label, TweenInfo.new(0.22), {
+                            TextColor3 = active and Color3.fromRGB(255, 255, 255) or self._Colors.TextDim,
+                        }):Play()
+                        data.label.Font = active and Enum.Font.GothamBold or Enum.Font.GothamMedium
+                    end
+                    if data.icon then
+                        TweenService:Create(data.icon, TweenInfo.new(0.22), {
+                            ImageTransparency = active and 0 or 0.45,
+                        }):Play()
+                    end
+                end
+            elseif not data.isAccordion and data.button and data.label and data.icon then
+                TweenService:Create(data.button, TweenInfo.new(0.22), {BackgroundTransparency = 1}):Play()
+                TweenService:Create(data.label, TweenInfo.new(0.22), {TextColor3 = self._Colors.TextDim}):Play()
+                data.label.Font = Enum.Font.GothamMedium
+                TweenService:Create(data.icon, TweenInfo.new(0.22), {ImageTransparency = 0.45}):Play()
+            end
+        end
+        STATE.ActiveCategory = categoryName
+        STATE.ActiveSubIndices = STATE.ActiveSubIndices or {}
+        local tabs = STATE.CategoryTabs[categoryName]
+        if tabs and tabs[1] then
+            STATE.ActiveTab = nil
+            self:SwitchTab(tabs[1])
+        end
+        self:_applyNavigationLayout()
+        return
+    end
+    local prevActive = STATE.ActiveCategory
+    if prevActive and prevActive ~= categoryName then
+        local prevData = STATE.CategoryButtons[prevActive]
+        if prevData and prevData.isStandalone then
+            if prevData.isAccordion then
+                if prevData.stroke then
+                    TweenService:Create(prevData.stroke, TweenInfo.new(0.2), {Transparency = 0.7, Color = self._Colors.Border}):Play()
+                end
+                if prevData.button then
+                    TweenService:Create(prevData.button, TweenInfo.new(0.2), {BackgroundTransparency = 0.75}):Play()
+                end
+                if prevData.label then
+                    prevData.label.TextColor3 = self._Colors.TextDim
+                    prevData.label.Font = Enum.Font.GothamMedium
+                end
+                if prevData.icon then
+                    prevData.icon.ImageColor3 = self._Colors.TextDim
+                end
+            else
+                if prevData.button then
+                    TweenService:Create(prevData.button, TweenInfo.new(0.2), {BackgroundTransparency = 1}):Play()
+                end
+                if prevData.label then
+                    TweenService:Create(prevData.label, TweenInfo.new(0.2), {TextColor3 = self._Colors.TextDim}):Play()
+                    prevData.label.Font = Enum.Font.GothamMedium
+                end
+                if prevData.icon then
+                    TweenService:Create(prevData.icon, TweenInfo.new(0.2), {ImageTransparency = 0.45}):Play()
+                end
+            end
+        end
+    end
     if STATE.ActiveCategory == categoryName and STATE.SubTabBar then
         if preferredTab and STATE.ContentPages[preferredTab] then
             self:SwitchTab(preferredTab)
@@ -5222,6 +5341,7 @@ function Library:SetActiveCategory(categoryName, preferredTab)
                 self:SwitchTab(targetName)
             end
         end
+        self:_applyNavigationLayout()
         return
     end
 
@@ -5281,6 +5401,7 @@ function Library:SetActiveCategory(categoryName, preferredTab)
             self:SwitchTab(targetName)
         end
     end
+    self:_applyNavigationLayout()
 end
 
 function Library:SetTabBadge(categoryName, tabName, text, color)
@@ -5399,7 +5520,7 @@ function Library:CreateTab(categoryName, tabName)
 
     if self.TabPosition == "Side" then
         local catData = STATE.CategoryButtons[categoryName]
-        if catData and catData.tabList then
+        if catData and catData.tabList and not catData.isStandalone then
             local tabCount = 0
             for _, c in ipairs(catData.tabList:GetChildren()) do
                 if c:IsA("TextButton") then tabCount = tabCount + 1 end
@@ -5474,6 +5595,39 @@ function Library:CreateTab(categoryName, tabName)
         self:SetActiveCategory(categoryName)
     end
     return page
+end
+
+function Library:CreateStandaloneTab(tabName, iconSpec)
+    if self:_isDead() then return end
+    if type(tabName) ~= "string" or tabName == "" then
+        error("[DoD UI] CreateStandaloneTab requires a non-empty tab name.")
+    end
+    if iconSpec ~= nil and type(iconSpec) ~= "string" then
+        error("[DoD UI] CreateStandaloneTab iconSpec must be a string or nil.")
+    end
+    local STATE = self._STATE
+    if STATE.ContentPages[tabName] then
+        error("[DoD UI] Tab '" .. tabName .. "' already exists.")
+    end
+    if STATE.CategoryButtons and STATE.CategoryButtons[tabName] then
+        error("[DoD UI] Category '" .. tabName .. "' already exists.")
+    end
+    self:CreateCategory(tabName, iconSpec)
+    local catData = self._STATE.CategoryButtons[tabName]
+    if catData then
+        catData.isStandalone = true
+        if catData.isAccordion then
+            if catData.chevron then catData.chevron.Visible = false end
+            if catData.icon then catData.icon.Position = UDim2.new(0, 10, 0.5, -7) end
+            if catData.label then
+                catData.label.Position = UDim2.new(0, 30, 0, 0)
+                catData.label.Size = UDim2.new(1, -40, 1, 0)
+            end
+        end
+    end
+    self._STATE.StandaloneTabs[tabName] = true
+    self:CreateTab(tabName, tabName)
+    return self._STATE.ContentPages[tabName]
 end
 
 function Library:SwitchTab(tabName)
