@@ -2679,7 +2679,7 @@ function Library:_bindTooltip(element, text)
                 lbl.Size = UDim2.new(1, -18, 0, 16)
                 lbl.Position = UDim2.new(0, 12, 0, 6)
                 if hint then
-                    hint.Text = "klik ★ atau right-click untuk favorit"
+                    hint.Text = "Right-click ★ untuk favorit"
                     hint.Visible = true
                 end
             else
@@ -4130,16 +4130,7 @@ function Library:_attachFavorite(holder, configId, starPos)
         self:_updateFavoriteStar(configId)
     end)
 
-    star.MouseButton1Click:Connect(function()
-        if self._STATE.Favorites[configId] then
-            self._STATE.Favorites[configId] = nil
-        else
-            self._STATE.Favorites[configId] = true
-        end
-        self:_updateFavoriteStar(configId)
-        self:_applySearchFilter()
-        self:_triggerAutoSave()
-    end)
+    -- Left click on star is intentionally ignored (handled by row)
 
     self:_registerThemeRefresher(function()
         if star and star.Parent then
