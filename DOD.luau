@@ -8,9 +8,8 @@
 
 		   discord.gg/rapptezetyee
 			t.me/HGithub
-----------------------------------------------------------
-		credits: deepseek and me
-		i am prompt engginer lol
+
+
 ]]
 
 local Library = {}
@@ -1922,23 +1921,47 @@ function Library:_initMainGui()
     Fn.track(UserInputService.InputChanged, function(input)
         if input.UserInputType == Enum.UserInputType.MouseWheel then
             local mouse = UserInputService:GetMouseLocation()
-            for _, sf in ipairs(self._STATE.ScrollFrames) do
+            local frames = self._STATE.ScrollFrames
+            local target = nil
+            for i = #frames, 1, -1 do
+                local sf = frames[i]
                 if sf and sf.Parent and sf.Visible then
                     local pos, size = sf.AbsolutePosition, sf.AbsoluteSize
                     if mouse.X >= pos.X and mouse.X <= pos.X + size.X and
                        mouse.Y >= pos.Y and mouse.Y <= pos.Y + size.Y then
-                        
-                        local scrollAmount = 50
-                        local targetY = sf.CanvasPosition.Y - (input.Position.Z * scrollAmount)
-                        local maxScroll = math.max(0, sf.AbsoluteCanvasSize.Y - sf.AbsoluteSize.Y)
-                        targetY = math.clamp(targetY, 0, maxScroll)
-                        
-                        TweenService:Create(sf, TweenInfo.new(0.15, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {
-                            CanvasPosition = Vector2.new(sf.CanvasPosition.X, targetY)
-                        }):Play()
-                        break
+                        local maxScroll = sf.AbsoluteCanvasSize.Y - sf.AbsoluteSize.Y
+                        if maxScroll > 1 then
+                            target = sf
+                            break
+                        end
                     end
                 end
+            end
+            if target then
+                local inPopup = false
+                for _, entry in ipairs(self._STATE.activeDropdownPopups) do
+                    local p = entry.popup
+                    if p and p.Parent and p.Visible then
+                        local pp, ps = p.AbsolutePosition, p.AbsoluteSize
+                        if mouse.X >= pp.X and mouse.X <= pp.X + ps.X and
+                           mouse.Y >= pp.Y and mouse.Y <= pp.Y + ps.Y then
+                            inPopup = true
+                            break
+                        end
+                    end
+                end
+                if not inPopup then
+                    for _, entry in ipairs(self._STATE.activeDropdownPopups) do
+                        if entry.popup and entry.popup.Visible then entry.close() end
+                    end
+                end
+                local scrollAmount = 50
+                local targetY = target.CanvasPosition.Y - (input.Position.Z * scrollAmount)
+                local maxScroll = math.max(0, target.AbsoluteCanvasSize.Y - target.AbsoluteSize.Y)
+                targetY = math.clamp(targetY, 0, maxScroll)
+                TweenService:Create(target, TweenInfo.new(0.15, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {
+                    CanvasPosition = Vector2.new(target.CanvasPosition.X, targetY)
+                }):Play()
             end
         end
     end, self)
@@ -3564,8 +3587,21 @@ function Library:_applyNavigationLayout()
         if hasSearch then
             UI.SearchBar.Size = UDim2.new(1, -16, 0, 32)
             UI.SearchBar.Position = UDim2.new(0, 8, 0, 8)
-            if UI.SearchInput then UI.SearchInput.Size = UDim2.new(1, -90, 1, 0) end
-            if UI.FavoritesToggle then UI.FavoritesToggle.Position = UDim2.new(1, -48, 0.5, -8) end
+            if UI.SearchInput then
+                UI.SearchInput.Size = UDim2.new(1, -82, 1, 0)
+                UI.SearchInput.Position = UDim2.new(0, 36, 0, 0)
+                UI.SearchInput.PlaceholderText = (sideWidth - 16) >= 130 and "Search settings..." or ""
+            end
+            if UI.SearchIcon then UI.SearchIcon.ZIndex = 2 end
+            if UI.FavoritesToggle then
+                UI.FavoritesToggle.Position = UDim2.new(1, -42, 0.5, -8)
+                UI.FavoritesToggle.ZIndex = 4
+            end
+            local clearBtn = UI.SearchBar:FindFirstChild("ClearBtn")
+            if clearBtn then
+                clearBtn.Position = UDim2.new(1, -22, 0.5, -8)
+                clearBtn.ZIndex = 4
+            end
         end
 
         UI.Sidebar.Visible = false
@@ -3735,6 +3771,7 @@ function Library:_initSearchBar()
     UI.SearchIcon.BackgroundTransparency = 1
     UI.SearchIcon.Image = GetIcon("search")
     UI.SearchIcon.ImageColor3 = self._Colors.TextDim
+    UI.SearchIcon.ZIndex = 2
 
     UI.SearchInput = Instance.new("TextBox", UI.SearchBar)
     UI.SearchInput.Size = UDim2.new(1, -100, 1, 0)
@@ -3748,6 +3785,7 @@ function Library:_initSearchBar()
     UI.SearchInput.TextSize = 12
     UI.SearchInput.TextXAlignment = Enum.TextXAlignment.Left
     UI.SearchInput.ClearTextOnFocus = false
+    UI.SearchInput.ZIndex = 1
 
     local starBtn = Instance.new("TextButton", UI.SearchBar)
     starBtn.Name = "FavoritesToggle"
@@ -3756,6 +3794,7 @@ function Library:_initSearchBar()
     starBtn.BackgroundTransparency = 1
     starBtn.Text = ""
     starBtn.AutoButtonColor = false
+    starBtn.ZIndex = 4
     local starIcon = Instance.new("ImageLabel", starBtn)
     starIcon.Size = UDim2.fromScale(1, 1)
     starIcon.BackgroundTransparency = 1
@@ -3769,12 +3808,14 @@ function Library:_initSearchBar()
     UI.FavoritesToggleIcon = starIcon
 
     local clearBtn = Instance.new("TextButton", UI.SearchBar)
+    clearBtn.Name = "ClearBtn"
     clearBtn.Size = UDim2.fromOffset(16, 16)
     clearBtn.Position = UDim2.new(1, -26, 0.5, -8)
     clearBtn.BackgroundTransparency = 1
     clearBtn.Text = ""
     clearBtn.AutoButtonColor = false
     clearBtn.Visible = false
+    clearBtn.ZIndex = 4
     
     local clearIcon = Instance.new("ImageLabel", clearBtn)
     clearIcon.Size = UDim2.fromScale(1, 1)
@@ -5055,7 +5096,7 @@ function Library:CreateTab(categoryName, tabName)
     page.Size = UDim2.new(1, 0, 1, 0)
     page.Position = UDim2.new(0, 0, 0, 0)
     page.BackgroundTransparency = 1
-    page.ScrollBarThickness = 2
+    page.ScrollBarThickness = 0
     page.ScrollBarImageColor3 = self._Colors.Accent
     page.AutomaticCanvasSize = Enum.AutomaticSize.Y
     page.CanvasSize = UDim2.new(0, 0, 0, 0)
@@ -5381,13 +5422,21 @@ function Library:CreateSection(tabName, title, summary, defaultOpen, columnName,
     separator.BackgroundTransparency = 1
     separator.BorderSizePixel = 0
 
-    local body = Instance.new("Frame", section)
+    local body = Instance.new("ScrollingFrame", section)
     body.Size = UDim2.new(1, 0, 0, 0)
     body.Position = UDim2.new(0, 0, 0, HEADER_HEIGHT)
     body.BackgroundTransparency = 1
-    body.ClipsDescendants = false
-    body.AutomaticSize = Enum.AutomaticSize.Y
+    body.BorderSizePixel = 0
+    body.ClipsDescendants = true
     body.Visible = false
+    body.ScrollBarThickness = 0
+    body.ScrollingDirection = Enum.ScrollingDirection.Y
+    body.ElasticBehavior = Enum.ElasticBehavior.Never
+    body.AutomaticCanvasSize = Enum.AutomaticSize.Y
+    body.CanvasSize = UDim2.new(0, 0, 0, 0)
+    body.VerticalScrollBarInset = Enum.ScrollBarInset.None
+    body.HorizontalScrollBarInset = Enum.ScrollBarInset.None
+    table.insert(self._STATE.ScrollFrames, body)
 
     local bodyLayout = Instance.new("UIListLayout", body)
     bodyLayout.SortOrder = Enum.SortOrder.LayoutOrder
@@ -5395,9 +5444,39 @@ function Library:CreateSection(tabName, title, summary, defaultOpen, columnName,
 
     local bodyPad = Instance.new("UIPadding", body)
     bodyPad.PaddingLeft = UDim.new(0, 12)
-    bodyPad.PaddingRight = UDim.new(0, 12)
+    bodyPad.PaddingRight = UDim.new(0, 20)
     bodyPad.PaddingTop = UDim.new(0, 10)
     bodyPad.PaddingBottom = UDim.new(0, 14)
+
+    local scrollIndicator = Instance.new("Frame", section)
+    scrollIndicator.Name = "ScrollIndicator"
+    scrollIndicator.AnchorPoint = Vector2.new(0.5, 0)
+    scrollIndicator.Position = UDim2.new(1, -8, 0, HEADER_HEIGHT + 14)
+    scrollIndicator.Size = UDim2.fromOffset(3, 0)
+    scrollIndicator.AutomaticSize = Enum.AutomaticSize.Y
+    scrollIndicator.BackgroundTransparency = 1
+    scrollIndicator.BorderSizePixel = 0
+    scrollIndicator.ZIndex = 6
+    scrollIndicator.Visible = false
+
+    local indLayout = Instance.new("UIListLayout", scrollIndicator)
+    indLayout.FillDirection = Enum.FillDirection.Vertical
+    indLayout.SortOrder = Enum.SortOrder.LayoutOrder
+    indLayout.Padding = UDim.new(0, 3)
+    indLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+
+    local indBars = {}
+    for bi = 1, 6 do
+        local bar = Instance.new("Frame", scrollIndicator)
+        bar.Size = UDim2.fromOffset(3, 7)
+        bar.BackgroundColor3 = self._Colors.Accent
+        bar.BackgroundTransparency = 0.8
+        bar.BorderSizePixel = 0
+        bar.LayoutOrder = bi
+        bar.ZIndex = 6
+        Instance.new("UICorner", bar).CornerRadius = UDim.new(1, 0)
+        indBars[bi] = bar
+    end
 
     local expanded = defaultOpen == true
     local currentTween
@@ -5415,10 +5494,40 @@ function Library:CreateSection(tabName, title, summary, defaultOpen, columnName,
     table.insert(self._STATE.SearchSections[tabName], sectionData)
     self._STATE.SearchBodies[body] = sectionData
 
+    local function updateScrollIndicator()
+        if not body or not body.Parent then return end
+        if not expanded then
+            scrollIndicator.Visible = false
+            return
+        end
+        local maxScroll = math.max(0, body.AbsoluteCanvasSize.Y - body.AbsoluteSize.Y)
+        if maxScroll <= 2 then
+            scrollIndicator.Visible = false
+            return
+        end
+        scrollIndicator.Visible = true
+        local ratio = math.clamp(body.CanvasPosition.Y / maxScroll, 0, 1)
+        local n = #indBars
+        local activeIdx = 1 + math.floor(ratio * (n - 1) + 0.5)
+        for i, bar in ipairs(indBars) do
+            bar.BackgroundTransparency = (i <= activeIdx) and 0.1 or 0.8
+        end
+    end
+
     local function updateHeight(animate)
+        if not body or not body.Parent then return end
         local innerH = bodyLayout.AbsoluteContentSize.Y
         local contentH = (innerH > 0) and (innerH + 24) or 24
-        local targetH = expanded and (HEADER_HEIGHT + contentH) or HEADER_HEIGHT
+        local maxH = 340
+        local contentArea = self._UI.ContentArea
+        if contentArea and contentArea.AbsoluteSize.Y > 0 then
+            maxH = math.min(340, math.max(180, contentArea.AbsoluteSize.Y - 70))
+        end
+        local cappedH = math.min(contentH, maxH)
+        local targetH = expanded and (HEADER_HEIGHT + cappedH) or HEADER_HEIGHT
+        if expanded then
+            body.Size = UDim2.new(1, 0, 0, cappedH)
+        end
         if currentTween then currentTween:Cancel() end
         if animate == false then
             section.Size = UDim2.new(1, 0, 0, targetH)
@@ -5431,6 +5540,7 @@ function Library:CreateSection(tabName, title, summary, defaultOpen, columnName,
                 local cap = currentTween
                 cap.Completed:Connect(function()
                     if not expanded and body then body.Visible = false end
+                    updateScrollIndicator()
                 end)
             end
         end
@@ -5442,6 +5552,8 @@ function Library:CreateSection(tabName, title, summary, defaultOpen, columnName,
             TweenInfo.new(0.32, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {
                 ImageColor3 = expanded and self._Colors.Accent or self._Colors.TextDim,
             }):Play()
+        updateScrollIndicator()
+        task.defer(updateScrollIndicator)
     end
 
     local function toggle(forceState)
@@ -5470,6 +5582,16 @@ function Library:CreateSection(tabName, title, summary, defaultOpen, columnName,
     bodyLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
         if expanded then updateHeight(true) end
     end)
+
+    body:GetPropertyChangedSignal("CanvasPosition"):Connect(updateScrollIndicator)
+    body:GetPropertyChangedSignal("AbsoluteCanvasSize"):Connect(updateScrollIndicator)
+    body:GetPropertyChangedSignal("AbsoluteSize"):Connect(updateScrollIndicator)
+
+    if self._UI.ContentArea then
+        Fn.track(self._UI.ContentArea:GetPropertyChangedSignal("AbsoluteSize"), function()
+            if expanded and body and body.Parent then updateHeight(false) end
+        end, self)
+    end
 
     header.MouseEnter:Connect(function()
         local baseTrans = self._STATE.SectionTransparency or 0.15
@@ -5526,6 +5648,9 @@ function Library:CreateSection(tabName, title, summary, defaultOpen, columnName,
         separator.BackgroundColor3 = self._Colors.Border
         if hoverBar then
             hoverBar.BackgroundColor3 = self._Colors.Accent
+        end
+        for _, bar in ipairs(indBars) do
+            bar.BackgroundColor3 = self._Colors.Accent
         end
     end)
 
@@ -6557,7 +6682,7 @@ function Library:AddDropdown(page, text, options, defaultIndex, callback)
     label.TextTruncate = Enum.TextTruncate.AtEnd
 
     local valueChip = Instance.new("TextButton", holder)
-    valueChip.Size = UDim2.new(0.58, -14, 0, 30)
+    valueChip.Size = UDim2.new(0.58, -54, 0, 30)
     valueChip.Position = UDim2.new(0.42, 4, 0.5, -15)
     valueChip.BackgroundColor3 = self._Colors.Bg2
     valueChip.BackgroundTransparency = 0.2
@@ -6592,6 +6717,71 @@ function Library:AddDropdown(page, text, options, defaultIndex, callback)
     chipLabel.TextSize = 11
     chipLabel.TextXAlignment = Enum.TextXAlignment.Left
     chipLabel.TextTruncate = Enum.TextTruncate.AtEnd
+
+    local navUp = Instance.new("TextButton", holder)
+    navUp.Name = "NavUp"
+    navUp.Size = UDim2.fromOffset(20, 30)
+    navUp.Position = UDim2.new(1, -48, 0.5, -15)
+    navUp.BackgroundColor3 = self._Colors.Bg2
+    navUp.BackgroundTransparency = 0.2
+    navUp.Text = ""
+    navUp.BorderSizePixel = 0
+    navUp.AutoButtonColor = false
+    Instance.new("UICorner", navUp).CornerRadius = UDim.new(0, 8)
+    Fn.bindPressAnimation(navUp)
+
+    local navUpStroke = Instance.new("UIStroke", navUp)
+    navUpStroke.Color = self._Colors.Border
+    navUpStroke.Thickness = 1
+    navUpStroke.Transparency = 0.4
+
+    local navUpIcon = Instance.new("ImageLabel", navUp)
+    navUpIcon.Size = UDim2.fromOffset(12, 12)
+    navUpIcon.Position = UDim2.new(0.5, -6, 0.5, -6)
+    navUpIcon.BackgroundTransparency = 1
+    navUpIcon.Image = GetIcon("chevrons-up")
+    navUpIcon.ImageColor3 = self._Colors.TextDim
+
+    local navDown = Instance.new("TextButton", holder)
+    navDown.Name = "NavDown"
+    navDown.Size = UDim2.fromOffset(20, 30)
+    navDown.Position = UDim2.new(1, -24, 0.5, -15)
+    navDown.BackgroundColor3 = self._Colors.Bg2
+    navDown.BackgroundTransparency = 0.2
+    navDown.Text = ""
+    navDown.BorderSizePixel = 0
+    navDown.AutoButtonColor = false
+    Instance.new("UICorner", navDown).CornerRadius = UDim.new(0, 8)
+    Fn.bindPressAnimation(navDown)
+
+    local navDownStroke = Instance.new("UIStroke", navDown)
+    navDownStroke.Color = self._Colors.Border
+    navDownStroke.Thickness = 1
+    navDownStroke.Transparency = 0.4
+
+    local navDownIcon = Instance.new("ImageLabel", navDown)
+    navDownIcon.Size = UDim2.fromOffset(12, 12)
+    navDownIcon.Position = UDim2.new(0.5, -6, 0.5, -6)
+    navDownIcon.BackgroundTransparency = 1
+    navDownIcon.Image = GetIcon("chevrons-down")
+    navDownIcon.ImageColor3 = self._Colors.TextDim
+
+    navUp.MouseEnter:Connect(function()
+        TweenService:Create(navUpStroke, TweenInfo.new(0.15), {Color = self._Colors.Accent, Transparency = 0.1}):Play()
+        TweenService:Create(navUpIcon, TweenInfo.new(0.15), {ImageColor3 = self._Colors.Accent}):Play()
+    end)
+    navUp.MouseLeave:Connect(function()
+        TweenService:Create(navUpStroke, TweenInfo.new(0.15), {Color = self._Colors.Border, Transparency = 0.4}):Play()
+        TweenService:Create(navUpIcon, TweenInfo.new(0.15), {ImageColor3 = self._Colors.TextDim}):Play()
+    end)
+    navDown.MouseEnter:Connect(function()
+        TweenService:Create(navDownStroke, TweenInfo.new(0.15), {Color = self._Colors.Accent, Transparency = 0.1}):Play()
+        TweenService:Create(navDownIcon, TweenInfo.new(0.15), {ImageColor3 = self._Colors.Accent}):Play()
+    end)
+    navDown.MouseLeave:Connect(function()
+        TweenService:Create(navDownStroke, TweenInfo.new(0.15), {Color = self._Colors.Border, Transparency = 0.4}):Play()
+        TweenService:Create(navDownIcon, TweenInfo.new(0.15), {ImageColor3 = self._Colors.TextDim}):Play()
+    end)
 
     local currentIndex = defaultIndex
     local popup = Instance.new("Frame", UI.MainGui)
@@ -6716,6 +6906,24 @@ function Library:AddDropdown(page, text, options, defaultIndex, callback)
         end
     end
 
+    local function navTo(delta)
+        local newIdx = currentIndex + delta
+        if newIdx < 1 then newIdx = #options end
+        if newIdx > #options then newIdx = 1 end
+        currentIndex = newIdx
+        chipLabel.Text = tostring(options[currentIndex])
+        callback(currentIndex, options[currentIndex])
+        self:_triggerAutoSave()
+    end
+    navUp.MouseButton1Click:Connect(function()
+        self:PlaySound("Click")
+        navTo(-1)
+    end)
+    navDown.MouseButton1Click:Connect(function()
+        self:PlaySound("Click")
+        navTo(1)
+    end)
+
     local _favId = self:_getConfigId("dropdown", text)
     self:_registerConfigState(_favId,
         function() return currentIndex end,
@@ -6799,6 +7007,12 @@ function Library:AddDropdown(page, text, options, defaultIndex, callback)
         valueChip.BackgroundColor3 = self._Colors.Bg2
         chipStroke.Color = self._Colors.Border
         chipLabel.TextColor3 = self._Colors.Text
+        navUp.BackgroundColor3 = self._Colors.Bg2
+        navUpStroke.Color = self._Colors.Border
+        navUpIcon.ImageColor3 = self._Colors.TextDim
+        navDown.BackgroundColor3 = self._Colors.Bg2
+        navDownStroke.Color = self._Colors.Border
+        navDownIcon.ImageColor3 = self._Colors.TextDim
         popup.BackgroundColor3 = self._Colors.Bg2
         popupStroke.Color = self._Colors.Accent
         popupScroll.ScrollBarImageColor3 = self._Colors.Accent
