@@ -2557,6 +2557,16 @@ function Library:_setAccordionState(categoryName, expanded)
         TweenService:Create(data.button, TweenInfo.new(0.18), {
             BackgroundTransparency = expanded and 0.5 or 0.75,
         }):Play()
+        if data.label then
+            data.label.TextColor3 = expanded and self._Colors.Text or self._Colors.TextDim
+            data.label.Font = expanded and Enum.Font.GothamBold or Enum.Font.GothamMedium
+        end
+        if data.icon then
+            data.icon.ImageColor3 = expanded and self._Colors.Accent or self._Colors.TextDim
+        end
+        if data.chevron then
+            data.chevron.ImageColor3 = expanded and self._Colors.Accent or self._Colors.TextDim
+        end
     end
 end
 
@@ -3436,7 +3446,18 @@ function Library:CreateCategory(categoryName, iconSpec)
         }
 
         header.MouseButton1Click:Connect(function()
-            self:_toggleCategoryAccordion(categoryName)
+            local current = STATE.AccordionExpanded[categoryName]
+            if not current then
+                local tabs = STATE.CategoryTabs[categoryName]
+                local targetTab = nil
+                if tabs and #tabs > 0 then
+                    local savedIdx = STATE.ActiveSubIndices[categoryName]
+                    targetTab = (savedIdx and tabs[savedIdx]) or tabs[1]
+                end
+                self:SetActiveCategory(categoryName, targetTab)
+            else
+                self:_setAccordionState(categoryName, false)
+            end
         end)
 
         header.MouseEnter:Connect(function()
@@ -3444,7 +3465,7 @@ function Library:CreateCategory(categoryName, iconSpec)
             TweenService:Create(header, TweenInfo.new(0.15), {BackgroundTransparency = 0.55}):Play()
         end)
         header.MouseLeave:Connect(function()
-            local isActive = categoryName == STATE.ActiveCategory
+            local isActive = (self.TabPosition == "Side") and STATE.AccordionExpanded[categoryName] or (categoryName == STATE.ActiveCategory)
             TweenService:Create(hStroke, TweenInfo.new(0.15), {
                 Transparency = isActive and 0.3 or 0.7,
                 Color = isActive and self._Colors.Accent or self._Colors.Border,
@@ -3455,10 +3476,11 @@ function Library:CreateCategory(categoryName, iconSpec)
         self:_registerThemeRefresher(function()
             if not header.Parent then return end
             header.BackgroundColor3 = self._Colors.Card
-            hStroke.Color = categoryName == STATE.ActiveCategory and self._Colors.Accent or self._Colors.Border
-            label.TextColor3 = categoryName == STATE.ActiveCategory and self._Colors.Text or self._Colors.TextDim
-            iconImg.ImageColor3 = categoryName == STATE.ActiveCategory and self._Colors.Accent or self._Colors.TextDim
-            chevron.ImageColor3 = categoryName == STATE.ActiveCategory and self._Colors.Accent or self._Colors.TextDim
+            local isActive = (self.TabPosition == "Side") and STATE.AccordionExpanded[categoryName] or (categoryName == STATE.ActiveCategory)
+            hStroke.Color = isActive and self._Colors.Accent or self._Colors.Border
+            label.TextColor3 = isActive and self._Colors.Text or self._Colors.TextDim
+            iconImg.ImageColor3 = isActive and self._Colors.Accent or self._Colors.TextDim
+            chevron.ImageColor3 = isActive and self._Colors.Accent or self._Colors.TextDim
         end)
 
         return header
@@ -3590,18 +3612,20 @@ function Library:SetActiveCategory(categoryName, preferredTab)
     STATE.ActiveCategory = categoryName
     STATE.ActiveSubIndices = STATE.ActiveSubIndices or {}
 
-    for name, data in pairs(STATE.CategoryButtons or {}) do
-        local active = (name == categoryName)
-        TweenService:Create(data.button, TweenInfo.new(0.22, Enum.EasingStyle.Quart), {
-            BackgroundTransparency = active and 0.55 or 1,
-        }):Play()
-        TweenService:Create(data.label, TweenInfo.new(0.22), {
-            TextColor3 = active and Color3.fromRGB(255, 255, 255) or self._Colors.TextDim,
-        }):Play()
-        data.label.Font = active and Enum.Font.GothamBold or Enum.Font.GothamMedium
-        TweenService:Create(data.icon, TweenInfo.new(0.22), {
-            ImageTransparency = active and 0 or 0.45,
-        }):Play()
+    if self.TabPosition ~= "Side" then
+        for name, data in pairs(STATE.CategoryButtons or {}) do
+            local active = (name == categoryName)
+            TweenService:Create(data.button, TweenInfo.new(0.22, Enum.EasingStyle.Quart), {
+                BackgroundTransparency = active and 0.55 or 1,
+            }):Play()
+            TweenService:Create(data.label, TweenInfo.new(0.22), {
+                TextColor3 = active and Color3.fromRGB(255, 255, 255) or self._Colors.TextDim,
+            }):Play()
+            data.label.Font = active and Enum.Font.GothamBold or Enum.Font.GothamMedium
+            TweenService:Create(data.icon, TweenInfo.new(0.22), {
+                ImageTransparency = active and 0 or 0.45,
+            }):Play()
+        end
     end
 
     local tabs = STATE.CategoryTabs[categoryName]
@@ -3632,26 +3656,38 @@ function Library:SetActiveCategory(categoryName, preferredTab)
             end
         end
         self:_setAccordionState(categoryName, true)
+        
+        for _, catData in pairs(STATE.CategoryButtons) do
+            if catData.isAccordion and catData.tabList then
+                for _, otherSub in ipairs(catData.tabList:GetChildren()) do
+                    if otherSub:IsA("TextButton") then
+                        otherSub.BackgroundTransparency = 1
+                        local lbl = otherSub:FindFirstChild("SubLabel")
+                        if lbl then
+                            lbl.TextColor3 = self._Colors.TextDim
+                            lbl.Font = Enum.Font.GothamMedium
+                        end
+                        local ind = otherSub:FindFirstChild("AccentDot")
+                        if ind then ind.Visible = false end
+                    end
+                end
+            end
+        end
+        
         if targetName then
             STATE.ActiveSubIndices[categoryName] = targetIdx
             local catData = STATE.CategoryButtons[categoryName]
             if catData and catData.tabList then
                 for _, child in ipairs(catData.tabList:GetChildren()) do
                     if child:IsA("TextButton") and child:GetAttribute("TabName") == targetName then
-                        local allSubs = catData.tabList:GetChildren()
-                        for _, otherSub in ipairs(allSubs) do
-                            if otherSub:IsA("TextButton") then
-                                local isThis = otherSub == child
-                                otherSub.BackgroundTransparency = isThis and 0.4 or 1
-                                local lbl = otherSub:FindFirstChild("SubLabel")
-                                if lbl then
-                                    lbl.TextColor3 = isThis and self._Colors.Text or self._Colors.TextDim
-                                    lbl.Font = isThis and Enum.Font.GothamBold or Enum.Font.GothamMedium
-                                end
-                                local ind = otherSub:FindFirstChild("AccentDot")
-                                if ind then ind.Visible = isThis end
-                            end
+                        child.BackgroundTransparency = 0.4
+                        local lbl = child:FindFirstChild("SubLabel")
+                        if lbl then
+                            lbl.TextColor3 = self._Colors.Text
+                            lbl.Font = Enum.Font.GothamBold
                         end
+                        local ind = child:FindFirstChild("AccentDot")
+                        if ind then ind.Visible = true end
                         break
                     end
                 end
@@ -3890,25 +3926,7 @@ function Library:CreateTab(categoryName, tabName)
             end)
 
             subBtn.MouseButton1Click:Connect(function()
-                if STATE.ActiveCategory ~= categoryName then
-                    STATE.ActiveCategory = categoryName
-                end
-                self:PlaySound("TabSwitch")
-                local allSubs = catData.tabList:GetChildren()
-                for _, otherSub in ipairs(allSubs) do
-                    if otherSub:IsA("TextButton") then
-                        local isThis = otherSub == subBtn
-                        otherSub.BackgroundTransparency = isThis and 0.4 or 1
-                        local lbl = otherSub:FindFirstChild("SubLabel")
-                        if lbl then
-                            lbl.TextColor3 = isThis and self._Colors.Text or self._Colors.TextDim
-                            lbl.Font = isThis and Enum.Font.GothamBold or Enum.Font.GothamMedium
-                        end
-                        local ind = otherSub:FindFirstChild("AccentDot")
-                        if ind then ind.Visible = isThis end
-                    end
-                end
-                self:SwitchTab(tabName)
+                self:SetActiveCategory(categoryName, tabName)
             end)
 
             self:_registerThemeRefresher(function()
