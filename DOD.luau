@@ -2792,48 +2792,57 @@ function Library:SetWallpaper(assetId, transparency)
     local trans = math.clamp(transparency or 0, 0, 1)
 
     if string.sub(img, 1, 4) == "http" then
-        if not (getcustomasset and type(getcustomasset) == "function") then
-            self:Notify("WALLPAPER", "Executor tidak support getcustomasset", "error")
+        if not (getcustomasset and writefile and type(writefile) == "function") then
+            self:Notify("WALLPAPER", "Executor tidak support getcustomasset/writefile", "error")
             return
         end
-        local cached = self:_getCachedWallpaper(img)
-        if cached and type(cached) == "string" and #cached > 0 then
-            local ok = pcall(function()
-                UI.Wallpaper.Image = cached
+        
+        self:Notify("WALLPAPER", "Downloading...", "info")
+        if self.ShowLoading then self:ShowLoading("Downloading wallpaper...") end
+        
+        task.spawn(function()
+            local success, content = pcall(function()
+                return game:HttpGet(img, true)
+            end)
+            
+            if not success or type(content) ~= "string" or #content == 0 then
+                if self.HideLoading then self:HideLoading() end
+                self:Notify("WALLPAPER", "Download gagal — Cek URL GitHub (mungkin 404/private)", "error")
+                return
+            end
+            
+            local fileName = "DoD_Wallpaper_" .. tostring(math.random(100000, 999999)) .. ".jpg"
+            local writeOk = pcall(function()
+                writefile(fileName, content)
+            end)
+            
+            if not writeOk then
+                if self.HideLoading then self:HideLoading() end
+                self:Notify("WALLPAPER", "Gagal simpan file ke executor", "error")
+                return
+            end
+            
+            local assetOk, assetContent = pcall(getcustomasset, fileName)
+            if self.HideLoading then self:HideLoading() end
+            
+            if not assetOk or type(assetContent) ~= "string" then
+                self:Notify("WALLPAPER", "Gagal load file lokal ke Roblox", "error")
+                return
+            end
+            
+            local setOk = pcall(function()
+                UI.Wallpaper.Image = assetContent
                 UI.Wallpaper.ImageTransparency = trans
                 UI.Wallpaper.Visible = true
             end)
-            if ok then
-                self:Notify("WALLPAPER", "Loaded from cache", "success")
-                self:_generateAutoTheme(img)
-            else
-                self:Notify("WALLPAPER", "Cache invalid — reloading", "warning")
-            end
-        end
-        if not UI.Wallpaper.Visible or not UI.Wallpaper.Image or UI.Wallpaper.Image == "" then
-            self:Notify("WALLPAPER", "Downloading...", "info")
-            if self.ShowLoading then self:ShowLoading("Downloading wallpaper...") end
-            task.spawn(function()
-                local success, content = pcall(getcustomasset, img)
-                if self.HideLoading then self:HideLoading() end
-                if not success or type(content) ~= "string" or #content == 0 then
-                    self:Notify("WALLPAPER", "Download gagal — URL invalid atau executor limit", "error")
-                    return
-                end
-                local setOk = pcall(function()
-                    UI.Wallpaper.Image = content
-                    UI.Wallpaper.ImageTransparency = trans
-                    UI.Wallpaper.Visible = true
-                end)
-                if not setOk then
-                    self:Notify("WALLPAPER", "Gagal set image (asset invalid)", "error")
-                    return
-                end
-                self:_setWallpaperCache(img, content)
+            
+            if setOk then
                 self:Notify("WALLPAPER", "Wallpaper applied", "success")
                 self:_generateAutoTheme(img)
-            end)
-        end
+            else
+                self:Notify("WALLPAPER", "Gagal apply gambar ke UI", "error")
+            end
+        end)
         return
     elseif string.sub(img, 1, 13) == "rbxassetid://" then
         UI.Wallpaper.Image = img
