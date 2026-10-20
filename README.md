@@ -4,7 +4,7 @@
 Just copy your raw GitHub link and load it using this script:
 
 ```lua
-local Library = loadstring(game:HttpGet("https://raw.githubusercontent.com/USERNAME/REPO/main/DOD.luau"))()
+local Library = loadstring(game:HttpGet("https://raw.githubusercontent.com/rapzxcwxcorparation/DemonOfDarknessUI/refs/heads/main/DOD.luau"))()
 
 local UI = Library({
     Title             = "DoD UI  |  Showcase",
