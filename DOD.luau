@@ -2821,7 +2821,13 @@ function Library:SetWallpaper(assetId, transparency)
                 return
             end
             
-            local fileName = "DoD_Wallpaper_" .. tostring(math.random(100000, 999999)) .. ".jpg"
+            local ext = ".jpg"
+            local lowerImg = string.lower(img)
+            if string.find(lowerImg, ".gif") then ext = ".gif"
+            elseif string.find(lowerImg, ".png") then ext = ".png"
+            elseif string.find(lowerImg, ".webp") then ext = ".webp"
+            end
+            local fileName = "DoD_Wallpaper_" .. tostring(math.random(100000, 999999)) .. ext
             local writeOk = pcall(function()
                 writefile(fileName, content)
             end)
@@ -5908,6 +5914,14 @@ function Library:CreateThemeCustomizer(tabName)
         self.WallpaperSource = nil
         _pendingWallpaper = nil
         self:Notify("WALLPAPER", "Wallpaper dihapus", "info")
+    end)
+    
+    self:AddTextbox(section, "Custom Image URL", "https://raw.github.../image.png", function(txt)
+        if txt and txt ~= "" then
+            _pendingWallpaper = txt
+            self:SetWallpaper(txt, self.WallpaperTransparency or 0)
+            self.WallpaperSource = txt
+        end
     end)
 
     self:AddSlider(section, "Wallpaper Transparency", 0, 1, self.WallpaperTransparency or 0, 2, function(value)
