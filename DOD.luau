@@ -1528,9 +1528,9 @@ function Library:_refreshKeybindOverlay()
 
             local key = Instance.new("TextLabel", frame)
             key.Name = "Shortcut"
-            key.Size = UDim2.new(0, 60, 0, 22)
-            key.Position = UDim2.new(1, -70, 0.5, -11)
-            key.BackgroundColor3 = self._Colors.Bg2
+            key.Size = UDim2.new(0, 70, 0, 24)
+            key.Position = UDim2.new(1, -80, 0.5, -12)
+            key.BackgroundColor3 = self._Colors.Bg
             key.BorderSizePixel = 0
             key.TextColor3 = self._Colors.Accent
             key.Font = Enum.Font.GothamBold
@@ -1538,11 +1538,25 @@ function Library:_refreshKeybindOverlay()
             key.TextTruncate = Enum.TextTruncate.AtEnd
             key.ZIndex = 253
             Instance.new("UICorner", key).CornerRadius = UDim.new(0, 6)
+
+            local keyGrad = Instance.new("UIGradient", key)
+            keyGrad.Color = ColorSequence.new(self._Colors.Bg2, self._Colors.Bg)
+            keyGrad.Rotation = 90
             
             local keyStroke = Instance.new("UIStroke", key)
             keyStroke.Color = self._Colors.Border
             keyStroke.Thickness = 1
             keyStroke.Transparency = 0.5
+            keyStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+
+            local keyShadow = Instance.new("Frame", key)
+            keyShadow.Size = UDim2.new(1, 0, 0, 2)
+            keyShadow.Position = UDim2.new(0, 0, 1, -2)
+            keyShadow.BackgroundColor3 = Color3.new(0, 0, 0)
+            keyShadow.BackgroundTransparency = 0.5
+            keyShadow.BorderSizePixel = 0
+            keyShadow.ZIndex = 252
+            Instance.new("UICorner", keyShadow).CornerRadius = UDim.new(0, 2)
 
             row = {frame = frame, name = name, key = key, icon = icon, keyStroke = keyStroke}
             self._STATE.KeybindOverlayRows[listener] = row
@@ -4330,28 +4344,56 @@ function Library:AddKeybind(page, text, default, callback)
     lab.TextXAlignment = Enum.TextXAlignment.Left
 
     local btn = Instance.new("TextButton", holder)
-    btn.Size = UDim2.new(0, 100, 0, 26)
-    btn.Position = UDim2.new(1, -112, 0.5, -13)
-    btn.BackgroundColor3 = self._Colors.Accent
-    btn.BackgroundTransparency = 0.1
-    btn.TextColor3 = Fn.accentTextColor(self._Colors.Accent)
-    btn.Font = Enum.Font.GothamBold
-    btn.TextSize = 12
+    btn.Size = UDim2.new(0, 110, 0, 28)
+    btn.Position = UDim2.new(1, -122, 0.5, -14)
+    btn.BackgroundColor3 = self._Colors.Bg2
+    btn.BackgroundTransparency = 0.2
+    btn.Text = ""
+    btn.AutoButtonColor = false
     btn.BorderSizePixel = 0
     Fn.bindPressAnimation(btn)
-    Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 6)
+    Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 8)
+
+    local btnGrad = Instance.new("UIGradient", btn)
+    btnGrad.Color = ColorSequence.new(self._Colors.Bg2, self._Colors.Bg)
+    btnGrad.Rotation = 90
+
+    local btnStroke = Instance.new("UIStroke", btn)
+    btnStroke.Color = self._Colors.Border
+    btnStroke.Thickness = 1
+    btnStroke.Transparency = 0.5
+
+    local btnIcon = Instance.new("ImageLabel", btn)
+    btnIcon.Size = UDim2.fromOffset(14, 14)
+    btnIcon.Position = UDim2.new(0, 10, 0.5, -7)
+    btnIcon.BackgroundTransparency = 1
+    btnIcon.Image = GetIcon("keyboard")
+    btnIcon.ImageColor3 = self._Colors.TextDim
+
+    local btnText = Instance.new("TextLabel", btn)
+    btnText.Size = UDim2.new(1, -34, 1, 0)
+    btnText.Position = UDim2.new(0, 28, 0, 0)
+    btnText.BackgroundTransparency = 1
+    btnText.Text = "NONE"
+    btnText.TextColor3 = self._Colors.Text
+    btnText.Font = Enum.Font.GothamBold
+    btnText.TextSize = 11
+    btnText.TextXAlignment = Enum.TextXAlignment.Left
 
     local listener
     local function setLabel(k)
         local keyName
         if typeof(k) == "EnumItem" then
-            keyName = k.Name
+            keyName = string.upper(k.Name)
         elseif k == nil then
-            keyName = "None"
+            keyName = "NONE"
         else
-            keyName = tostring(k)
+            keyName = string.upper(tostring(k))
         end
-        btn.Text = keyName
+        btnText.Text = keyName
+        btnIcon.ImageColor3 = self._Colors.Accent
+        TweenService:Create(btnStroke, TweenInfo.new(0.15), {Color = self._Colors.Border, Transparency = 0.5}):Play()
+        TweenService:Create(btn, TweenInfo.new(0.15), {BackgroundTransparency = 0.2}):Play()
         if listener then
             listener.key = k
             listener.keyName = keyName
@@ -4360,22 +4402,42 @@ function Library:AddKeybind(page, text, default, callback)
     end
     setLabel(default)
 
+    btn.MouseEnter:Connect(function()
+        TweenService:Create(btnStroke, TweenInfo.new(0.15), {Color = self._Colors.Accent, Transparency = 0.1}):Play()
+        TweenService:Create(btn, TweenInfo.new(0.15), {BackgroundTransparency = 0.05}):Play()
+    end)
+
+    btn.MouseLeave:Connect(function()
+        if listener and listener.active then return end
+        TweenService:Create(btnStroke, TweenInfo.new(0.15), {Color = self._Colors.Border, Transparency = 0.5}):Play()
+        TweenService:Create(btn, TweenInfo.new(0.15), {BackgroundTransparency = 0.2}):Play()
+    end)
+
     listener = {
         active = false,
         btn = btn,
+        btnText = btnText,
+        btnStroke = btnStroke,
+        btnIcon = btnIcon,
         callback = callback or function() end,
         name = tostring(text),
         key = default,
-        keyName = btn.Text,
+        keyName = btnText.Text,
         setKey = setLabel,
     }
     table.insert(STATE.activeKeybindListeners, listener)
     self:_refreshKeybindOverlay()
 
     btn.MouseButton1Click:Connect(function()
-        for _, l in ipairs(STATE.activeKeybindListeners) do l.active = false end
+        for _, l in ipairs(STATE.activeKeybindListeners) do 
+            l.active = false
+            if l.btnText then l.btnText.Text = l.keyName end
+            if l.btnStroke then TweenService:Create(l.btnStroke, TweenInfo.new(0.15), {Color = self._Colors.Border, Transparency = 0.5}):Play() end
+        end
         listener.active = true
-        btn.Text = "..."
+        btnText.Text = "PRESS A KEY..."
+        TweenService:Create(btnStroke, TweenInfo.new(0.15), {Color = self._Colors.Accent, Transparency = 0}):Play()
+        TweenService:Create(btn, TweenInfo.new(0.15), {BackgroundTransparency = 0}):Play()
     end)
 
     if not STATE._kbListenerInstalled then
