@@ -2156,8 +2156,6 @@ function Library:_initMainGui()
     end)
     
     minBtn.MouseButton1Click:Connect(function()
-        self:PlaySound("Click")
-        minBtn.Visible = false
         self:Toggle()
     end)
     
@@ -2599,8 +2597,23 @@ function Library:_initTooltip()
     label.Text = ""
     label.ZIndex = 102
 
+    local hint = Instance.new("TextLabel", frame)
+    hint.Name = "Hint"
+    hint.Size = UDim2.new(1, -18, 0, 12)
+    hint.Position = UDim2.new(0, 12, 0, 24)
+    hint.BackgroundTransparency = 1
+    hint.Font = Enum.Font.GothamMedium
+    hint.TextSize = 10
+    hint.TextColor3 = Color3.fromRGB(136, 136, 136)
+    hint.TextXAlignment = Enum.TextXAlignment.Left
+    hint.TextTruncate = Enum.TextTruncate.AtEnd
+    hint.Text = ""
+    hint.Visible = false
+    hint.ZIndex = 102
+
     UI.TooltipFrame = frame
     UI.TooltipLabel = label
+    UI.TooltipHint = hint
     UI.TooltipStroke = stroke
     UI.TooltipAccent = accentBar
     UI.TooltipGlow = glow
@@ -2640,6 +2653,15 @@ end
 
 function Library:_bindTooltip(element, text)
     if not text or text == "" then return end
+    local favoritable = false
+    local cur = element
+    while cur do
+        if cur:GetAttribute("DoD_CtrlId") then
+            favoritable = true
+            break
+        end
+        cur = cur.Parent
+    end
     local showThread
     element.MouseEnter:Connect(function()
         if showThread then task.cancel(showThread) end
@@ -2647,10 +2669,28 @@ function Library:_bindTooltip(element, text)
             local frame = self._UI.TooltipFrame
             if not frame then return end
             local lbl = self._UI.TooltipLabel
+            local hint = self._UI.TooltipHint
             lbl.Text = tostring(text)
             local charCount = utf8.len(tostring(text)) or #tostring(text)
             local w = math.clamp(charCount * 7 + 32, 100, 320)
-            frame.Size = UDim2.fromOffset(w, 28)
+            if favoritable then
+                w = math.max(w, 220)
+                frame.Size = UDim2.fromOffset(w, 42)
+                lbl.Size = UDim2.new(1, -18, 0, 16)
+                lbl.Position = UDim2.new(0, 12, 0, 6)
+                if hint then
+                    hint.Text = "klik ★ atau right-click untuk favorit"
+                    hint.Visible = true
+                end
+            else
+                frame.Size = UDim2.fromOffset(w, 28)
+                lbl.Size = UDim2.new(1, -18, 1, 0)
+                lbl.Position = UDim2.new(0, 12, 0, 0)
+                if hint then
+                    hint.Visible = false
+                    hint.Text = ""
+                end
+            end
             frame.Visible = true
             frame.BackgroundTransparency = 1
             self._UI.TooltipStroke.Transparency = 1
@@ -2686,7 +2726,6 @@ function Library:_bindToggleKey()
         end
     end, self)
     Fn.track(UserInputService.InputBegan, function(input, gameProcessed)
-        if gameProcessed then return end
         if input.UserInputType ~= Enum.UserInputType.MouseButton2 then return end
         local mp = UserInputService:GetMouseLocation()
         for configId, holder in pairs(self._STATE.FavoriteHolders or {}) do
@@ -2698,6 +2737,7 @@ function Library:_bindToggleKey()
                     else
                         self._STATE.Favorites[configId] = true
                     end
+                    self:_updateFavoriteStar(configId)
                     self:_applySearchFilter()
                     self:_triggerAutoSave()
                     break
@@ -4044,11 +4084,69 @@ function Library:_registerSearchControl(instance, searchText)
     return instance
 end
 
-function Library:_attachFavorite(holder, configId)
+function Library:_updateFavoriteStar(configId)
+    local star = self._STATE.FavoriteStars and self._STATE.FavoriteStars[configId]
+    if not star or not star.Parent then return end
+    local isFav = self._STATE.Favorites[configId] == true
+    local hovering = star:GetAttribute("DoD_Hover") == true
+    TweenService:Create(star, TweenInfo.new(0.15, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+        ImageColor3 = isFav and self._Colors.Accent or self._Colors.TextDim,
+        ImageTransparency = isFav and (hovering and 0 or 0.15) or (hovering and 0.25 or 0.55),
+    }):Play()
+end
+
+function Library:_attachFavorite(holder, configId, starPos)
     if not holder or not configId then return end
     if holder:GetAttribute("DoD_CtrlId") then return end
     holder:SetAttribute("DoD_CtrlId", configId)
     self._STATE.FavoriteHolders[configId] = holder
+    self._STATE.FavoriteStars = self._STATE.FavoriteStars or {}
+
+    local star = Instance.new("ImageLabel", holder)
+    star.Name = "FavoriteStar"
+    star.Size = UDim2.fromOffset(11, 11)
+    star.Position = starPos or UDim2.new(1, -14, 0, 2)
+    star.BackgroundTransparency = 1
+    star.Image = GetIcon("star")
+    star.ImageColor3 = self._STATE.Favorites[configId] and self._Colors.Accent or self._Colors.TextDim
+    star.ImageTransparency = self._STATE.Favorites[configId] and 0 or 0.55
+    star.ZIndex = 10
+    self._STATE.FavoriteStars[configId] = star
+
+    holder.MouseEnter:Connect(function()
+        star:SetAttribute("DoD_Hover", true)
+        self:_updateFavoriteStar(configId)
+    end)
+    holder.MouseLeave:Connect(function()
+        star:SetAttribute("DoD_Hover", false)
+        self:_updateFavoriteStar(configId)
+    end)
+    star.MouseEnter:Connect(function()
+        star:SetAttribute("DoD_Hover", true)
+        self:_updateFavoriteStar(configId)
+    end)
+    star.MouseLeave:Connect(function()
+        star:SetAttribute("DoD_Hover", false)
+        self:_updateFavoriteStar(configId)
+    end)
+
+    star.MouseButton1Click:Connect(function()
+        if self._STATE.Favorites[configId] then
+            self._STATE.Favorites[configId] = nil
+        else
+            self._STATE.Favorites[configId] = true
+        end
+        self:_updateFavoriteStar(configId)
+        self:_applySearchFilter()
+        self:_triggerAutoSave()
+    end)
+
+    self:_registerThemeRefresher(function()
+        if star and star.Parent then
+            local isFav = self._STATE.Favorites[configId] == true
+            star.ImageColor3 = isFav and self._Colors.Accent or self._Colors.TextDim
+        end
+    end)
 end
 
 -- =========================================================
@@ -4602,24 +4700,26 @@ function Library:_initDrag()
         end
     end)
 
-    Fn.track(UserInputService.InputChanged, function(inp)
-        if dragging and (inp.UserInputType == Enum.UserInputType.MouseMovement or inp.UserInputType == Enum.UserInputType.Touch) then
-            local camera = getCam()
-            if not camera then return end
-            local vp = camera.ViewportSize
-            local sz = UI.MainContainer.AbsoluteSize
-            local delta = inp.Position - dragStart
-            local scaleX = dragStartPos.X.Scale * vp.X
-            local scaleY = dragStartPos.Y.Scale * vp.Y
-            local absX = scaleX + dragStartPos.X.Offset + delta.X
-            local absY = scaleY + dragStartPos.Y.Offset + delta.Y
-            absX = math.clamp(absX, sz.X * 0.5 + 8, vp.X - sz.X * 0.5 - 8)
-            absY = math.clamp(absY, sz.Y * 0.5 + 8, vp.Y - sz.Y * 0.5 - 8)
-            UI.MainContainer.Position = UDim2.new(
-                dragStartPos.X.Scale, absX - scaleX,
-                dragStartPos.Y.Scale, absY - scaleY
-            )
-        end
+    Fn.track(RunService.RenderStepped, function(dt)
+        if not dragging then return end
+        local camera = getCam()
+        if not camera then return end
+        local vp = camera.ViewportSize
+        local sz = UI.MainContainer.AbsoluteSize
+        local mouse = UserInputService:GetMouseLocation()
+        local scaleX = dragStartPos.X.Scale * vp.X
+        local scaleY = dragStartPos.Y.Scale * vp.Y
+        local absX = scaleX + dragStartPos.X.Offset + (mouse.X - dragStart.X)
+        local absY = scaleY + dragStartPos.Y.Offset + (mouse.Y - dragStart.Y)
+        absX = math.clamp(absX, sz.X * 0.5 + 8, vp.X - sz.X * 0.5 - 8)
+        absY = math.clamp(absY, sz.Y * 0.5 + 8, vp.Y - sz.Y * 0.5 - 8)
+        local targetX = absX - scaleX
+        local targetY = absY - scaleY
+        local cur = UI.MainContainer.Position
+        local smooth = math.min(1, dt * 30)
+        local newX = cur.X.Offset + (targetX - cur.X.Offset) * smooth
+        local newY = cur.Y.Offset + (targetY - cur.Y.Offset) * smooth
+        UI.MainContainer.Position = UDim2.new(cur.X.Scale, newX, cur.Y.Scale, newY)
     end, self)
 
     Fn.track(UserInputService.InputEnded, function(inp)
@@ -6044,7 +6144,8 @@ function Library:CreateThemeCustomizer(tabName)
         "itachi-uchiha-3840x2160-25721.jpg",
         "kawaii-cat-girl-3840x2160-26545.png",
         "miles-morales-3840x2160-25975.jpg",
-        "thumb-1920-1394067.png"
+        "thumb-1920-1394067.png",
+        "daemons.wtf.png"
     }
 
     local currentWallpaperIndex = 1
@@ -6940,7 +7041,7 @@ function Library:AddDropdown(page, text, options, defaultIndex, callback)
             end
         end
     )
-    self:_attachFavorite(holder, _favId)
+    self:_attachFavorite(holder, _favId, UDim2.new(1, -62, 0.5, -6))
 
     local function updatePopupPosition()
         local camera = getCam()
@@ -7926,8 +8027,13 @@ function Library:AddButton(page, text, callback)
     btn.TextColor3 = Fn.accentTextColor(self._Colors.Accent)
     btn.Font = Enum.Font.GothamBold
     btn.TextSize = 12
+    btn.TextScaled = true
+    btn.TextTruncate = Enum.TextTruncate.AtEnd
     btn.BorderSizePixel = 0
     btn.AutoButtonColor = false
+    local btnTextConstraint = Instance.new("UITextSizeConstraint", btn)
+    btnTextConstraint.MinTextSize = 9
+    btnTextConstraint.MaxTextSize = 12
     Fn.bindPressAnimation(btn)
     Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 8)
 
@@ -8478,7 +8584,7 @@ function Library:Minimize()
     STATE.AnimatingGui = true
     STATE.GuiVisible = false
     
-    self:PlaySound("Click")
+    self:PlaySound("ToggleOff")
     
     UserInputService.MouseIconEnabled = true
     if UI.CustomCursor then UI.CustomCursor.Visible = false end
@@ -8494,7 +8600,7 @@ function Library:Minimize()
         centerY = (pos.Y + size.Y / 2) / vp.Y
     end
     
-    for i = 1, 75 do
+    for i = 1, 40 do
         local p = Instance.new("Frame")
         p.Parent = UI.MainGui
         local pSize = math.random(4, 12)
@@ -8522,18 +8628,18 @@ function Library:Minimize()
         task.delay(1.7, function() if p and p.Parent then p:Destroy() end end)
     end
     
-    local tweenInfo = TweenInfo.new(0.35, Enum.EasingStyle.Quart, Enum.EasingDirection.In)
+    local tweenInfo = TweenInfo.new(0.4, Enum.EasingStyle.Quart, Enum.EasingDirection.Out)
     
     STATE.SavedPos = UI.MainContainer.Position
-    local targetPos = UDim2.new(STATE.SavedPos.X.Scale, STATE.SavedPos.X.Offset, STATE.SavedPos.Y.Scale, STATE.SavedPos.Y.Offset + 30)
+    local pillPos = UDim2.new(0.5, 0, 0, 30)
 
     TweenService:Create(UI.GuiBlur, tweenInfo, {Size = 0}):Play()
-    TweenService:Create(UI.MainContainer, tweenInfo, {BackgroundTransparency = 1, Position = targetPos}):Play()
+    TweenService:Create(UI.MainContainer, tweenInfo, {BackgroundTransparency = 1, Position = pillPos}):Play()
     if UI.AcrylicTexture then TweenService:Create(UI.AcrylicTexture, tweenInfo, {BackgroundTransparency = 1}):Play() end
     if UI.AcrylicSheen then TweenService:Create(UI.AcrylicSheen, tweenInfo, {BackgroundTransparency = 1}):Play() end
     TweenService:Create(UI.FocusOverlay, tweenInfo, {BackgroundTransparency = 1}):Play()
     
-    local st = TweenService:Create(UI.MainScale, tweenInfo, {Scale = 0.96})
+    local st = TweenService:Create(UI.MainScale, tweenInfo, {Scale = 0.4})
     st:Play()
     
     st.Completed:Connect(function()
@@ -8593,6 +8699,7 @@ function Library:Toggle()
 
     if STATE.GuiVisible then
         -- CLOSE ANIMATION (Smooth Slide Down + Fade Out)
+        self:PlaySound("ToggleOff")
         STATE.GuiVisible = false
         UserInputService.MouseIconEnabled = true
         if UI.CustomCursor then UI.CustomCursor.Visible = false end
@@ -8621,11 +8728,13 @@ function Library:Toggle()
         end)
     else
         -- OPEN ANIMATION (Smooth Slide Up + Fade In)
+        self:PlaySound("ToggleOn")
         UserInputService.MouseIconEnabled = false
         if not self._isMobile and UI.CustomCursor then 
             UI.CustomCursor.Visible = true 
         end
 
+        local fromPill = UI.MinimizeButton and UI.MinimizeButton.Visible
         UI.MainContainer.Visible = true
         UI.ParticleBG.Visible = true
         STATE.GuiVisible = true
@@ -8636,8 +8745,13 @@ function Library:Toggle()
         local basePos = STATE.SavedPos or UI.MainContainer.Position
         local startPos = UDim2.new(basePos.X.Scale, basePos.X.Offset, basePos.Y.Scale, basePos.Y.Offset + 30)
         
-        UI.MainContainer.Position = startPos
-        UI.MainScale.Scale = 0.96
+        if fromPill then
+            UI.MainContainer.Position = UDim2.new(0.5, 0, 0, 30)
+            UI.MainScale.Scale = 0.4
+        else
+            UI.MainContainer.Position = startPos
+            UI.MainScale.Scale = 0.96
+        end
         UI.MainContainer.BackgroundTransparency = 1
         if UI.AcrylicTexture then UI.AcrylicTexture.BackgroundTransparency = 1 end
         if UI.AcrylicSheen then UI.AcrylicSheen.BackgroundTransparency = 1 end
