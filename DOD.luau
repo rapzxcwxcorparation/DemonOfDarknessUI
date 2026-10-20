@@ -664,6 +664,17 @@ function Library.new(opts)
     elseif type(opts) ~= "table" then
         error("[DoD UI] Library.new expects an options table.")
     end
+
+    -- ANTI DOUBLE EXECUTION
+    local oldMain = CoreGui:FindFirstChild("DoD_UI_Main")
+    if oldMain then oldMain:Destroy() end
+    local oldNotif = CoreGui:FindFirstChild("DoD_UI_Notifications")
+    if oldNotif then oldNotif:Destroy() end
+    local oldTooltip = CoreGui:FindFirstChild("DoD_UI_Tooltip")
+    if oldTooltip then oldTooltip:Destroy() end
+    local oldBlur = Lighting:FindFirstChild("DoD_UI_Blur")
+    if oldBlur then oldBlur:Destroy() end
+
     local self = setmetatable({}, Library)
 
     self.Title       = opts.Title or "Demon of Darkness UI"
@@ -719,6 +730,7 @@ function Library.new(opts)
     end
 
     self._UI = {}
+    self._isMobile = UserInputService.TouchEnabled
     self._Colors = table.clone(D.Colors)
     if opts.FocusOverlay ~= nil and type(opts.FocusOverlay) ~= "boolean" then
         error("[DoD UI] FocusOverlay must be a boolean.")
@@ -1317,6 +1329,23 @@ function Library:_initMainGui()
     UI.MainGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
     UI.MainGui.DisplayOrder = 1000
 
+    UI.CustomCursor = Instance.new("ImageLabel", UI.MainGui)
+    UI.CustomCursor.Name = "CustomCursor"
+    UI.CustomCursor.Size = UDim2.fromOffset(20, 20)
+    UI.CustomCursor.AnchorPoint = Vector2.new(0, 0)
+    UI.CustomCursor.BackgroundTransparency = 1
+    UI.CustomCursor.Image = GetIcon("mouse-pointer-2")
+    UI.CustomCursor.ImageColor3 = self._Colors.Accent
+    UI.CustomCursor.ZIndex = 99999
+    UI.CustomCursor.Visible = false
+
+    Fn.track(RunService.RenderStepped, function()
+        if UI.CustomCursor.Visible then
+            local mouse = UserInputService:GetMouseLocation()
+            UI.CustomCursor.Position = UDim2.fromOffset(mouse.X, mouse.Y)
+        end
+    end, self)
+
     UI.FocusOverlay = Instance.new("Frame", UI.MainGui)
     UI.FocusOverlay.Name = "FocusOverlay"
     UI.FocusOverlay.Size = UDim2.fromScale(1, 1)
@@ -1448,7 +1477,7 @@ function Library:_initMainGui()
     UI.AcrylicSheen.Visible = self.Acrylic
 
     UI.MainScale = Instance.new("UIScale", MC)
-    UI.MainScale.Scale = 1
+    UI.MainScale.Scale = self._isMobile and 0.75 or 1
 
     UI.MainStroke = Instance.new("UIStroke", MC)
     UI.MainStroke.Color = self._Colors.Border
@@ -2060,6 +2089,18 @@ function Library:SetToggleKey(key)
     self:Notify("KEYBIND", "Toggle GUI: " .. key.Name)
 end
 
+function Library:SetCursorIcon(assetId)
+    if self:_isDead() then return end
+    if type(assetId) ~= "string" then return end
+    local img = "rbxassetid://" .. tostring(assetId)
+    if string.sub(assetId, 1, 13) == "rbxassetid://" then
+        img = assetId
+    end
+    if self._UI.CustomCursor then
+        self._UI.CustomCursor.Image = img
+    end
+end
+
 function Library:SetTitleIcon(iconName)
     if self:_isDead() then return end
     if type(iconName) ~= "string" or iconName == "" then
@@ -2280,6 +2321,9 @@ function Library:_initTitleBar()
     end)
 
     self:_registerThemeRefresher(function()
+        if UI.CustomCursor then
+            UI.CustomCursor.ImageColor3 = self._Colors.Accent
+        end
         if UI.TitleToggleHint then
             UI.TitleToggleHint.TextColor3 = self._Colors.TextDim
         end
@@ -2375,10 +2419,13 @@ function Library:_initTrafficLights()
         Color3.fromRGB(60, 220, 80),
     }
     UI.TrafficDots = {}
+    local isMobile = self._isMobile
+    local dotSize = isMobile and 18 or 14
+    local dotSpacing = isMobile and 24 or 18
     for i = 1, 3 do
         local dot = Instance.new("TextButton", container)
-        dot.Size = UDim2.new(0, 14, 0, 14)
-        dot.Position = UDim2.new(0, (i - 1) * 18, 0, 0)
+        dot.Size = UDim2.new(0, dotSize, 0, dotSize)
+        dot.Position = UDim2.new(0, (i - 1) * dotSpacing, 0, 0)
         dot.BackgroundColor3 = baseColors[i]
         dot.Text = ""
         dot.BorderSizePixel = 0
@@ -3475,6 +3522,16 @@ function Library:_initMobileToggle()
     UI.MobileToggle.MouseButton1Click:Connect(function()
         self:Toggle()
     end)
+    
+    -- Sinkronisasi visibilitas tombol Mobile Toggle
+    UI.MobileToggle.Visible = self._isMobile and self._STATE.GuiVisible
+    local oldToggle = self.Toggle
+    self.Toggle = function(lib, ...)
+        oldToggle(lib, ...)
+        if UI.MobileToggle then
+            UI.MobileToggle.Visible = self._isMobile and self._STATE.GuiVisible
+        end
+    end
 end
 
 -- =========================================================
@@ -3492,6 +3549,11 @@ function Library:_initDrag()
             dragStartPos = UI.MainContainer.Position
         end
     end)
+    
+    -- Support drag dari mana saja di TitleBar untuk Mobile
+    if self._isMobile then
+        UI.TitleBar.Active = true
+    end
 
     Fn.track(UserInputService.InputChanged, function(inp)
         if dragging and (inp.UserInputType == Enum.UserInputType.MouseMovement or inp.UserInputType == Enum.UserInputType.Touch) then
@@ -4921,7 +4983,7 @@ function Library:AddSlider(page, text, minVal, maxVal, default, decimals, callba
     Instance.new("UICorner", holder).CornerRadius = UDim.new(0, 8)
 
     local lab = Instance.new("TextLabel", holder)
-    lab.Size = UDim2.new(1, -112, 0, 18)
+    lab.Size = UDim2.new(1, -142, 0, 18)
     lab.Position = UDim2.new(0, 14, 0, 6)
     lab.BackgroundTransparency = 1
     lab.Text = text
@@ -4931,10 +4993,29 @@ function Library:AddSlider(page, text, minVal, maxVal, default, decimals, callba
     lab.TextXAlignment = Enum.TextXAlignment.Left
     lab.TextTruncate = Enum.TextTruncate.AtEnd
 
+    local btnMinus = Instance.new("TextButton", holder)
+    btnMinus.Name = "BtnMinus"
+    btnMinus.Size = UDim2.fromOffset(24, 24)
+    btnMinus.Position = UDim2.new(1, -114, 0, 3)
+    btnMinus.BackgroundColor3 = self._Colors.Bg2
+    btnMinus.BackgroundTransparency = 0.5
+    btnMinus.TextColor3 = self._Colors.Text
+    btnMinus.Font = Enum.Font.GothamBold
+    btnMinus.TextSize = 14
+    btnMinus.Text = "-"
+    btnMinus.AutoButtonColor = false
+    btnMinus.BorderSizePixel = 0
+    Instance.new("UICorner", btnMinus).CornerRadius = UDim.new(0, 8)
+
+    local btnMinusStroke = Instance.new("UIStroke", btnMinus)
+    btnMinusStroke.Color = self._Colors.Border
+    btnMinusStroke.Thickness = 1
+    btnMinusStroke.Transparency = 0.6
+
     local valBox = Instance.new("TextBox", holder)
     valBox.Name = "ValueBox"
-    valBox.Size = UDim2.new(0, 80, 0, 24)
-    valBox.Position = UDim2.new(1, -94, 0, 3)
+    valBox.Size = UDim2.new(0, 56, 0, 24)
+    valBox.Position = UDim2.new(1, -84, 0, 3)
     valBox.BackgroundColor3 = self._Colors.Bg2
     valBox.BackgroundTransparency = 0.5
     valBox.TextColor3 = self._Colors.Text
@@ -4946,14 +5027,51 @@ function Library:AddSlider(page, text, minVal, maxVal, default, decimals, callba
     valBox.BorderSizePixel = 0
     Instance.new("UICorner", valBox).CornerRadius = UDim.new(0, 8)
 
+    local btnPlus = Instance.new("TextButton", holder)
+    btnPlus.Name = "BtnPlus"
+    btnPlus.Size = UDim2.fromOffset(24, 24)
+    btnPlus.Position = UDim2.new(1, -18, 0, 3)
+    btnPlus.BackgroundColor3 = self._Colors.Bg2
+    btnPlus.BackgroundTransparency = 0.5
+    btnPlus.TextColor3 = self._Colors.Text
+    btnPlus.Font = Enum.Font.GothamBold
+    btnPlus.TextSize = 14
+    btnPlus.Text = "+"
+    btnPlus.AutoButtonColor = false
+    btnPlus.BorderSizePixel = 0
+    Instance.new("UICorner", btnPlus).CornerRadius = UDim.new(0, 8)
+
+    local btnPlusStroke = Instance.new("UIStroke", btnPlus)
+    btnPlusStroke.Color = self._Colors.Border
+    btnPlusStroke.Thickness = 1
+    btnPlusStroke.Transparency = 0.6
+
     local valBoxPad = Instance.new("UIPadding", valBox)
-    valBoxPad.PaddingLeft = UDim.new(0, 10)
-    valBoxPad.PaddingRight = UDim.new(0, 10)
+    valBoxPad.PaddingLeft = UDim.new(0, 4)
+    valBoxPad.PaddingRight = UDim.new(0, 4)
 
     local valBoxStroke = Instance.new("UIStroke", valBox)
     valBoxStroke.Color = self._Colors.Border
     valBoxStroke.Thickness = 1
     valBoxStroke.Transparency = 0.6
+
+    btnMinus.MouseEnter:Connect(function()
+        TweenService:Create(btnMinus, TweenInfo.new(0.15), {BackgroundTransparency = 0.2}):Play()
+        TweenService:Create(btnMinusStroke, TweenInfo.new(0.15), {Transparency = 0.2, Color = self._Colors.Accent}):Play()
+    end)
+    btnMinus.MouseLeave:Connect(function()
+        TweenService:Create(btnMinus, TweenInfo.new(0.15), {BackgroundTransparency = 0.5}):Play()
+        TweenService:Create(btnMinusStroke, TweenInfo.new(0.15), {Transparency = 0.6, Color = self._Colors.Border}):Play()
+    end)
+    
+    btnPlus.MouseEnter:Connect(function()
+        TweenService:Create(btnPlus, TweenInfo.new(0.15), {BackgroundTransparency = 0.2}):Play()
+        TweenService:Create(btnPlusStroke, TweenInfo.new(0.15), {Transparency = 0.2, Color = self._Colors.Accent}):Play()
+    end)
+    btnPlus.MouseLeave:Connect(function()
+        TweenService:Create(btnPlus, TweenInfo.new(0.15), {BackgroundTransparency = 0.5}):Play()
+        TweenService:Create(btnPlusStroke, TweenInfo.new(0.15), {Transparency = 0.6, Color = self._Colors.Border}):Play()
+    end)
 
     local sliderBg = Instance.new("Frame", holder)
     sliderBg.Size = UDim2.new(1, -28, 0, 8)
@@ -5064,6 +5182,20 @@ function Library:AddSlider(page, text, minVal, maxVal, default, decimals, callba
             valBox.Text = formatValue(newVal)
         end
     end
+
+    local step = 1 / (10 ^ decimals)
+
+    btnMinus.MouseButton1Click:Connect(function()
+        applyValue(val - step, true)
+        callback(val)
+        self:_triggerAutoSave()
+    end)
+    
+    btnPlus.MouseButton1Click:Connect(function()
+        applyValue(val + step, true)
+        callback(val)
+        self:_triggerAutoSave()
+    end)
 
     local function setFromPosition(position)
         local width = sliderBg.AbsoluteSize.X
@@ -5176,6 +5308,12 @@ function Library:AddSlider(page, text, minVal, maxVal, default, decimals, callba
         valBox.TextColor3 = self._Colors.Text
         valBox.BackgroundColor3 = self._Colors.Bg2
         valBoxStroke.Color = self._Colors.Border
+        btnMinus.BackgroundColor3 = self._Colors.Bg2
+        btnMinus.TextColor3 = self._Colors.Text
+        btnMinusStroke.Color = self._Colors.Border
+        btnPlus.BackgroundColor3 = self._Colors.Bg2
+        btnPlus.TextColor3 = self._Colors.Text
+        btnPlusStroke.Color = self._Colors.Border
         fill.BackgroundColor3 = self._Colors.Accent
         fillGlow.BackgroundColor3 = self._Colors.Accent
         knobStroke.Color = self._Colors.Accent
@@ -6620,6 +6758,10 @@ function Library:Toggle()
 
     if STATE.GuiVisible then
         -- CLOSE ANIMATION (Smooth Slide Down + Fade Out)
+        UserInputService.MouseIconEnabled = true
+        if UI.CustomCursor then UI.CustomCursor.Visible = false end
+        UserInputService.MouseBehavior = Enum.MouseBehavior.LockCenter
+        
         STATE.SavedPos = UI.MainContainer.Position
         local targetPos = UDim2.new(STATE.SavedPos.X.Scale, STATE.SavedPos.X.Offset, STATE.SavedPos.Y.Scale, STATE.SavedPos.Y.Offset + 30)
         
@@ -6644,6 +6786,12 @@ function Library:Toggle()
         end)
     else
         -- OPEN ANIMATION (Smooth Slide Up + Fade In)
+        UserInputService.MouseIconEnabled = false
+        if not self._isMobile and UI.CustomCursor then 
+            UI.CustomCursor.Visible = true 
+        end
+        UserInputService.MouseBehavior = Enum.MouseBehavior.Default
+
         UI.MainContainer.Visible = true
         UI.ParticleBG.Visible = true
         STATE.GuiVisible = true
@@ -6693,6 +6841,9 @@ function Library:Destroy()
     local STATE = self._STATE
     if STATE.Destroyed then return end
     STATE.Destroyed = true
+    
+    UserInputService.MouseIconEnabled = true
+    UserInputService.MouseBehavior = Enum.MouseBehavior.LockCenter
     STATE.WeatherEnabled = false
     if STATE.GuiTween then
         STATE.GuiTween:Cancel()
