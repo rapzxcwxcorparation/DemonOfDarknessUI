@@ -1489,20 +1489,20 @@ function Library:_initMainGui()
 
         if overGui then
             if not self._isMobile then
-                if UserInputService.MouseIconEnabled then
-                    UserInputService.MouseIconEnabled = false
-                end
                 if UI.CustomCursor and not UI.CustomCursor.Visible then
                     UI.CustomCursor.Visible = true
+                end
+                if UserInputService.MouseIconEnabled then
+                    UserInputService.MouseIconEnabled = false
                 end
             end
         else
             if not self._isMobile then
-                if not UserInputService.MouseIconEnabled then
-                    UserInputService.MouseIconEnabled = true
-                end
                 if UI.CustomCursor and UI.CustomCursor.Visible then
                     UI.CustomCursor.Visible = false
+                end
+                if not UserInputService.MouseIconEnabled then
+                    UserInputService.MouseIconEnabled = true
                 end
             end
         end
@@ -1587,6 +1587,15 @@ function Library:_initMainGui()
             data.obj.Position = UDim2.fromScale(nx, ny)
         end
     end)
+
+    -- AUTO DEFENDER: Langsung sembunyiin kursor asli kalau game coba munculin
+    Fn.track(UserInputService:GetPropertyChangedSignal("MouseIconEnabled"), function()
+        if self._STATE and not self._STATE.Destroyed then
+            if UserInputService.MouseIconEnabled and UI.CustomCursor and UI.CustomCursor.Visible then
+                UserInputService.MouseIconEnabled = false
+            end
+        end
+    end, self)
 
     UI.SnowLayer = Instance.new("Frame", UI.MainGui)
     UI.SnowLayer.Name = "SnowLayer"
