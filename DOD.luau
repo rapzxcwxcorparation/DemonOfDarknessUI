@@ -2121,6 +2121,7 @@ function Library:_applyNavigationLayout()
             UI.ContentArea.Size = UDim2.new(1, -(sideWidth + 30), 1, -62)
             UI.ContentArea.Position = UDim2.new(0, sideWidth + 20, 0, 50)
         end
+        if UI.BottomPill then UI.BottomPill.Visible = false end
 
     elseif position == "Bottom" then
         if hasSearch and UI.SearchBar.Parent ~= UI.MainContainer then
@@ -2130,12 +2131,13 @@ function Library:_applyNavigationLayout()
         UI.TabBarDivider.Visible = true
         if UI.AccordionScroll then UI.AccordionScroll.Visible = false end
         if UI.SideProfileMini then UI.SideProfileMini.Visible = false end
+        if UI.BottomPill then UI.BottomPill.Visible = true end
 
-        UI.CategoryBar.Size = UDim2.new(1, -20, 0, 48)
-        UI.CategoryBar.Position = UDim2.new(0, 10, 1, -58)
+        UI.CategoryBar.Size = UDim2.new(1, -20, 0, 56)
+        UI.CategoryBar.Position = UDim2.new(0, 10, 1, -66)
         UI.CategoryBar.BackgroundColor3 = self._Colors.Card
-        UI.CategoryBar.BackgroundTransparency = 0.1
-        UI.CategoryBarStroke.Transparency = 0.25
+        UI.CategoryBar.BackgroundTransparency = 0.05
+        UI.CategoryBarStroke.Transparency = 0.2
 
         UI.Sidebar.Size = UDim2.new(1, -20, 0, 30)
         UI.Sidebar.Position = UDim2.new(0, 10, 0, 48)
@@ -2148,7 +2150,7 @@ function Library:_applyNavigationLayout()
         end
         if hasContent then
             local contentTop = 119
-            local contentH = math.max(120, mainH - contentTop - 75)
+            local contentH = math.max(120, mainH - contentTop - 85)
             UI.ContentArea.Size = UDim2.new(1, -30, 0, contentH)
             UI.ContentArea.Position = UDim2.new(0, 15, 0, contentTop)
         end
@@ -2175,6 +2177,7 @@ function Library:_applyNavigationLayout()
             UI.ContentArea.Size = UDim2.new(1, -30, 0, contentH)
             UI.ContentArea.Position = UDim2.new(0, 15, 0, contentTop)
         end
+        if UI.BottomPill then UI.BottomPill.Visible = false end
     end
 
     self:_layoutCategoryButtons()
@@ -3057,40 +3060,45 @@ function Library:_layoutCategoryButtons()
         return
     end
 
-    if false then
-        local gap, padding = 8, 8
-        local availableWidth = UI.MainContainer.AbsoluteSize.X - 20
-        if self.TabPosition == "Top" then
-            availableWidth = UI.CategoryBar.AbsoluteSize.X
-        elseif availableWidth > 0 then
-            UI.CategoryBar.Size = UDim2.new(0, availableWidth, 0, 44)
-        end
-        if availableWidth <= 0 then return end
+    local gap, padding = 8, 8
+    local availableWidth = UI.MainContainer.AbsoluteSize.X - 20
+    if self.TabPosition == "Top" then
+        availableWidth = UI.CategoryBar.AbsoluteSize.X
+    end
+    if availableWidth <= 0 then return end
 
-        gap = math.min(gap, math.floor(availableWidth / math.max(#names * 2, 1)))
-        padding = math.min(padding, math.floor((availableWidth - gap * math.max(#names - 1, 0)) / (#names * 2)))
-        local gapsWidth = math.max(#names - 1, 0) * gap
-        local buttonWidth = math.min(self.TabWidth, math.floor((availableWidth - padding * 2 - gapsWidth) / #names))
-        buttonWidth = math.max(buttonWidth, 1)
-        local dockWidth = math.min(availableWidth, #names * buttonWidth + gapsWidth + padding * 2)
-        if self.TabPosition == "Bottom" then
-            UI.CategoryBar.Size = UDim2.new(0, dockWidth, 0, 44)
-            UI.CategoryBar.Position = UDim2.new(0.5, -dockWidth / 2, 1, -54)
-        end
+    gap = math.min(gap, math.floor(availableWidth / math.max(#names * 2, 1)))
+    padding = math.min(padding, math.floor((availableWidth - gap * math.max(#names - 1, 0)) / (#names * 2)))
+    local gapsWidth = math.max(#names - 1, 0) * gap
+    local buttonWidth = math.min(self.TabWidth, math.floor((availableWidth - padding * 2 - gapsWidth) / #names))
+    buttonWidth = math.max(buttonWidth, 1)
+    local dockWidth = math.min(availableWidth, #names * buttonWidth + gapsWidth + padding * 2)
+    
+    if self.TabPosition == "Bottom" then
+        UI.CategoryBar.Size = UDim2.new(1, -20, 0, 56)
+        UI.CategoryBar.Position = UDim2.new(0, 10, 1, -66)
+    end
 
-        local startX = padding
-        if self.CategoryAlign == "Center" then
-            startX = math.floor((availableWidth - dockWidth) / 2) + padding
-        elseif self.CategoryAlign == "Right" then
-            startX = availableWidth - dockWidth + padding
-        end
-        for i, name in ipairs(names) do
-            local data = STATE.CategoryButtons[name]
-            data.button.Size = UDim2.new(0, buttonWidth, 0, 30)
-            data.button.Position = UDim2.new(0, startX + (i - 1) * (buttonWidth + gap), 0.5, -15)
-            data.label.Visible = buttonWidth >= 72
-            data.icon.Position = UDim2.new(0, buttonWidth >= 72 and 10 or (buttonWidth - 16) / 2, 0.5, -8)
-            data.label.Size = UDim2.new(1, -38, 1, 0)
+    local startX = padding
+    if self.CategoryAlign == "Center" or self.TabPosition == "Bottom" then
+        startX = math.floor((availableWidth - dockWidth) / 2) + padding
+    elseif self.CategoryAlign == "Right" then
+        startX = availableWidth - dockWidth + padding
+    end
+    for i, name in ipairs(names) do
+        local data = STATE.CategoryButtons[name]
+        data.button.Size = UDim2.new(0, buttonWidth, 0, self.TabPosition == "Bottom" and 36 or 30)
+        data.button.Position = UDim2.new(0, startX + (i - 1) * (buttonWidth + gap), 0.5, self.TabPosition == "Bottom" and -18 or -15)
+        data.label.Visible = buttonWidth >= 72
+        data.icon.Position = UDim2.new(0, buttonWidth >= 72 and 10 or (buttonWidth - 16) / 2, 0.5, -8)
+        data.label.Size = UDim2.new(1, -38, 1, 0)
+    end
+
+    if self.TabPosition == "Bottom" and UI.BottomPill then
+        local activeData = STATE.CategoryButtons[STATE.ActiveCategory]
+        if activeData and activeData.button then
+            UI.BottomPill.Size = UDim2.new(0, buttonWidth, 0, 36)
+            UI.BottomPill.Position = UDim2.new(0, activeData.button.Position.X.Offset, 0.5, -18)
         end
     end
 end
