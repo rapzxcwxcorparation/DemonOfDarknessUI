@@ -101,9 +101,18 @@ Fn.bindPressAnimation = function(guiObject)
     end
     local baseScale = scale.Scale
     local activeTween
+    local pressed = false
 
     local function animate(factor)
         if activeTween then activeTween:Cancel() end
+        if factor < 1 then
+            if not pressed then
+                baseScale = scale.Scale
+                pressed = true
+            end
+        else
+            pressed = false
+        end
         activeTween = TweenService:Create(
             scale,
             TweenInfo.new(0.09, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
@@ -1176,6 +1185,7 @@ end
 function Library:SetNotificationPosition(pos)
     if self:_isDead() then return end
     self._NotifPosition = tostring(pos or "TopRight")
+    self:_updateNotifPositions()
 end
 
 function Library:SetFavoritesOnly(enabled)
@@ -2679,7 +2689,7 @@ function Library:_bindTooltip(element, text)
                 lbl.Size = UDim2.new(1, -18, 0, 16)
                 lbl.Position = UDim2.new(0, 12, 0, 6)
                 if hint then
-                    hint.Text = "RightClick Mouse "★" For Favorite"
+                    hint.Text = "RightClick Mouse ★ For Favorite"
                     hint.Visible = true
                 end
             else
@@ -2727,6 +2737,8 @@ function Library:_bindToggleKey()
     end, self)
     Fn.track(UserInputService.InputBegan, function(input, gameProcessed)
         if input.UserInputType ~= Enum.UserInputType.MouseButton2 then return end
+        if not self._STATE.GuiVisible then return end
+        if not (self._UI.MainContainer and self._UI.MainContainer.Visible) then return end
         local mp = UserInputService:GetMouseLocation()
         for configId, holder in pairs(self._STATE.FavoriteHolders or {}) do
             if holder and holder.Parent then
@@ -3588,6 +3600,21 @@ function Library:_initSidebar()
     UI.SideProfileName = spName
     UI.SideProfileStroke = spStroke
 
+    UI.BottomPill = Instance.new("Frame", UI.CategoryBar)
+    UI.BottomPill.Name = "BottomPill"
+    UI.BottomPill.Size = UDim2.new(0, 110, 0, 36)
+    UI.BottomPill.Position = UDim2.new(0, 0, 0.5, -18)
+    UI.BottomPill.BackgroundColor3 = self._Colors.Card
+    UI.BottomPill.BackgroundTransparency = 0.4
+    UI.BottomPill.BorderSizePixel = 0
+    UI.BottomPill.ZIndex = 0
+    UI.BottomPill.Visible = false
+    Instance.new("UICorner", UI.BottomPill).CornerRadius = UDim.new(1, 0)
+    UI.BottomPillStroke = Instance.new("UIStroke", UI.BottomPill)
+    UI.BottomPillStroke.Color = self._Colors.Accent
+    UI.BottomPillStroke.Thickness = 1.2
+    UI.BottomPillStroke.Transparency = 0.3
+
     self:_registerThemeRefresher(function()
         if not miniProfile.Parent then return end
         miniProfile.BackgroundColor3 = self._Colors.Card
@@ -3596,6 +3623,10 @@ function Library:_initSidebar()
         spAvatar.BackgroundColor3 = self._Colors.Bg2
         if accordionScroll and accordionScroll.Parent then
             accordionScroll.ScrollBarImageColor3 = self._Colors.Accent
+        end
+        if UI.BottomPill and UI.BottomPill.Parent then
+            UI.BottomPill.BackgroundColor3 = self._Colors.Card
+            if UI.BottomPillStroke then UI.BottomPillStroke.Color = self._Colors.Accent end
         end
     end)
 end
@@ -3726,10 +3757,13 @@ function Library:_setAccordionState(categoryName, expanded)
     local STATE = self._STATE
     local data = STATE.CategoryButtons and STATE.CategoryButtons[categoryName]
     if not data or not data.isAccordion then return end
+    local wasExpanded = STATE.AccordionExpanded[categoryName] == true
     STATE.AccordionExpanded[categoryName] = expanded
     if expanded then
         data.tabList.Visible = true
-        data.tabList.Size = UDim2.new(1, 0, 0, 0)
+        if not wasExpanded then
+            data.tabList.Size = UDim2.new(1, 0, 0, 0)
+        end
         task.defer(function()
             local targetH = data.layout.AbsoluteContentSize.Y + 4
             TweenService:Create(data.tabList, TweenInfo.new(0.28, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
@@ -5342,6 +5376,10 @@ function Library:CreateTab(categoryName, tabName)
                 accentDot.BackgroundColor3 = self._Colors.Accent
             end)
         end
+    end
+
+    if self.TabPosition == "Side" and STATE.AccordionExpanded[categoryName] then
+        self:_setAccordionState(categoryName, true)
     end
 
     if STATE.ActiveCategory == nil or STATE.ActiveCategory == categoryName then
@@ -8602,7 +8640,7 @@ function Library:AddColorPicker(page, text, defaultColor3, callback)
     previewStroke.Color = self._Colors.Border
     previewStroke.Thickness = 1
 
-    local hue, saturation, value = Color3.toHSV(defaultColor3)
+    local hue, saturation, value = defaultColor3:ToHSV()
     local currentColor = defaultColor3
     local popup = Instance.new("Frame", self._UI.MainGui)
     popup.Name = "ColorPickerPopup"
@@ -8768,7 +8806,7 @@ function Library:AddColorPicker(page, text, defaultColor3, callback)
         function(v, silent)
             if type(v) ~= "table" or type(v[1]) ~= "number" or type(v[2]) ~= "number" or type(v[3]) ~= "number" then return end
             local newColor = Color3.new(v[1], v[2], v[3])
-            hue, saturation, value = Color3.toHSV(newColor)
+            hue, saturation, value = newColor:ToHSV()
             updateColor(false)
             if not silent then
                 callback(currentColor)
