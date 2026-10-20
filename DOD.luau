@@ -44,12 +44,12 @@ local LocalPlayer        = Players.LocalPlayer
 local function getCam() return workspace.CurrentCamera end
 
 local GuiSound = {
-    Click     = { id = "rbxassetid://6895079853", pitch = 1.10, vol = 0.32 },
-    ToggleOn  = { id = "rbxassetid://6895079853", pitch = 1.40, vol = 0.35 },
-    ToggleOff = { id = "rbxassetid://6895079853", pitch = 0.88, vol = 0.28 },
-    TabSwitch = { id = "rbxassetid://6895079853", pitch = 1.25, vol = 0.30 },
-    Dropdown  = { id = "rbxassetid://6895079853", pitch = 1.00, vol = 0.30 },
-    Notify    = { id = "rbxassetid://4590662766", pitch = 1.35, vol = 0.38 }
+    Click     = { id = "rbxassetid://6895079853", pitch = 1.10, vol = 0.45 },
+    ToggleOn  = { id = "rbxassetid://6895079853", pitch = 1.40, vol = 0.50 },
+    ToggleOff = { id = "rbxassetid://6895079853", pitch = 0.88, vol = 0.40 },
+    TabSwitch = { id = "rbxassetid://6895079853", pitch = 1.25, vol = 0.40 },
+    Dropdown  = { id = "rbxassetid://6895079853", pitch = 1.00, vol = 0.40 },
+    Notify    = { id = "rbxassetid://4590662766", pitch = 1.35, vol = 0.55 }
 }
 
 -- =========================================================
@@ -733,6 +733,7 @@ function Library.new(opts)
     self._isMobile = UserInputService.TouchEnabled
     self._CustomColorOverrides = {}
     self._NotifPosition = "TopRight"
+    self._TrailEnabled = true
     self._Colors = table.clone(D.Colors)
     if opts.FocusOverlay ~= nil and type(opts.FocusOverlay) ~= "boolean" then
         error("[DoD UI] FocusOverlay must be a boolean.")
@@ -1469,6 +1470,10 @@ function Library:_initMainGui()
         end
 
         if self._STATE.GuiVisible then
+            if UserInputService.MouseBehavior ~= Enum.MouseBehavior.Default then
+                UserInputService.MouseBehavior = Enum.MouseBehavior.Default
+            end
+
             if checkBounds(UI.MainContainer) or checkBounds(UI.KeybindOverlay) then
                 overGui = true
             end
@@ -1479,9 +1484,6 @@ function Library:_initMainGui()
         end
 
         if overGui then
-            if UserInputService.MouseBehavior ~= Enum.MouseBehavior.Default then
-                UserInputService.MouseBehavior = Enum.MouseBehavior.Default
-            end
             if not self._isMobile then
                 if UserInputService.MouseIconEnabled then
                     UserInputService.MouseIconEnabled = false
@@ -1503,6 +1505,35 @@ function Library:_initMainGui()
         
         if UI.CustomCursor and UI.CustomCursor.Visible then
             UI.CustomCursor.Position = UDim2.fromOffset(mouse.X, mouse.Y)
+            
+            -- Cursor Trail Effect
+            if self._TrailEnabled then
+                local now = tick()
+                if not self._lastTrailSpawn or now - self._lastTrailSpawn > 0.03 then
+                    self._lastTrailSpawn = now
+                    
+                    local trail = Instance.new("Frame")
+                    trail.Name = "CursorTrail"
+                    trail.Size = UDim2.fromOffset(10, 10)
+                    trail.AnchorPoint = Vector2.new(0.5, 0.5)
+                    trail.Position = UDim2.fromOffset(mouse.X, mouse.Y)
+                    trail.BackgroundColor3 = self._Colors.Accent
+                    trail.BackgroundTransparency = 0.4
+                    trail.BorderSizePixel = 0
+                    trail.ZIndex = 99998
+                    Instance.new("UICorner", trail).CornerRadius = UDim.new(1, 0)
+                    trail.Parent = UI.MainGui
+                    
+                    local tw = TweenService:Create(trail, TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+                        Size = UDim2.fromOffset(0, 0),
+                        BackgroundTransparency = 1
+                    })
+                    tw:Play()
+                    tw.Completed:Connect(function()
+                        trail:Destroy()
+                    end)
+                end
+            end
         end
     end, self)
 
@@ -2281,6 +2312,14 @@ function Library:SetToggleKey(key)
         self._UI.TitleToggleHint.Text = key.Name
     end
     self:Notify("KEYBIND", "Toggle GUI: " .. key.Name)
+end
+
+function Library:SetCursorTrail(enabled)
+    if self:_isDead() then return end
+    if type(enabled) ~= "boolean" then
+        error("[DoD UI] SetCursorTrail expects a boolean value.")
+    end
+    self._TrailEnabled = enabled
 end
 
 function Library:SetCursorIcon(assetId)
