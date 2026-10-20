@@ -534,6 +534,7 @@ function SubTabModule:_createSubGroup(mainCategory, subList)
         Fn.bindPressAnimation(btn)
 
         btn.MouseEnter:Connect(function()
+            if self.Owner then self.Owner:PlaySound("Hover") end
             if self.ActiveSubIndices[mainCategory] ~= i then
                 TweenService:Create(btn, TweenInfo.new(0.18), {TextColor3 = Color3.fromRGB(200, 200, 215)}):Play()
             end
@@ -4721,37 +4722,42 @@ end
 
 function Library:_initDrag()
     local UI = self._UI
-    local dragging, dragStart, dragStartPos
+    local dragging = false
+    local dragStartMouse = Vector2.zero
+    local dragStartPos = UDim2.new()
 
     UI.TitleBar.Active = true
     UI.TitleBar.InputBegan:Connect(function(inp)
         if inp.UserInputType == Enum.UserInputType.MouseButton1 or inp.UserInputType == Enum.UserInputType.Touch then
             dragging = true
-            dragStart = inp.Position
+            dragStartMouse = UserInputService:GetMouseLocation()
             dragStartPos = UI.MainContainer.Position
         end
     end)
 
-    Fn.track(RunService.RenderStepped, function(dt)
+    Fn.track(RunService.RenderStepped, function()
         if not dragging then return end
         local camera = getCam()
         if not camera then return end
         local vp = camera.ViewportSize
         local sz = UI.MainContainer.AbsoluteSize
         local mouse = UserInputService:GetMouseLocation()
-        local scaleX = dragStartPos.X.Scale * vp.X
-        local scaleY = dragStartPos.Y.Scale * vp.Y
-        local absX = scaleX + dragStartPos.X.Offset + (mouse.X - dragStart.X)
-        local absY = scaleY + dragStartPos.Y.Offset + (mouse.Y - dragStart.Y)
-        absX = math.clamp(absX, sz.X * 0.5 + 8, vp.X - sz.X * 0.5 - 8)
-        absY = math.clamp(absY, sz.Y * 0.5 + 8, vp.Y - sz.Y * 0.5 - 8)
-        local targetX = absX - scaleX
-        local targetY = absY - scaleY
-        local cur = UI.MainContainer.Position
-        local smooth = math.min(1, dt * 30)
-        local newX = cur.X.Offset + (targetX - cur.X.Offset) * smooth
-        local newY = cur.Y.Offset + (targetY - cur.Y.Offset) * smooth
-        UI.MainContainer.Position = UDim2.new(cur.X.Scale, newX, cur.Y.Scale, newY)
+        local deltaX = mouse.X - dragStartMouse.X
+        local deltaY = mouse.Y - dragStartMouse.Y
+        local baseAbsX = dragStartPos.X.Scale * vp.X + dragStartPos.X.Offset
+        local baseAbsY = dragStartPos.Y.Scale * vp.Y + dragStartPos.Y.Offset
+        local targetAbsX = baseAbsX + deltaX
+        local targetAbsY = baseAbsY + deltaY
+        local halfW = sz.X * 0.5
+        local halfH = sz.Y * 0.5
+        targetAbsX = math.clamp(targetAbsX, halfW + 8, vp.X - halfW - 8)
+        targetAbsY = math.clamp(targetAbsY, halfH + 8, vp.Y - halfH - 8)
+        UI.MainContainer.Position = UDim2.new(
+            dragStartPos.X.Scale,
+            targetAbsX - dragStartPos.X.Scale * vp.X,
+            dragStartPos.Y.Scale,
+            targetAbsY - dragStartPos.Y.Scale * vp.Y
+        )
     end, self)
 
     Fn.track(UserInputService.InputEnded, function(inp)
@@ -4909,6 +4915,7 @@ function Library:CreateCategory(categoryName, iconSpec)
         end)
 
         header.MouseEnter:Connect(function()
+            self:PlaySound("Hover")
             TweenService:Create(hStroke, TweenInfo.new(0.15), {Transparency = 0.3, Color = self._Colors.Accent}):Play()
             TweenService:Create(header, TweenInfo.new(0.15), {BackgroundTransparency = 0.55}):Play()
         end)
@@ -4970,6 +4977,10 @@ function Library:CreateCategory(categoryName, iconSpec)
     label.TextSize = 12
     label.TextXAlignment = Enum.TextXAlignment.Left
     label.TextTruncate = Enum.TextTruncate.AtEnd
+
+    btn.MouseEnter:Connect(function()
+        self:PlaySound("Hover")
+    end)
 
     btn.MouseButton1Click:Connect(function()
         self:SetActiveCategory(categoryName)
@@ -5359,6 +5370,7 @@ function Library:CreateTab(categoryName, tabName)
             subLabel.ZIndex = 7
 
             subBtn.MouseEnter:Connect(function()
+                self:PlaySound("Hover")
                 if STATE.ActiveTab ~= tabName then
                     TweenService:Create(subBtn, TweenInfo.new(0.15), {BackgroundTransparency = 0.7}):Play()
                     TweenService:Create(subLabel, TweenInfo.new(0.15), {TextColor3 = self._Colors.Text}):Play()
@@ -6193,7 +6205,9 @@ function Library:CreateThemeCustomizer(tabName)
         "kawaii-cat-girl-3840x2160-26545.png",
         "miles-morales-3840x2160-25975.jpg",
         "thumb-1920-1394067.png",
-        "daemons.wtf.png"
+        "daemons.wtf.png",
+        "miside-mita-dark-3840x2160-21051.jpg",
+        "wp15319350-4k-anime-girl-eyes-wallpapers.jpg"
     }
 
     local currentWallpaperIndex = 1
