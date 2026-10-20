@@ -716,6 +716,8 @@ function Library.new(opts)
         error("[DoD UI] Acrylic must be a boolean.")
     end
     self.WindowSize = opts.Size or UDim2.fromOffset(750, 500)
+    self.WallpaperSource = opts.Wallpaper
+    self.WallpaperTransparency = opts.WallpaperTransparency or 0
     self.Acrylic = opts.Acrylic ~= false
     if opts.AcrylicBlur == nil then
         self.AcrylicBlurIntensity = 8
@@ -830,6 +832,10 @@ function Library.new(opts)
     end, self)
 
     -- Mouse state will be handled purely by RenderStepped based on hover
+
+    if self.WallpaperSource then
+        self:SetWallpaper(self.WallpaperSource, self.WallpaperTransparency)
+    end
 
     local g = (getgenv and getgenv()) or _G
     if g.DoD_LastConfig then
@@ -1655,6 +1661,18 @@ function Library:_initMainGui()
         Fn.track(camera:GetPropertyChangedSignal("ViewportSize"), updateSizeLimit, self)
     end
 
+    UI.Wallpaper = Instance.new("ImageLabel", MC)
+    UI.Wallpaper.Name = "Wallpaper"
+    UI.Wallpaper.Size = UDim2.fromScale(1, 1)
+    UI.Wallpaper.Position = UDim2.fromScale(0, 0)
+    UI.Wallpaper.AnchorPoint = Vector2.new(0, 0)
+    UI.Wallpaper.BackgroundTransparency = 1
+    UI.Wallpaper.ZIndex = 0
+    UI.Wallpaper.Visible = false
+    UI.Wallpaper.ScaleType = Enum.ScaleType.Crop
+    -- UICorner sengaja dihapus karena MC udah nge-clip pake ClipsDescendants
+    -- Jadi pas di-resize, gambar gak bakal aneh di sudutnya
+
     UI.AcrylicTexture = Instance.new("Frame", MC)
     UI.AcrylicTexture.Name = "AcrylicTexture"
     UI.AcrylicTexture.Size = UDim2.fromScale(1, 1)
@@ -2328,6 +2346,44 @@ function Library:SetToggleKey(key)
         self._UI.TitleToggleHint.Text = key.Name
     end
     self:Notify("KEYBIND", "Toggle GUI: " .. key.Name)
+end
+
+function Library:SetWallpaper(assetId, transparency)
+    if self:_isDead() then return end
+    local UI = self._UI
+    if not UI.Wallpaper then return end
+    if assetId == nil or assetId == "" then
+        UI.Wallpaper.Visible = false
+        return
+    end
+    
+    local img = tostring(assetId)
+    
+    if string.sub(img, 1, 4) == "http" then
+        -- Web URL (GitHub, Imgur, etc)
+        local success, content = pcall(function()
+            if getcustomasset and type(getcustomasset) == "function" then
+                return getcustomasset(img)
+            else
+                return nil
+            end
+        end)
+        
+        if success and content then
+            UI.Wallpaper.Image = content
+        else
+            warn("[DoD UI] Gagal memuat wallpaper dari URL. Executor lu mungkin tidak support 'getcustomasset', atau link-nya invalid.")
+            UI.Wallpaper.Visible = false
+            return
+        end
+    elseif string.sub(img, 1, 13) == "rbxassetid://" then
+        UI.Wallpaper.Image = img
+    else
+        UI.Wallpaper.Image = "rbxassetid://" .. img
+    end
+    
+    UI.Wallpaper.ImageTransparency = math.clamp(transparency or 0, 0, 1)
+    UI.Wallpaper.Visible = true
 end
 
 function Library:SetCursorIcon(assetId)
@@ -3891,6 +3947,11 @@ function Library:_initResize()
         local newY = math.clamp(startSize.Y + delta.Y, 300, camera.ViewportSize.Y * 0.95)
         
         UI.MainContainer.Size = UDim2.fromOffset(newX, newY)
+        
+        -- Sinkronisasi manual buat jaga-jaga kalau engine Roblox agak telat render
+        if UI.Wallpaper and UI.Wallpaper.Visible then
+            UI.Wallpaper.Size = UDim2.fromScale(1, 1)
+        end
     end, self)
     
     Fn.track(UserInputService.InputEnded, function(input)
