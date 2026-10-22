@@ -10353,7 +10353,6 @@ function Library:AddChipBar(page, text, options, defaultIndex, callback)
     scroller.BorderSizePixel = 0
     scroller.ScrollBarThickness = 0
     scroller.ScrollingDirection = Enum.ScrollingDirection.X
-    scroller.AutomaticCanvasSize = Enum.AutomaticSize.X
     scroller.CanvasSize = UDim2.new(0, 0, 0, 0)
     scroller.ElasticBehavior = Enum.ElasticBehavior.Never
     scroller.VerticalScrollBarInset = Enum.ScrollBarInset.None
@@ -10365,10 +10364,6 @@ function Library:AddChipBar(page, text, options, defaultIndex, callback)
     layout.SortOrder = Enum.SortOrder.LayoutOrder
     layout.VerticalAlignment = Enum.VerticalAlignment.Center
     layout.Padding = UDim.new(0, 6)
-
-    local pad = Instance.new("UIPadding", scroller)
-    pad.PaddingLeft = UDim.new(0, 2)
-    pad.PaddingRight = UDim.new(0, 2)
 
     local currentIndex = defaultIndex
     local chips = {}
@@ -10396,12 +10391,23 @@ function Library:AddChipBar(page, text, options, defaultIndex, callback)
         end
     end
 
+    local TextService = game:GetService("TextService")
+    local _chipPadX = 14
+    local _chipFont = Enum.Font.GothamBold
+    local _chipTextSize = 11
+    local _gap = 6
+    local _totalW = 0
+
     for i, opt in ipairs(options) do
+        local _str = tostring(opt)
+        local _bounds = TextService:GetTextSize(_str, _chipTextSize, _chipFont, Vector2.new(4000, 100))
+        local _w = math.ceil(_bounds.X) + (_chipPadX * 2)
+        _totalW = _totalW + _w + (i > 1 and _gap or 0)
+
         local chip = Instance.new("TextButton", scroller)
         chip.Name = "Chip_" .. tostring(i)
         chip.LayoutOrder = i
-        chip.Size = UDim2.new(0, 0, 0, 28)
-        chip.AutomaticSize = Enum.AutomaticSize.X
+        chip.Size = UDim2.fromOffset(_w, 28)
         chip.BackgroundColor3 = self._Colors.Bg2
         chip.BackgroundTransparency = 0.4
         chip.Text = ""
@@ -10414,19 +10420,15 @@ function Library:AddChipBar(page, text, options, defaultIndex, callback)
         chipStroke.Thickness = 1
         chipStroke.Transparency = 0.5
 
-        local chipPad = Instance.new("UIPadding", chip)
-        chipPad.PaddingLeft = UDim.new(0, 14)
-        chipPad.PaddingRight = UDim.new(0, 14)
-
         local chipLabel = Instance.new("TextLabel", chip)
         chipLabel.Name = "ChipLabel"
-        chipLabel.Size = UDim2.new(0, 0, 1, 0)
-        chipLabel.AutomaticSize = Enum.AutomaticSize.X
+        chipLabel.Size = UDim2.new(1, -(_chipPadX * 2), 1, 0)
+        chipLabel.Position = UDim2.new(0, _chipPadX, 0, 0)
         chipLabel.BackgroundTransparency = 1
-        chipLabel.Text = tostring(opt)
+        chipLabel.Text = _str
         chipLabel.TextColor3 = self._Colors.Text
-        chipLabel.Font = Enum.Font.GothamBold
-        chipLabel.TextSize = 11
+        chipLabel.Font = _chipFont
+        chipLabel.TextSize = _chipTextSize
         chipLabel.TextXAlignment = Enum.TextXAlignment.Center
 
         Fn.bindPressAnimation(chip)
@@ -10457,13 +10459,19 @@ function Library:AddChipBar(page, text, options, defaultIndex, callback)
 
     updateChips()
 
+    scroller.CanvasSize = UDim2.fromOffset(_totalW, 0)
+
+    local _lastArrowsState = nil
     local function updateArrows()
-        local contentW = layout.AbsoluteContentSize.X + 4
-        local frameW = scroller.AbsoluteSize.X
-        local overflow = contentW > frameW + 2
-        leftArrow.Visible = overflow
-        rightArrow.Visible = overflow
-        if overflow then
+        local parentW = holder.AbsoluteSize.X
+        if parentW <= 0 then return end
+        local availableFull = parentW - 16
+        local needsArrows = _totalW > availableFull + 2
+        if _lastArrowsState == needsArrows then return end
+        _lastArrowsState = needsArrows
+        leftArrow.Visible = needsArrows
+        rightArrow.Visible = needsArrows
+        if needsArrows then
             local arrowW = arrowSize + arrowGap
             scroller.Size = UDim2.new(1, -(arrowW * 2 + 4), 0, 28)
             scroller.Position = UDim2.new(0, arrowW + 2, 0, yOffset)
@@ -10473,9 +10481,9 @@ function Library:AddChipBar(page, text, options, defaultIndex, callback)
         end
     end
 
-    layout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(updateArrows)
-    scroller:GetPropertyChangedSignal("AbsoluteSize"):Connect(updateArrows)
+    holder:GetPropertyChangedSignal("AbsoluteSize"):Connect(updateArrows)
     task.defer(updateArrows)
+    task.delay(0.1, updateArrows)
 
     local function scrollBy(dx)
         local maxScroll = math.max(0, scroller.AbsoluteCanvasSize.X - scroller.AbsoluteSize.X)
