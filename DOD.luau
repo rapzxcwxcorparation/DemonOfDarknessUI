@@ -8320,7 +8320,24 @@ function Library:AddSlider(page, text, minVal, maxVal, default, decimals, callba
         fillGrad.Color = ColorSequence.new(self._Colors.Accent, self._Colors.Accent2 or self._Colors.Accent)
     end)
     self:_bindTooltip(lab, text .. " [" .. tostring(minVal) .. " - " .. tostring(maxVal) .. "] — click value to type")
-    return self:_registerSearchControl(holder, text .. " " .. tostring(minVal) .. " " .. tostring(maxVal))
+    self:_registerSearchControl(holder, text .. " " .. tostring(minVal) .. " " .. tostring(maxVal))
+    local _h = { __isHandle = true, __tag = "Slider", Raw = holder }
+    _h.Get = function(_) return val end
+    _h.Set = function(_, v, silent)
+        if type(v) ~= "number" or v ~= v then return end
+        v = math.clamp(v, minVal, maxVal)
+        local _mult = 10 ^ decimals
+        if math.abs(v) <= math.huge / _mult then
+            if v >= 0 then v = math.floor(v * _mult + 0.5) / _mult
+            else v = math.ceil(v * _mult - 0.5) / _mult end
+        end
+        if val == v then return end
+        applyValue(v, not silent)
+        if not silent then callback(val); self:_triggerAutoSave() end
+    end
+    _h.SetValue = _h.Set
+    _h.GetValue = _h.Get
+    return _h
 end
 
 function Library:AddDropdown(page, text, options, defaultIndex, callback)
@@ -10547,7 +10564,20 @@ function Library:AddChipBar(page, text, options, defaultIndex, callback)
     end
 
     local searchText = tostring(text or "") .. " " .. table.concat(options, " ")
-    return self:_registerSearchControl(holder, searchText)
+    self:_registerSearchControl(holder, searchText)
+    local _h = { __isHandle = true, __tag = "ChipBar", Raw = holder }
+    _h.Get = function(_) return currentIndex end
+    _h.GetValue = function(_) return options[currentIndex] end
+    _h.Set = function(_, idx, silent)
+        if type(idx) ~= "number" or idx % 1 ~= 0 then return end
+        if idx < 1 or idx > #options then return end
+        if currentIndex == idx then return end
+        currentIndex = idx
+        updateChips()
+        if not silent then callback(idx, options[idx]); self:_triggerAutoSave() end
+    end
+    _h.SetValue = _h.Set
+    return _h
 end
 
 -- =========================================================
