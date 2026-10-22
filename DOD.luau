@@ -785,7 +785,7 @@ function Library.new(opts)
     end
 
     self._UI = {}
-    self._isMobile = UserInputService.TouchEnabled
+    self._isMobile = UserInputService.TouchEnabled and not (UserInputService.MouseEnabled and UserInputService.KeyboardEnabled)
     self._CustomColorOverrides = {}
     self._NotifPosition = opts.NotificationPosition or "TopRight"
     self._Colors = table.clone(D.Colors)
@@ -1427,14 +1427,14 @@ function Library:_updateNotifPositions()
     local pos = self._NotifPosition or "TopRight"
     for index, frame in ipairs(self._STATE.activeNotifs) do
         local targetY = 15 + ((index - 1) * 65)
-        local targetX = UDim2.new(1, -275, 0, targetY)
+        local targetX = UDim2.new(1, -282, 0, targetY)
         
         if pos == "TopLeft" then
             targetX = UDim2.new(0, 15, 0, targetY)
         elseif pos == "BottomLeft" then
             targetX = UDim2.new(0, 15, 1, -targetY - 56)
         elseif pos == "BottomRight" then
-            targetX = UDim2.new(1, -275, 1, -targetY - 56)
+            targetX = UDim2.new(1, -282, 1, -targetY - 56)
         end
         
         TweenService:Create(
@@ -2174,7 +2174,7 @@ function Library:_initMainGui()
         local fitW = (viewport.X * 0.95) / baseW
         local fitH = (viewport.Y * 0.90) / baseH
         local fit = math.min(fitW, fitH)
-        UI.MainScale.Scale = math.clamp(fit, 0.72, 1.4)
+        UI.MainScale.Scale = math.clamp(fit, 0.35, 1.4)
     end
     updateAdaptiveScale()
     local adaptiveCam = getCam()
@@ -2189,8 +2189,8 @@ function Library:_initMainGui()
     local resizeHandle = Instance.new("ImageLabel")
     resizeHandle.Name = "ResizeHandle"
     resizeHandle.Parent = MC
-    resizeHandle.Size = UDim2.fromOffset(18, 18)
-    resizeHandle.Position = UDim2.new(1, -22, 1, -22)
+    resizeHandle.Size = UDim2.fromOffset(26, 26)
+    resizeHandle.Position = UDim2.new(1, -30, 1, -30)
     resizeHandle.BackgroundTransparency = 1
     resizeHandle.Image = GetIcon("move-diagonal")
     resizeHandle.ImageColor3 = self._Colors.TextDim
@@ -2801,7 +2801,7 @@ function Library:_bindTooltip(element, text)
                 lbl.Size = UDim2.new(1, -16, 0, 16)
                 lbl.Position = UDim2.new(0, 8, 0, 5)
                 if hint then
-                    hint.Text = "Right-click to favorite"
+                    hint.Text = self._isMobile and "Tap star to favorite" or "Right-click to favorite"
                     hint.Visible = true
                 end
             else
@@ -3375,7 +3375,7 @@ function Library:_initTitleBar()
                 UI.TitleToggleHint.TextColor3 = self._Colors.TextDim
                 isListening = false
                 conn:Disconnect()
-            elseif input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.MouseButton2 then
+            elseif input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.MouseButton2 or input.UserInputType == Enum.UserInputType.Touch then
                 UI.TitleToggleHint.Text = self.ToggleKey.Name
                 UI.TitleToggleHint.TextColor3 = self._Colors.TextDim
                 isListening = false
@@ -4279,8 +4279,8 @@ function Library:_attachFavorite(holder, configId, starPos)
     local star = Instance.new("ImageButton", holder)
     star.Name = "FavoriteStar"
     if self._isMobile then
-        star.Size = UDim2.fromOffset(16, 16)
-        star.Position = starPos or UDim2.new(1, -20, 0, 0)
+        star.Size = UDim2.fromOffset(22, 22)
+        star.Position = starPos or UDim2.new(1, -26, 0, 0)
     else
         star.Size = UDim2.fromOffset(11, 11)
         star.Position = starPos or UDim2.new(1, -14, 0, 2)
@@ -4858,7 +4858,7 @@ function Library:_initMobileToggle()
     UI.MobileToggle.Name = "MobileToggle"
     UI.MobileToggle.Size = UDim2.fromOffset(160, 32)
     UI.MobileToggle.AnchorPoint = Vector2.new(0.5, 0)
-    UI.MobileToggle.Position = UDim2.new(0.5, 0, 0, 12)
+    UI.MobileToggle.Position = UDim2.new(0.5, 0, 0, 36)
     UI.MobileToggle.BackgroundColor3 = self._Colors.Bg2
     UI.MobileToggle.BackgroundTransparency = 0.08
     UI.MobileToggle.Text = ""
@@ -4928,28 +4928,37 @@ function Library:_initResize()
     
     local resizing = false
     local startSize
-    local startMouse
+    local startInput = Vector2.zero
+    local currentInput = Vector2.zero
     local camera = getCam()
     
     UI.ResizeHandle.InputBegan:Connect(function(input)
         if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
             resizing = true
             startSize = UI.MainContainer.AbsoluteSize
-            startMouse = input.Position
+            startInput = Vector2.new(input.Position.X, input.Position.Y)
+            currentInput = startInput
         end
     end)
+
+    Fn.track(UserInputService.InputChanged, function(input)
+        if not resizing then return end
+        if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
+            currentInput = Vector2.new(input.Position.X, input.Position.Y)
+        end
+    end, self)
     
     Fn.track(RunService.RenderStepped, function()
         if not resizing or not camera then return end
-        local mouse = UserInputService:GetMouseLocation()
-        local delta = Vector2.new(mouse.X - startMouse.X, mouse.Y - startMouse.Y)
-        
-        local newX = math.clamp(startSize.X + delta.X, 450, camera.ViewportSize.X * 0.95)
-        local newY = math.clamp(startSize.Y + delta.Y, 300, camera.ViewportSize.Y * 0.95)
+        local delta = Vector2.new(currentInput.X - startInput.X, currentInput.Y - startInput.Y)
+        local vp = camera.ViewportSize
+        local minW = math.min(280, vp.X * 0.95)
+        local minH = math.min(240, vp.Y * 0.95)
+        local newX = math.clamp(startSize.X + delta.X, minW, vp.X * 0.95)
+        local newY = math.clamp(startSize.Y + delta.Y, minH, vp.Y * 0.95)
         
         UI.MainContainer.Size = UDim2.fromOffset(newX, newY)
         
-        -- Sinkronisasi manual buat jaga-jaga kalau engine Roblox agak telat render
         if UI.Wallpaper and UI.Wallpaper.Visible then
             UI.Wallpaper.Size = UDim2.fromScale(1, 1)
         end
@@ -4967,17 +4976,26 @@ end
 function Library:_initDrag()
     local UI = self._UI
     local dragging = false
-    local dragStartMouse = Vector2.zero
     local dragStartPos = UDim2.new()
+    local dragStartInput = Vector2.zero
+    local currentInput = Vector2.zero
 
     UI.TitleBar.Active = true
     UI.TitleBar.InputBegan:Connect(function(inp)
         if inp.UserInputType == Enum.UserInputType.MouseButton1 or inp.UserInputType == Enum.UserInputType.Touch then
             dragging = true
-            dragStartMouse = UserInputService:GetMouseLocation()
             dragStartPos = UI.MainContainer.Position
+            dragStartInput = Vector2.new(inp.Position.X, inp.Position.Y)
+            currentInput = dragStartInput
         end
     end)
+
+    Fn.track(UserInputService.InputChanged, function(inp)
+        if not dragging then return end
+        if inp.UserInputType == Enum.UserInputType.MouseMovement or inp.UserInputType == Enum.UserInputType.Touch then
+            currentInput = Vector2.new(inp.Position.X, inp.Position.Y)
+        end
+    end, self)
 
     Fn.track(RunService.RenderStepped, function()
         if not dragging then return end
@@ -4985,9 +5003,8 @@ function Library:_initDrag()
         if not camera then return end
         local vp = camera.ViewportSize
         local sz = UI.MainContainer.AbsoluteSize
-        local mouse = UserInputService:GetMouseLocation()
-        local deltaX = mouse.X - dragStartMouse.X
-        local deltaY = mouse.Y - dragStartMouse.Y
+        local deltaX = currentInput.X - dragStartInput.X
+        local deltaY = currentInput.Y - dragStartInput.Y
         local baseAbsX = dragStartPos.X.Scale * vp.X + dragStartPos.X.Offset
         local baseAbsY = dragStartPos.Y.Scale * vp.Y + dragStartPos.Y.Offset
         local targetAbsX = baseAbsX + deltaX
@@ -8738,6 +8755,17 @@ function Library:AddKeybind(page, text, default, callback)
     }
     table.insert(STATE.activeKeybindListeners, listener)
     local _favId = self:_getConfigId("keybind", text)
+    self:_registerConfigState(_favId,
+        function() return listener.keyName end,
+        function(v, silent)
+            if type(v) ~= "string" then return end
+            listener.keyName = v
+            if listener.btnText then listener.btnText.Text = v end
+            if listener.key then
+                listener.setKey(listener.key, listener.mods)
+            end
+        end
+    )
     self:_attachFavorite(holder, _favId)
     if not STATE._overlayAutoShown then
         STATE._overlayAutoShown = true
@@ -8809,6 +8837,9 @@ function Library:AddKeybind(page, text, default, callback)
                         elseif inp.UserInputType == Enum.UserInputType.MouseButton2 then
                             l.setKey("RClick", capturedMods)
                             l.callback(Enum.UserInputType.MouseButton2, capturedMods)
+                        elseif inp.UserInputType == Enum.UserInputType.Touch then
+                            l.setKey("LClick", capturedMods)
+                            l.callback(Enum.UserInputType.MouseButton1, capturedMods)
                         end
                     end
                 elseif l.key ~= nil and not onClickBtn then
@@ -8824,6 +8855,9 @@ function Library:AddKeybind(page, text, default, callback)
                     elseif inp.UserInputType == Enum.UserInputType.MouseButton2 and l.key == "RClick" then
                         matched = true
                         firedKey = Enum.UserInputType.MouseButton2
+                    elseif inp.UserInputType == Enum.UserInputType.Touch and l.key == "LClick" then
+                        matched = true
+                        firedKey = Enum.UserInputType.MouseButton1
                     end
                     if matched and modsMatch(l.mods, currentMods) then
                         l.callback(firedKey, l.mods)
@@ -9398,6 +9432,26 @@ function Library:AddColorPicker(page, text, defaultColor3, callback)
             dragMode = nil
         end,
     })
+
+    task.spawn(function()
+        while popup.Parent do
+            if popup.Visible then
+                local camera = getCam()
+                if camera then
+                    local viewport = camera.ViewportSize
+                    local pw = popup.AbsoluteSize.X
+                    local ph = popup.AbsoluteSize.Y
+                    local x = math.clamp(preview.AbsolutePosition.X, 8, math.max(8, viewport.X - pw - 8))
+                    local y = preview.AbsolutePosition.Y + preview.AbsoluteSize.Y + 6
+                    if y + ph > viewport.Y - 8 then
+                        y = preview.AbsolutePosition.Y - ph - 6
+                    end
+                    popup.Position = UDim2.fromOffset(x, math.max(8, y))
+                end
+            end
+            task.wait(0.1)
+        end
+    end)
 
     self:_registerThemeRefresher(function()
         holder.BackgroundColor3 = self._Colors.Card
