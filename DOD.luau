@@ -918,7 +918,7 @@ function Library.new(opts)
     end
 
     self._UI = {}
-    self._isMobile = UserInputService.TouchEnabled and not (UserInputService.MouseEnabled and UserInputService.KeyboardEnabled)
+    self._isMobile = UserInputService.TouchEnabled and not UserInputService.MouseEnabled
     self._perfAuto = opts.AutoPerformance ~= false
     local _qScore = 5
     if self._isMobile then _qScore = _qScore - 3
@@ -1010,7 +1010,7 @@ function Library.new(opts)
         ReducedMotion       = false,
         SectionTransparency = opts.SectionTransparency or 0.15,
         ScrollFrames        = {},
-        TooltipEnabled      = opts.Tooltip ~= false,
+        TooltipEnabled      = opts.Tooltip ~= false and not (UserInputService.TouchEnabled and not UserInputService.MouseEnabled),
         TooltipTransparency = opts.TooltipTransparency or 0.15,
         StandaloneTabs      = {},
     }
@@ -1657,8 +1657,18 @@ function Library:Confirm(title, text, onYes, onNo)
     overlay.ZIndex = 9500
     overlay.Parent = self._UI.MainGui
 
+    local _cCam = getCam()
+    local _cVpX = (_cCam and _cCam.ViewportSize.X) or 800
+    local _cVpY = (_cCam and _cCam.ViewportSize.Y) or 600
+    local _cMob = self._isMobile
+    local _cPanelW = math.min(340, _cVpX - 24)
+    local _cPanelH = _cMob and math.min(200, _cVpY - 24) or 176
+    local _cPad = 16
+    local _cGap = 8
+    local _cBtnW = _cMob and math.floor((_cPanelW - _cPad * 2 - _cGap) / 2) or 148
+    local _cBtnH = _cMob and 44 or 34
     local panel = Instance.new("Frame", overlay)
-    panel.Size = UDim2.fromOffset(340, 176)
+    panel.Size = UDim2.fromOffset(_cPanelW, _cPanelH)
     panel.Position = UDim2.new(0.5, 0, 0.5, 30)
     panel.AnchorPoint = Vector2.new(0.5, 0.5)
     panel.BackgroundColor3 = self._Colors.Bg2
@@ -1709,8 +1719,8 @@ function Library:Confirm(title, text, onYes, onNo)
     textLbl.ZIndex = 9502
 
     local cancel = Instance.new("TextButton", panel)
-    cancel.Size = UDim2.fromOffset(148, 34)
-    cancel.Position = UDim2.new(0, 16, 1, -50)
+    cancel.Size = UDim2.fromOffset(_cBtnW, _cBtnH)
+    cancel.Position = UDim2.new(0, _cPad, 1, -(_cBtnH + _cPad))
     cancel.BackgroundColor3 = self._Colors.Card
     cancel.Text = "Cancel"
     cancel.TextColor3 = self._Colors.Text
@@ -1726,8 +1736,8 @@ function Library:Confirm(title, text, onYes, onNo)
     cancelStroke.ZIndex = 9502
 
     local confirm = Instance.new("TextButton", panel)
-    confirm.Size = UDim2.fromOffset(148, 34)
-    confirm.Position = UDim2.new(1, -164, 1, -50)
+    confirm.Size = UDim2.fromOffset(_cBtnW, _cBtnH)
+    confirm.Position = UDim2.new(1, -(_cBtnW + _cPad), 1, -(_cBtnH + _cPad))
     confirm.BackgroundColor3 = self._Colors.Accent
     confirm.Text = "Confirm"
     confirm.TextColor3 = Fn.accentTextColor(self._Colors.Accent)
@@ -2562,7 +2572,7 @@ function Library:_initMainGui()
         local fitW = (viewport.X * 0.95) / baseW
         local fitH = (viewport.Y * 0.90) / baseH
         local fit = math.min(fitW, fitH)
-        UI.MainScale.Scale = math.clamp(fit, 0.35, 1.4)
+        UI.MainScale.Scale = math.clamp(fit, self._isMobile and 0.55 or 0.35, 1.4)
     end
     updateAdaptiveScale()
     local adaptiveCam = getCam()
@@ -2577,8 +2587,9 @@ function Library:_initMainGui()
     local resizeHandle = Instance.new("ImageLabel")
     resizeHandle.Name = "ResizeHandle"
     resizeHandle.Parent = MC
-    resizeHandle.Size = UDim2.fromOffset(26, 26)
-    resizeHandle.Position = UDim2.new(1, -30, 1, -30)
+    local _rszSize = self._isMobile and 44 or 26
+    resizeHandle.Size = UDim2.fromOffset(_rszSize, _rszSize)
+    resizeHandle.Position = UDim2.new(1, -(_rszSize + 4), 1, -(_rszSize + 4))
     resizeHandle.BackgroundTransparency = 1
     resizeHandle.Image = GetIcon("move-diagonal")
     resizeHandle.ImageColor3 = self._Colors.TextDim
@@ -3940,6 +3951,7 @@ function Library:_initTitleBar()
     
     UI.TitleToggleHintBg = hintBg
 
+    if self._isMobile then hintBg.Visible = false end
     hintBg.MouseEnter:Connect(function()
         TweenService:Create(hintBg, TweenInfo.new(0.15), {BackgroundTransparency = 0.2}):Play()
         TweenService:Create(hintStroke, TweenInfo.new(0.15), {Transparency = 0.2, Color = self._Colors.Accent}):Play()
@@ -4017,7 +4029,7 @@ function Library:_initTitleBar()
         end
 
         local hintW = UI.TitleToggleHintBg.AbsoluteSize.X
-        if hintW <= 0 then hintW = 40 end
+        if self._isMobile then hintW = 0 elseif hintW <= 0 then hintW = 40 end
         local hintOffset = tlWidth + (authorW > 0 and authorW + 28 or 0)
         UI.TitleToggleHintBg.Position = UDim2.new(1, -hintOffset - hintW, 0.5, -10)
 
@@ -4553,6 +4565,10 @@ function Library:_resizeSubTabs()
     if availableWidth <= 0 then return end
     local gap = math.min(subTabBar.Padding, availableWidth / math.max(tabCount * 2 - 1, 1))
     local tabWidth = math.min(self.TabWidth, (availableWidth - gap * (tabCount - 1)) / tabCount)
+    local minW = 64
+    if (minW * tabCount + gap * (tabCount - 1)) <= availableWidth then
+        tabWidth = math.max(tabWidth, minW)
+    end
     subTabBar:Resize(tabWidth, gap)
 end
 
@@ -4596,6 +4612,7 @@ function Library:_initSearchBar()
     UI.SearchInput.TextSize = 12
     UI.SearchInput.TextXAlignment = Enum.TextXAlignment.Left
     UI.SearchInput.ClearTextOnFocus = false
+    UI.SearchInput.ReturnKeyType = Enum.ReturnKeyType.Search
     UI.SearchInput.ZIndex = 1
 
     local starBtn = Instance.new("TextButton", UI.SearchBar)
@@ -4918,8 +4935,8 @@ function Library:_attachFavorite(holder, configId, starPos)
     local star = Instance.new("ImageButton", holder)
     star.Name = "FavoriteStar"
     if self._isMobile then
-        star.Size = UDim2.fromOffset(22, 22)
-        star.Position = starPos or UDim2.new(1, -26, 0, 0)
+        star.Size = UDim2.fromOffset(28, 28)
+        star.Position = starPos or UDim2.new(1, -32, 0, 0)
     else
         star.Size = UDim2.fromOffset(11, 11)
         star.Position = starPos or UDim2.new(1, -14, 0, 2)
@@ -6211,7 +6228,7 @@ function Library:SetActiveCategory(categoryName, preferredTab)
     STATE.SubTabBar = SubTabModule.new({
         Parent = self._UI.Sidebar,
         Data = { [categoryName] = tabs },
-        TabWidth = self.TabWidth, TabHeight = 28, Padding = 6,
+        TabWidth = self.TabWidth, TabHeight = self._isMobile and 44 or 28, Padding = 6,
         Theme = {
             PillBg = self._Colors.Card, LeftAccent = self._Colors.Accent,
             TextActive = Fn.contrastForeground(self._Colors.Card), TextInactive = self._Colors.TextDim,
@@ -9513,25 +9530,27 @@ function Library:AddKeybind(page, text, default, callback)
     end
     self:_refreshKeybindOverlay()
 
-    btn.MouseButton1Click:Connect(function()
-        self:PlaySound("Click")
-        if listener.active then
-            listener.active = false
-            btnText.Text = listener.keyName
-            TweenService:Create(btnStroke, TweenInfo.new(0.15), {Color = self._Colors.Border, Transparency = 0.5}):Play()
-            TweenService:Create(btn, TweenInfo.new(0.15), {BackgroundTransparency = 0.2}):Play()
-            return
-        end
-        for _, l in ipairs(STATE.activeKeybindListeners) do 
-            l.active = false
-            if l.btnText then l.btnText.Text = l.keyName end
-            if l.btnStroke then TweenService:Create(l.btnStroke, TweenInfo.new(0.15), {Color = self._Colors.Border, Transparency = 0.5}):Play() end
-        end
-        listener.active = true
-        btnText.Text = "PRESS A KEY..."
-        TweenService:Create(btnStroke, TweenInfo.new(0.15), {Color = self._Colors.Accent, Transparency = 0}):Play()
-        TweenService:Create(btn, TweenInfo.new(0.15), {BackgroundTransparency = 0}):Play()
-    end)
+    if not self._isMobile then
+        btn.MouseButton1Click:Connect(function()
+            self:PlaySound("Click")
+            if listener.active then
+                listener.active = false
+                btnText.Text = listener.keyName
+                TweenService:Create(btnStroke, TweenInfo.new(0.15), {Color = self._Colors.Border, Transparency = 0.5}):Play()
+                TweenService:Create(btn, TweenInfo.new(0.15), {BackgroundTransparency = 0.2}):Play()
+                return
+            end
+            for _, l in ipairs(STATE.activeKeybindListeners) do 
+                l.active = false
+                if l.btnText then l.btnText.Text = l.keyName end
+                if l.btnStroke then TweenService:Create(l.btnStroke, TweenInfo.new(0.15), {Color = self._Colors.Border, Transparency = 0.5}):Play() end
+            end
+            listener.active = true
+            btnText.Text = "PRESS A KEY..."
+            TweenService:Create(btnStroke, TweenInfo.new(0.15), {Color = self._Colors.Accent, Transparency = 0}):Play()
+            TweenService:Create(btn, TweenInfo.new(0.15), {BackgroundTransparency = 0}):Play()
+        end)
+    end
 
     if not STATE._kbListenerInstalled then
         STATE._kbListenerInstalled = true
@@ -9595,7 +9614,7 @@ function Library:AddKeybind(page, text, default, callback)
                     elseif inp.UserInputType == Enum.UserInputType.MouseButton2 and l.key == "RClick" then
                         matched = true
                         firedKey = Enum.UserInputType.MouseButton2
-                    elseif inp.UserInputType == Enum.UserInputType.Touch and l.key == "LClick" then
+                    elseif inp.UserInputType == Enum.UserInputType.Touch and l.key == "LClick" and not self._isMobile then
                         matched = true
                         firedKey = Enum.UserInputType.MouseButton1
                     end
@@ -9818,6 +9837,7 @@ function Library:AddTextbox(page, text, placeholder, callback, opts)
     input.BackgroundTransparency = 0.2
     input.BorderSizePixel = 0
     input.ClearTextOnFocus = false
+    input.ReturnKeyType = Enum.ReturnKeyType.Done
     input.Text = ""
     input.PlaceholderText = tostring(placeholder or "")
     input.PlaceholderColor3 = self._Colors.TextDim
@@ -9952,9 +9972,12 @@ function Library:AddColorPicker(page, text, defaultColor3, callback)
 
     local hue, saturation, value = defaultColor3:ToHSV()
     local currentColor = defaultColor3
+    local _cpCam = getCam()
+    local _cpW = self._isMobile and math.min(280, ((_cpCam and _cpCam.ViewportSize.X) or 320) - 24) or 230
+    local _cpH = self._isMobile and math.min(240, ((_cpCam and _cpCam.ViewportSize.Y) or 600) - 24) or 176
     local popup = Instance.new("Frame", self._UI.MainGui)
     popup.Name = "ColorPickerPopup"
-    popup.Size = UDim2.new(0, 230, 0, 176)
+    popup.Size = UDim2.fromOffset(_cpW, _cpH)
     popup.BackgroundColor3 = self._Colors.Bg2
     popup.BorderSizePixel = 0
     popup.Visible = false
@@ -10281,8 +10304,9 @@ function Library:AddChipBar(page, text, options, defaultIndex, callback)
     end
 
     local hasLabel = text ~= nil and text ~= ""
-    local holderHeight = hasLabel and 66 or 44
+    local _chipH = self._isMobile and 44 or 28
     local yOffset = hasLabel and 26 or 8
+    local holderHeight = yOffset + _chipH + (hasLabel and 12 or 8)
 
     local holder = Instance.new("Frame", page)
     holder.Name = "ChipBar"
@@ -10306,12 +10330,12 @@ function Library:AddChipBar(page, text, options, defaultIndex, callback)
         label.TextTruncate = Enum.TextTruncate.AtEnd
     end
 
-    local arrowSize = 20
-    local arrowGap = 4
+    local arrowSize = self._isMobile and 40 or 20
+    local arrowGap = self._isMobile and 6 or 4
 
     local leftArrow = Instance.new("TextButton", holder)
     leftArrow.Name = "ArrowLeft"
-    leftArrow.Size = UDim2.fromOffset(arrowSize, 28)
+    leftArrow.Size = UDim2.fromOffset(arrowSize, _chipH)
     leftArrow.Position = UDim2.new(0, 6, 0, yOffset)
     leftArrow.BackgroundColor3 = self._Colors.Bg2
     leftArrow.BackgroundTransparency = 0.3
@@ -10337,7 +10361,7 @@ function Library:AddChipBar(page, text, options, defaultIndex, callback)
 
     local rightArrow = Instance.new("TextButton", holder)
     rightArrow.Name = "ArrowRight"
-    rightArrow.Size = UDim2.fromOffset(arrowSize, 28)
+    rightArrow.Size = UDim2.fromOffset(arrowSize, _chipH)
     rightArrow.AnchorPoint = Vector2.new(1, 0)
     rightArrow.Position = UDim2.new(1, -6, 0, yOffset)
     rightArrow.BackgroundColor3 = self._Colors.Bg2
@@ -10364,7 +10388,7 @@ function Library:AddChipBar(page, text, options, defaultIndex, callback)
 
     local scroller = Instance.new("ScrollingFrame", holder)
     scroller.Name = "ChipScroller"
-    scroller.Size = UDim2.new(1, -16, 0, 28)
+    scroller.Size = UDim2.new(1, -16, 0, _chipH)
     scroller.Position = UDim2.new(0, 8, 0, yOffset)
     scroller.BackgroundTransparency = 1
     scroller.BorderSizePixel = 0
@@ -10424,7 +10448,7 @@ function Library:AddChipBar(page, text, options, defaultIndex, callback)
         local chip = Instance.new("TextButton", scroller)
         chip.Name = "Chip_" .. tostring(i)
         chip.LayoutOrder = i
-        chip.Size = UDim2.fromOffset(_w, 28)
+        chip.Size = UDim2.fromOffset(_w, _chipH)
         chip.BackgroundColor3 = self._Colors.Bg2
         chip.BackgroundTransparency = 0.4
         chip.Text = ""
@@ -10490,10 +10514,10 @@ function Library:AddChipBar(page, text, options, defaultIndex, callback)
         rightArrow.Visible = needsArrows
         if needsArrows then
             local arrowW = arrowSize + arrowGap
-            scroller.Size = UDim2.new(1, -(arrowW * 2 + 4), 0, 28)
+            scroller.Size = UDim2.new(1, -(arrowW * 2 + 4), 0, _chipH)
             scroller.Position = UDim2.new(0, arrowW + 2, 0, yOffset)
         else
-            scroller.Size = UDim2.new(1, -16, 0, 28)
+            scroller.Size = UDim2.new(1, -16, 0, _chipH)
             scroller.Position = UDim2.new(0, 8, 0, yOffset)
         end
     end
@@ -10953,6 +10977,7 @@ end
 
 function Library:_attachScrollSound(frame)
     if not frame or not frame.Parent then return end
+    if self._isMobile then return end
     if frame:GetAttribute("DoD_ScrollSound") then return end
     frame:SetAttribute("DoD_ScrollSound", true)
     local lastPlay = 0
