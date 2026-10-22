@@ -12,6 +12,14 @@
 
 ]]
 
+-- Usage (chainable):
+-- local UI = Library.CreateWindow({ Title = "..." })
+-- local Tab = UI:CreateTab("Combat")
+-- local Sec = Tab:CreateSection("Aimbot", "Settings", true, "Left", "target")
+-- Sec:AddToggle("Enabled", false, function(v) end)
+-- Sec:AddChipBar("Mode", {"LEGIT","RAGE","BLATANT"}, 1, function(i,v) end)
+-- Classic style (still works): UI:AddToggle(Sec, "Enabled", false, cb)
+
 local Library = {}
 Library.__index = Library
 
@@ -1517,6 +1525,47 @@ end
 
 function Library:_registerThemeRefresher(fn)
     table.insert(self._STATE.ThemeRefreshers, fn)
+end
+
+function Library:_unwrap(target)
+    if target == nil then return nil end
+    if typeof(target) == "Instance" then return target end
+    if type(target) == "table" and target.__isHandle then return target.Raw end
+    return target
+end
+
+function Library:_wrapSection(rawBody)
+    if not rawBody then return nil end
+    local lib = self
+    local h = { __isHandle = true, Raw = rawBody, __tag = "Section" }
+    h.AddToggle = function(_, ...) return lib:AddToggle(rawBody, ...) end
+    h.AddSlider = function(_, ...) return lib:AddSlider(rawBody, ...) end
+    h.AddDropdown = function(_, ...) return lib:AddDropdown(rawBody, ...) end
+    h.AddMultiDropdown = function(_, ...) return lib:AddMultiDropdown(rawBody, ...) end
+    h.AddKeybind = function(_, ...) return lib:AddKeybind(rawBody, ...) end
+    h.AddButton = function(_, ...) return lib:AddButton(rawBody, ...) end
+    h.AddLabel = function(_, ...) return lib:AddLabel(rawBody, ...) end
+    h.AddParagraph = function(_, ...) return lib:AddParagraph(rawBody, ...) end
+    h.AddTextbox = function(_, ...) return lib:AddTextbox(rawBody, ...) end
+    h.AddColorPicker = function(_, ...) return lib:AddColorPicker(rawBody, ...) end
+    h.AddConfigList = function(_, ...) return lib:AddConfigList(rawBody, ...) end
+    h.AddSeparator = function(_, ...) return lib:AddSeparator(rawBody, ...) end
+    h.AddChipBar = function(_, ...) return lib:AddChipBar(rawBody, ...) end
+    return h
+end
+
+function Library:_wrapTab(rawPage, tabName)
+    if not rawPage then return nil end
+    local lib = self
+    local h = { __isHandle = true, Raw = rawPage, __tag = "Tab", Name = tabName }
+    h.CreateSection = function(_, title, summary, defaultOpen, columnName, iconName)
+        return lib:CreateSection(tabName, title, summary, defaultOpen, columnName, iconName)
+    end
+    h.CreateDashboardBanner = function(_, ...) return lib:CreateDashboardBanner(tabName, ...) end
+    h.CreateThemeCustomizer = function(_, ...) return lib:CreateThemeCustomizer(tabName, ...) end
+    h.CreateQuickDashboard = function(_, columnName) return lib:CreateQuickDashboard(tabName, columnName) end
+    h.CreatePerformanceDashboard = function(_, columnName) return lib:CreatePerformanceDashboard(tabName, columnName) end
+    return h
 end
 
 function Library:_getConfigId(controlType, label)
@@ -6387,7 +6436,7 @@ function Library:CreateTab(categoryName, tabName)
     if STATE.ActiveCategory == nil or STATE.ActiveCategory == categoryName then
         self:SetActiveCategory(categoryName)
     end
-    return page
+    return self:_wrapTab(page, tabName)
 end
 
 function Library:CreateStandaloneTab(tabName, iconSpec)
@@ -6420,7 +6469,7 @@ function Library:CreateStandaloneTab(tabName, iconSpec)
     end
     self._STATE.StandaloneTabs[tabName] = true
     self:CreateTab(tabName, tabName)
-    return self._STATE.ContentPages[tabName]
+    return self:_wrapTab(self._STATE.ContentPages[tabName], tabName)
 end
 
 function Library:SwitchTab(tabName)
@@ -6834,13 +6883,13 @@ function Library:CreateSection(tabName, title, summary, defaultOpen, columnName,
     end)
 
     self:_queueSearchFilter(tabName)
-    return body
+    return self:_wrapSection(body)
 end
 
 -- Helper for backwards compatibility
 function Library:CreateColumnSection(tabName, title, summary, defaultOpen)
     if self:_isDead() then return end
-    local body = self:CreateSection(tabName, title, summary, defaultOpen)
+    local body = self:_unwrap(self:CreateSection(tabName, title, summary, defaultOpen))
     local row = Instance.new("Frame", body)
     row.Name = "Columns"
     row.LayoutOrder = 1
@@ -6868,7 +6917,7 @@ function Library:CreateColumnSection(tabName, title, summary, defaultOpen)
 
     local leftColumn = createColumn("LeftColumn", 0)
     local rightColumn = createColumn("RightColumn", 0.5)
-    return leftColumn, rightColumn
+    return self:_wrapSection(leftColumn), self:_wrapSection(rightColumn)
 end
 
 function Library:CreateDashboardBanner(tabName)
@@ -7379,7 +7428,7 @@ function Library:CreateQuickDashboard(tabName, columnName)
     local HttpService = game:GetService("HttpService")
     local LocalPlayer = Players.LocalPlayer
 
-    local QuickBox = self:CreateSection(tabName, "QUICK INSTANCE CONTROL", "Manage your session and community", true, columnName, "refresh-cw")
+    local QuickBox = self:_unwrap(self:CreateSection(tabName, "QUICK INSTANCE CONTROL", "Manage your session and community", true, columnName, "refresh-cw"))
 
     local function CreateActionRow(title, desc, iconName, callback)
         local holder = Instance.new("TextButton", QuickBox)
@@ -7492,14 +7541,14 @@ function Library:CreateQuickDashboard(tabName, columnName)
             self:Notify("DISCORD", "Executor doesn't support clipboard", "error")
         end
     end)
-    return QuickBox
+    return self:_wrapSection(QuickBox)
 end
 
 function Library:CreatePerformanceDashboard(tabName, columnName)
     if self:_isDead() then return end
     columnName = columnName or "Left"
 
-    local PerfBox = self:CreateSection(tabName, "SYSTEM PERFORMANCE", "Realtime hardware and network stats", true, columnName, "activity")
+    local PerfBox = self:_unwrap(self:CreateSection(tabName, "SYSTEM PERFORMANCE", "Realtime hardware and network stats", true, columnName, "activity"))
 
     -- 1. Container for Metrics (Grid Layout)
     local metricsContainer = Instance.new("Frame", PerfBox)
@@ -7692,7 +7741,7 @@ function Library:CreatePerformanceDashboard(tabName, columnName)
         end
     end)
 
-    return PerfBox
+    return self:_wrapSection(PerfBox)
 end
 
 -- =========================================================
@@ -7701,6 +7750,7 @@ end
 
 function Library:AddToggle(page, text, default, callback)
     if self:_isDead() then return end
+    page = self:_unwrap(page)
     if default ~= nil and type(default) ~= "boolean" then
         error("[DoD UI] AddToggle default must be a boolean.")
     end
@@ -7831,6 +7881,7 @@ end
 
 function Library:AddSlider(page, text, minVal, maxVal, default, decimals, callback)
     if self:_isDead() then return end
+    page = self:_unwrap(page)
     if type(minVal) ~= "number" or type(maxVal) ~= "number" then
         error("[DoD UI] AddSlider minVal/maxVal harus number.")
     end
@@ -8274,6 +8325,7 @@ end
 
 function Library:AddDropdown(page, text, options, defaultIndex, callback)
     if self:_isDead() then return end
+    page = self:_unwrap(page)
     if type(options) ~= "table" or #options == 0 then
         error("[DoD UI] AddDropdown options harus array non-empty.")
     end
@@ -8670,6 +8722,7 @@ end
 
 function Library:AddMultiDropdown(page, text, options, defaults, callback)
     if self:_isDead() then return end
+    page = self:_unwrap(page)
     if type(options) ~= "table" or #options == 0 then
         error("[DoD UI] AddMultiDropdown options must be a non-empty array.")
     end
@@ -8991,6 +9044,7 @@ end
 
 function Library:AddConfigList(page, onLoad)
     if self:_isDead() then return end
+    page = self:_unwrap(page)
     local holder = Instance.new("Frame", page)
     holder.Name = "ConfigList"
     holder.Size = UDim2.new(1, 0, 0, 220)
@@ -9283,6 +9337,7 @@ end
 
 function Library:AddKeybind(page, text, default, callback)
     if self:_isDead() then return end
+    page = self:_unwrap(page)
     local function _normSpec(spec)
         if spec == nil then return nil, {} end
         if typeof(spec) == "EnumItem" and spec.EnumType == Enum.KeyCode then
@@ -9553,6 +9608,7 @@ end
 
 function Library:AddButton(page, text, callback)
     if self:_isDead() then return end
+    page = self:_unwrap(page)
     if callback ~= nil and type(callback) ~= "function" then
         error("[DoD UI] AddButton callback must be a function.")
     end
@@ -9628,6 +9684,7 @@ end
 
 function Library:AddLabel(page, text)
     if self:_isDead() then return end
+    page = self:_unwrap(page)
     local label = Instance.new("TextLabel", page)
     label.Name = "Label"
     label.Size = UDim2.new(1, 0, 0, 0)
@@ -9650,6 +9707,7 @@ end
 
 function Library:AddParagraph(page, title, desc)
     if self:_isDead() then return end
+    page = self:_unwrap(page)
     desc = desc or ""
     local holder = Instance.new("Frame", page)
     holder.Name = "Paragraph"
@@ -9708,6 +9766,7 @@ end
 
 function Library:AddTextbox(page, text, placeholder, callback, opts)
     if self:_isDead() then return end
+    page = self:_unwrap(page)
     opts = opts or {}
     if type(opts) ~= "table" then opts = {} end
     if callback ~= nil and type(callback) ~= "function" then
@@ -9831,6 +9890,7 @@ end
 
 function Library:AddColorPicker(page, text, defaultColor3, callback)
     if self:_isDead() then return end
+    page = self:_unwrap(page)
     if typeof(defaultColor3) ~= "Color3" then
         error("[DoD UI] AddColorPicker expects defaultColor3 to be a Color3 value.")
     end
@@ -10165,6 +10225,321 @@ function Library:AddColorPicker(page, text, defaultColor3, callback)
 
     self:_bindTooltip(label, text .. " — click preview to open")
     return self:_registerSearchControl(holder, text)
+end
+
+function Library:AddSeparator(page, height)
+    if self:_isDead() then return end
+    page = self:_unwrap(page)
+    local h = tonumber(height) or 16
+    local container = Instance.new("Frame", page)
+    container.Name = "Separator"
+    container.Size = UDim2.new(1, 0, 0, h)
+    container.BackgroundTransparency = 1
+    container.BorderSizePixel = 0
+    local line = Instance.new("Frame", container)
+    line.Size = UDim2.new(1, 0, 0, 1)
+    line.Position = UDim2.new(0, 0, 0.5, -0.5)
+    line.BackgroundColor3 = self._Colors.Border
+    line.BackgroundTransparency = 0.5
+    line.BorderSizePixel = 0
+    self:_registerThemeRefresher(function()
+        line.BackgroundColor3 = self._Colors.Border
+    end)
+    return container
+end
+
+function Library:AddChipBar(page, text, options, defaultIndex, callback)
+    if self:_isDead() then return end
+    page = self:_unwrap(page)
+    if type(options) ~= "table" or #options == 0 then
+        error("[DoD UI] AddChipBar options must be a non-empty array.")
+    end
+    if callback ~= nil and type(callback) ~= "function" then
+        error("[DoD UI] AddChipBar callback must be a function.")
+    end
+    callback = callback or function() end
+    if type(defaultIndex) ~= "number" or defaultIndex % 1 ~= 0
+        or defaultIndex < 1 or defaultIndex > #options then
+        defaultIndex = 1
+    end
+
+    local hasLabel = text ~= nil and text ~= ""
+    local holderHeight = hasLabel and 66 or 44
+    local yOffset = hasLabel and 26 or 8
+
+    local holder = Instance.new("Frame", page)
+    holder.Name = "ChipBar"
+    holder.Size = UDim2.new(1, 0, 0, holderHeight)
+    holder.BackgroundColor3 = self._Colors.Card
+    holder.BackgroundTransparency = 0.3
+    holder.BorderSizePixel = 0
+    Instance.new("UICorner", holder).CornerRadius = UDim.new(0, 8)
+
+    if hasLabel then
+        local label = Instance.new("TextLabel", holder)
+        label.Name = "Label"
+        label.Size = UDim2.new(1, -32, 0, 16)
+        label.Position = UDim2.new(0, 12, 0, 6)
+        label.BackgroundTransparency = 1
+        label.Text = tostring(text)
+        label.TextColor3 = self._Colors.Text
+        label.Font = Enum.Font.GothamBold
+        label.TextSize = 11
+        label.TextXAlignment = Enum.TextXAlignment.Left
+        label.TextTruncate = Enum.TextTruncate.AtEnd
+    end
+
+    local arrowSize = 20
+    local arrowGap = 4
+
+    local leftArrow = Instance.new("TextButton", holder)
+    leftArrow.Name = "ArrowLeft"
+    leftArrow.Size = UDim2.fromOffset(arrowSize, 28)
+    leftArrow.Position = UDim2.new(0, 6, 0, yOffset)
+    leftArrow.BackgroundColor3 = self._Colors.Bg2
+    leftArrow.BackgroundTransparency = 0.3
+    leftArrow.Text = ""
+    leftArrow.AutoButtonColor = false
+    leftArrow.BorderSizePixel = 0
+    leftArrow.Visible = false
+    leftArrow.ZIndex = 5
+    Instance.new("UICorner", leftArrow).CornerRadius = UDim.new(0, 6)
+
+    local leftStroke = Instance.new("UIStroke", leftArrow)
+    leftStroke.Color = self._Colors.Border
+    leftStroke.Thickness = 1
+    leftStroke.Transparency = 0.5
+
+    local leftIcon = Instance.new("ImageLabel", leftArrow)
+    leftIcon.Size = UDim2.fromOffset(12, 12)
+    leftIcon.Position = UDim2.new(0.5, -6, 0.5, -6)
+    leftIcon.BackgroundTransparency = 1
+    leftIcon.Image = GetIcon("chevron-down")
+    leftIcon.Rotation = 90
+    leftIcon.ImageColor3 = self._Colors.TextDim
+
+    local rightArrow = Instance.new("TextButton", holder)
+    rightArrow.Name = "ArrowRight"
+    rightArrow.Size = UDim2.fromOffset(arrowSize, 28)
+    rightArrow.AnchorPoint = Vector2.new(1, 0)
+    rightArrow.Position = UDim2.new(1, -6, 0, yOffset)
+    rightArrow.BackgroundColor3 = self._Colors.Bg2
+    rightArrow.BackgroundTransparency = 0.3
+    rightArrow.Text = ""
+    rightArrow.AutoButtonColor = false
+    rightArrow.BorderSizePixel = 0
+    rightArrow.Visible = false
+    rightArrow.ZIndex = 5
+    Instance.new("UICorner", rightArrow).CornerRadius = UDim.new(0, 6)
+
+    local rightStroke = Instance.new("UIStroke", rightArrow)
+    rightStroke.Color = self._Colors.Border
+    rightStroke.Thickness = 1
+    rightStroke.Transparency = 0.5
+
+    local rightIcon = Instance.new("ImageLabel", rightArrow)
+    rightIcon.Size = UDim2.fromOffset(12, 12)
+    rightIcon.Position = UDim2.new(0.5, -6, 0.5, -6)
+    rightIcon.BackgroundTransparency = 1
+    rightIcon.Image = GetIcon("chevron-down")
+    rightIcon.Rotation = -90
+    rightIcon.ImageColor3 = self._Colors.TextDim
+
+    local scroller = Instance.new("ScrollingFrame", holder)
+    scroller.Name = "ChipScroller"
+    scroller.Size = UDim2.new(1, -16, 0, 28)
+    scroller.Position = UDim2.new(0, 8, 0, yOffset)
+    scroller.BackgroundTransparency = 1
+    scroller.BorderSizePixel = 0
+    scroller.ScrollBarThickness = 0
+    scroller.ScrollingDirection = Enum.ScrollingDirection.X
+    scroller.AutomaticCanvasSize = Enum.AutomaticSize.X
+    scroller.CanvasSize = UDim2.new(0, 0, 0, 0)
+    scroller.ElasticBehavior = Enum.ElasticBehavior.Never
+    scroller.VerticalScrollBarInset = Enum.ScrollBarInset.None
+    scroller.HorizontalScrollBarInset = Enum.ScrollBarInset.None
+    table.insert(self._STATE.ScrollFrames, scroller)
+
+    local layout = Instance.new("UIListLayout", scroller)
+    layout.FillDirection = Enum.FillDirection.Horizontal
+    layout.SortOrder = Enum.SortOrder.LayoutOrder
+    layout.VerticalAlignment = Enum.VerticalAlignment.Center
+    layout.Padding = UDim.new(0, 6)
+
+    local pad = Instance.new("UIPadding", scroller)
+    pad.PaddingLeft = UDim.new(0, 2)
+    pad.PaddingRight = UDim.new(0, 2)
+
+    local currentIndex = defaultIndex
+    local chips = {}
+
+    local function updateChips()
+        for i, chip in ipairs(chips) do
+            local isActive = (i == currentIndex)
+            TweenService:Create(chip, TweenInfo.new(0.15), {
+                BackgroundColor3 = isActive and self._Colors.Accent or self._Colors.Bg2,
+                BackgroundTransparency = isActive and 0 or 0.4,
+            }):Play()
+            local lbl = chip:FindFirstChild("ChipLabel")
+            if lbl then
+                TweenService:Create(lbl, TweenInfo.new(0.15), {
+                    TextColor3 = isActive and Fn.accentTextColor(self._Colors.Accent) or self._Colors.Text,
+                }):Play()
+            end
+            local stroke = chip:FindFirstChildOfClass("UIStroke")
+            if stroke then
+                TweenService:Create(stroke, TweenInfo.new(0.15), {
+                    Transparency = isActive and 0 or 0.5,
+                    Color = isActive and self._Colors.Accent or self._Colors.Border,
+                }):Play()
+            end
+        end
+    end
+
+    for i, opt in ipairs(options) do
+        local chip = Instance.new("TextButton", scroller)
+        chip.Name = "Chip_" .. tostring(i)
+        chip.LayoutOrder = i
+        chip.Size = UDim2.new(0, 0, 0, 28)
+        chip.AutomaticSize = Enum.AutomaticSize.X
+        chip.BackgroundColor3 = self._Colors.Bg2
+        chip.BackgroundTransparency = 0.4
+        chip.Text = ""
+        chip.AutoButtonColor = false
+        chip.BorderSizePixel = 0
+        Instance.new("UICorner", chip).CornerRadius = UDim.new(0, 6)
+
+        local chipStroke = Instance.new("UIStroke", chip)
+        chipStroke.Color = self._Colors.Border
+        chipStroke.Thickness = 1
+        chipStroke.Transparency = 0.5
+
+        local chipPad = Instance.new("UIPadding", chip)
+        chipPad.PaddingLeft = UDim.new(0, 14)
+        chipPad.PaddingRight = UDim.new(0, 14)
+
+        local chipLabel = Instance.new("TextLabel", chip)
+        chipLabel.Name = "ChipLabel"
+        chipLabel.Size = UDim2.new(0, 0, 1, 0)
+        chipLabel.AutomaticSize = Enum.AutomaticSize.X
+        chipLabel.BackgroundTransparency = 1
+        chipLabel.Text = tostring(opt)
+        chipLabel.TextColor3 = self._Colors.Text
+        chipLabel.Font = Enum.Font.GothamBold
+        chipLabel.TextSize = 11
+        chipLabel.TextXAlignment = Enum.TextXAlignment.Center
+
+        Fn.bindPressAnimation(chip)
+
+        chip.MouseButton1Click:Connect(function()
+            if currentIndex == i then return end
+            currentIndex = i
+            self:PlaySound("Click")
+            updateChips()
+            callback(i, options[i])
+            self:_triggerAutoSave()
+        end)
+
+        chip.MouseEnter:Connect(function()
+            self:PlaySound("Hover")
+            if currentIndex ~= i then
+                TweenService:Create(chip, TweenInfo.new(0.12), {BackgroundTransparency = 0.2}):Play()
+            end
+        end)
+        chip.MouseLeave:Connect(function()
+            if currentIndex ~= i then
+                TweenService:Create(chip, TweenInfo.new(0.12), {BackgroundTransparency = 0.4}):Play()
+            end
+        end)
+
+        chips[i] = chip
+    end
+
+    updateChips()
+
+    local function updateArrows()
+        local contentW = layout.AbsoluteContentSize.X + 4
+        local frameW = scroller.AbsoluteSize.X
+        local overflow = contentW > frameW + 2
+        leftArrow.Visible = overflow
+        rightArrow.Visible = overflow
+        if overflow then
+            local arrowW = arrowSize + arrowGap
+            scroller.Size = UDim2.new(1, -(arrowW * 2 + 4), 0, 28)
+            scroller.Position = UDim2.new(0, arrowW + 2, 0, yOffset)
+        else
+            scroller.Size = UDim2.new(1, -16, 0, 28)
+            scroller.Position = UDim2.new(0, 8, 0, yOffset)
+        end
+    end
+
+    layout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(updateArrows)
+    scroller:GetPropertyChangedSignal("AbsoluteSize"):Connect(updateArrows)
+    task.defer(updateArrows)
+
+    local function scrollBy(dx)
+        local maxScroll = math.max(0, scroller.AbsoluteCanvasSize.X - scroller.AbsoluteSize.X)
+        local targetX = math.clamp(scroller.CanvasPosition.X + dx, 0, maxScroll)
+        TweenService:Create(scroller, TweenInfo.new(0.25, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {
+            CanvasPosition = Vector2.new(targetX, 0),
+        }):Play()
+    end
+
+    leftArrow.MouseButton1Click:Connect(function()
+        self:PlaySound("Click")
+        scrollBy(-scroller.AbsoluteSize.X * 0.7)
+    end)
+    rightArrow.MouseButton1Click:Connect(function()
+        self:PlaySound("Click")
+        scrollBy(scroller.AbsoluteSize.X * 0.7)
+    end)
+
+    leftArrow.MouseEnter:Connect(function()
+        TweenService:Create(leftStroke, TweenInfo.new(0.12), {Transparency = 0.1, Color = self._Colors.Accent}):Play()
+    end)
+    leftArrow.MouseLeave:Connect(function()
+        TweenService:Create(leftStroke, TweenInfo.new(0.12), {Transparency = 0.5, Color = self._Colors.Border}):Play()
+    end)
+    rightArrow.MouseEnter:Connect(function()
+        TweenService:Create(rightStroke, TweenInfo.new(0.12), {Transparency = 0.1, Color = self._Colors.Accent}):Play()
+    end)
+    rightArrow.MouseLeave:Connect(function()
+        TweenService:Create(rightStroke, TweenInfo.new(0.12), {Transparency = 0.5, Color = self._Colors.Border}):Play()
+    end)
+
+    local _favId = self:_getConfigId("chipbar", text or "ChipBar")
+    self:_registerConfigState(_favId,
+        function() return currentIndex end,
+        function(v, silent)
+            if type(v) ~= "number" or v < 1 or v > #options then return end
+            if v == currentIndex then return end
+            currentIndex = v
+            updateChips()
+            if not silent then
+                callback(v, options[v])
+                self:_triggerAutoSave()
+            end
+        end
+    )
+    self:_attachFavorite(holder, _favId)
+
+    self:_registerThemeRefresher(function()
+        holder.BackgroundColor3 = self._Colors.Card
+        leftArrow.BackgroundColor3 = self._Colors.Bg2
+        rightArrow.BackgroundColor3 = self._Colors.Bg2
+        leftStroke.Color = self._Colors.Border
+        rightStroke.Color = self._Colors.Border
+        leftIcon.ImageColor3 = self._Colors.TextDim
+        rightIcon.ImageColor3 = self._Colors.TextDim
+        updateChips()
+    end)
+
+    if hasLabel then
+        self:_bindTooltip(holder, text)
+    end
+
+    local searchText = tostring(text or "") .. " " .. table.concat(options, " ")
+    return self:_registerSearchControl(holder, searchText)
 end
 
 -- =========================================================
@@ -10728,6 +11103,7 @@ end
 
 local export = {
     new = function(...) return Library.new(...) end,
+    CreateWindow = function(...) return Library.new(...) end,
     Themes = D.ThemeNames,
     WeatherTypes = D.WeatherTypes,
     FocusOverlayTypes = D.FocusOverlayTypes,
