@@ -1347,7 +1347,6 @@ function Library:SetTheme(themeName, silent)
         end
         if UI.KeybindOverlayStroke then UI.KeybindOverlayStroke.Color = self._Colors.Border end
         if UI.KeybindOverlayList then UI.KeybindOverlayList.ScrollBarImageColor3 = self._Colors.Accent end
-        if UI.KeybindOverlayEmpty then UI.KeybindOverlayEmpty.TextColor3 = self._Colors.TextDim end
         if UI.KeybindOverlayToggle then
             UI.KeybindOverlayToggle.BackgroundColor3 = self._Colors.Card
         end
