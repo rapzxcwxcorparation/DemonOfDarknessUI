@@ -1205,28 +1205,48 @@ function Library:SetPerformanceTier(tier, silent)
     if self:_isDead() then return end
     local p = D.PerfProfiles[tier]
     if not p then return end
-    self._perfTier = tier
-    self._perfProfile = p
-    self:SetAcrylic(p.Acrylic, p.AcrylicBlurIntensity)
-    self:SetSectionTransparency(p.SectionTransparency)
-    self:SetLayoutDensity(p.LayoutDensity)
-    self:SetReducedMotion(p.ReducedMotion)
-    self._STATE.FocusOverlayEnabled = p.FocusOverlayEnabled
-    self._STATE.FocusOverlayType = p.FocusOverlayType
-    self:_updateFocusOverlay()
-    if p.WeatherEnabled and self._STATE.WeatherEnabled then
-        self:SetWeather(true, self._STATE.WeatherType, p.WeatherIntensity)
-    elseif not p.WeatherEnabled and self._STATE.WeatherEnabled then
-        self:SetWeather(false)
-    end
-    if not p.CursorTrail then
-        self:SetCursorTrail(false)
-    end
-    if self._UI.ParticleBG and not p.ParticleBG then
-        self._UI.ParticleBG.Visible = false
-    end
-    if self._UI.CustomCursor and not p.CustomCursor then
-        self._UI.CustomCursor.Visible = false
+    local _prevLoading = self._themeLoading
+    self._themeLoading = true
+    local ok, err = pcall(function()
+        self._perfTier = tier
+        self._perfProfile = p
+        self._perfCursorBlocked = not p.CursorTrail
+        self:SetAcrylic(p.Acrylic, p.AcrylicBlurIntensity)
+        self:SetSectionTransparency(p.SectionTransparency)
+        self:SetLayoutDensity(p.LayoutDensity)
+        self:SetReducedMotion(p.ReducedMotion)
+        if self._STATE.FocusOverlayEnabled then
+            if p.FocusOverlayEnabled then
+                self:_updateFocusOverlay()
+            elseif self._UI.FocusOverlay then
+                self._UI.FocusOverlay.Visible = false
+            end
+        end
+        if self._STATE.WeatherEnabled then
+            if p.WeatherEnabled then
+                self:SetWeather(true, self._STATE.WeatherType,
+                    math.min(self._STATE.WeatherIntensity, p.WeatherIntensity))
+            else
+                self:_stopWeather()
+            end
+        end
+        if not p.CursorTrail then
+            for _, dot in ipairs(self._cursorTrailPool or {}) do
+                dot.active = false
+                if dot.img then dot.img.Visible = false end
+            end
+        end
+        if self._UI.ParticleBG then
+            self._UI.ParticleBG.Visible = p.ParticleBG and self._STATE.GuiVisible
+        end
+        if self._UI.CustomCursor then
+            self._UI.CustomCursor.Visible = p.CustomCursor and not self._isMobile and self._STATE.GuiVisible
+        end
+    end)
+    self._themeLoading = _prevLoading
+    if not ok then
+        warn("[DoD UI] SetPerformanceTier failed: " .. tostring(err))
+        return
     end
     if not silent then
         self:Notify("PERFORMANCE", "Mode: " .. tier, "info")
@@ -1917,7 +1937,6 @@ end
 function Library:Notify(title, text, notifyType)
     local STATE = self._STATE
     if STATE.Destroyed then return end
-    self:PlaySound("Notify")
     title = tostring(title or "")
     text = tostring(text or "")
     notifyType = tostring(notifyType or "info")
@@ -1930,6 +1949,7 @@ function Library:Notify(title, text, notifyType)
         return
     end
     STATE.NotifActive = STATE.NotifActive + 1
+    self:PlaySound("Notify")
 
     task.spawn(function()
         if STATE.Destroyed or not self._UI.NotifGui or not self._UI.NotifGui.Parent then
@@ -3544,6 +3564,7 @@ end
 
 function Library:_updateCursorTrail(mouse)
     if not self._cursorTrailEnabled then return end
+    if self._perfCursorBlocked then return end
     if not self._cursorTrailPool then return end
     if self._isMobile then return end
     if not self._UI.CustomCursor or not self._UI.CustomCursor.Visible then return end
@@ -3880,25 +3901,34 @@ function Library:_initTitleBar()
     end)
 
     local isListening = false
+    local _hintConn = nil
+    local function _endHintListen()
+        isListening = false
+        if _hintConn then
+            pcall(function() _hintConn:Disconnect() end)
+            _hintConn = nil
+        end
+    end
     hintBg.MouseButton1Click:Connect(function()
-        if isListening then return end
+        if isListening then
+            _endHintListen()
+            UI.TitleToggleHint.Text = self.ToggleKey.Name
+            UI.TitleToggleHint.TextColor3 = self._Colors.TextDim
+            return
+        end
         isListening = true
         UI.TitleToggleHint.Text = "PRESS KEY..."
         UI.TitleToggleHint.TextColor3 = self._Colors.Accent
-        
-        local conn
-        conn = UserInputService.InputBegan:Connect(function(input, gameProcessed)
+        _hintConn = UserInputService.InputBegan:Connect(function(input, gameProcessed)
             if gameProcessed then return end
             if input.UserInputType == Enum.UserInputType.Keyboard then
                 self:SetToggleKey(input.KeyCode)
                 UI.TitleToggleHint.TextColor3 = self._Colors.TextDim
-                isListening = false
-                conn:Disconnect()
+                _endHintListen()
             elseif input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.MouseButton2 or input.UserInputType == Enum.UserInputType.Touch then
                 UI.TitleToggleHint.Text = self.ToggleKey.Name
                 UI.TitleToggleHint.TextColor3 = self._Colors.TextDim
-                isListening = false
-                conn:Disconnect()
+                _endHintListen()
             end
         end)
     end)
@@ -4609,6 +4639,25 @@ function Library:_initSearchBar()
     end)
 end
 
+function Library:_queueSearchFilter(tabName)
+    if self:_isDead() then return end
+    tabName = tabName or self._STATE.ActiveTab
+    if not tabName then return end
+    self._pendingSearchTabs = self._pendingSearchTabs or {}
+    self._pendingSearchTabs[tabName] = true
+    if self._searchFilterQueued then return end
+    self._searchFilterQueued = true
+    task.defer(function()
+        self._searchFilterQueued = false
+        local pending = self._pendingSearchTabs
+        self._pendingSearchTabs = {}
+        if self:_isDead() then return end
+        for tn, _ in pairs(pending) do
+            self:_applySearchFilter(tn)
+        end
+    end)
+end
+
 function Library:_applySearchFilter(tabName)
     local STATE = self._STATE
     tabName = tabName or STATE.ActiveTab
@@ -4784,7 +4833,7 @@ function Library:_registerSearchControl(instance, searchText)
                 searchText = tostring(searchText or ""),
                 parent = instance.Parent,
             })
-            self:_applySearchFilter(tabName)
+            self:_queueSearchFilter(tabName)
         end
         return instance
     end
@@ -4794,7 +4843,7 @@ function Library:_registerSearchControl(instance, searchText)
         searchText = tostring(searchText or ""),
         parent = instance.Parent,
     })
-    self:_applySearchFilter(sectionData.tabName)
+    self:_queueSearchFilter(sectionData.tabName)
     return instance
 end
 
@@ -4898,12 +4947,20 @@ function Library:_initFocusOverlay()
     self:_rebuildFocusPattern()
 end
 
+function Library:_patternCacheKey()
+    local theme = D.Themes[self.ThemeName] or D.Themes.Dark
+    local accent = theme.GridColor or theme.Accent or self._Colors.Accent
+    local scale = (self._perfProfile and self._perfProfile.PatternScale) or 1
+    return tostring(self._STATE.FocusOverlayType or "Grid") .. "|" .. tostring(accent) .. "|" .. tostring(scale)
+end
+
 function Library:_rebuildFocusPattern()
     local UI = self._UI
     if not UI.GridPattern then return end
     for _, child in ipairs(UI.GridPattern:GetChildren()) do
         child:Destroy()
     end
+    self._lastPatternKey = self:_patternCacheKey()
     local patternType = self._STATE.FocusOverlayType or "Grid"
     if patternType == "None" then return end
     local _patScale = (self._perfProfile and self._perfProfile.PatternScale) or 1
@@ -5123,7 +5180,18 @@ function Library:_updateFocusOverlay(theme)
         and (theme.OverlayTransparency or 0.45) or 1
     UI.FocusOverlay.Visible = self._STATE.FocusOverlayEnabled and self._STATE.GuiVisible
 
-    self:_rebuildFocusPattern()
+    if self._lastPatternKey ~= self:_patternCacheKey() then
+        if self._patternRebuildDebounce then
+            pcall(task.cancel, self._patternRebuildDebounce)
+        end
+        self._patternRebuildDebounce = task.delay(0.15, function()
+            self._patternRebuildDebounce = nil
+            if self:_isDead() then return end
+            if self._lastPatternKey ~= self:_patternCacheKey() then
+                self:_rebuildFocusPattern()
+            end
+        end)
+    end
 end
 
 function Library:SetFocusOverlay(enabled, patternType)
@@ -6765,7 +6833,7 @@ function Library:CreateSection(tabName, title, summary, defaultOpen, columnName,
         end
     end)
 
-    self:_applySearchFilter(tabName)
+    self:_queueSearchFilter(tabName)
     return body
 end
 
