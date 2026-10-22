@@ -871,6 +871,7 @@ function Library.new(opts)
 
     self:_initNotifications()
     self:_initMainGui()
+    self:_initCursorTrail()
     self:_initKeybindOverlay()
     self:_initTitleBar()
     self:_initTrafficLights()
@@ -1279,6 +1280,8 @@ end
 function Library:Confirm(title, text, onYes, onNo)
     if self:_isDead() then return end
     if not self._UI.MainGui or not self._UI.MainGui.Parent then return end
+    if self._ConfirmAnimating then return end
+    self._ConfirmAnimating = true
 
     if self._ActiveConfirm and self._ActiveConfirm.Parent then
         self._ActiveConfirm:Destroy()
@@ -1386,6 +1389,7 @@ function Library:Confirm(title, text, onYes, onNo)
     local function close(confirmed)
         if closed then return end
         closed = true
+        self._ConfirmAnimating = false
         if self._ActiveConfirm == overlay then self._ActiveConfirm = nil end
         TweenService:Create(overlay, TweenInfo.new(0.15), {BackgroundTransparency = 1}):Play()
         local info = TweenInfo.new(0.15)
@@ -1398,9 +1402,15 @@ function Library:Confirm(title, text, onYes, onNo)
         task.delay(0.18, function()
             if overlay.Parent then overlay:Destroy() end
             if confirmed then
-                if onYes then pcall(onYes) end
+                if onYes then
+                    local ok, err = pcall(onYes)
+                    if not ok then warn("[DoD UI] Confirm onYes failed: " .. tostring(err)) end
+                end
             else
-                if onNo then pcall(onNo) end
+                if onNo then
+                    local ok, err = pcall(onNo)
+                    if not ok then warn("[DoD UI] Confirm onNo failed: " .. tostring(err)) end
+                end
             end
         end)
     end
@@ -1536,6 +1546,8 @@ end
 function Library:SaveConfig(name, silent)
     if self:_isDead() then return end
     if type(name) ~= "string" or name == "" then return end
+    name = name:gsub("[^%w_%-]", "_")
+    if name == "" then return end
     
     local g = (getgenv and getgenv()) or _G
     g.DoD_LastConfig = name
@@ -1570,6 +1582,8 @@ end
 function Library:LoadConfig(name, silent)
     if self:_isDead() then return end
     if type(name) ~= "string" or name == "" then return end
+    name = name:gsub("[^%w_%-]", "_")
+    if name == "" then return end
     local path = "DoD_UI_" .. name .. ".json"
     local json = nil
     pcall(function()
@@ -1902,6 +1916,16 @@ function Library:_initMainGui()
             return
         end
 
+        if self._isMobile then
+            if UI.CustomCursor and UI.CustomCursor.Visible then
+                UI.CustomCursor.Visible = false
+            end
+            if not UserInputService.MouseIconEnabled then
+                UserInputService.MouseIconEnabled = true
+            end
+            return
+        end
+
         local mouse = UserInputService:GetMouseLocation()
         local overGui = false
         
@@ -1954,6 +1978,7 @@ function Library:_initMainGui()
         if UI.CustomCursor and UI.CustomCursor.Visible then
             UI.CustomCursor.Position = UDim2.fromOffset(mouse.X, mouse.Y)
         end
+        self:_updateCursorTrail(mouse)
     end, self)
 
     UI.FocusOverlay = Instance.new("Frame", UI.MainGui)
@@ -2870,6 +2895,46 @@ function Library:_bindToggleKey()
             end
         end
     end, self)
+    if self._isMobile then
+        local tp0 = 0
+        local tpos0 = Vector2.zero
+        local thid = nil
+        Fn.track(UserInputService.InputBegan, function(input)
+            if input.UserInputType ~= Enum.UserInputType.Touch then return end
+            if not self._STATE.GuiVisible then return end
+            if not (self._UI.MainContainer and self._UI.MainContainer.Visible) then return end
+            tp0 = tick()
+            tpos0 = Vector2.new(input.Position.X, input.Position.Y)
+            thid = nil
+            for configId, holder in pairs(self._STATE.FavoriteHolders or {}) do
+                if holder and holder.Parent then
+                    local ok, res = pcall(function()
+                        local p, s = holder.AbsolutePosition, holder.AbsoluteSize
+                        return tpos0.X >= p.X and tpos0.X <= p.X + s.X and tpos0.Y >= p.Y and tpos0.Y <= p.Y + s.Y
+                    end)
+                    if ok and res then thid = configId; break end
+                end
+            end
+        end, self)
+        Fn.track(UserInputService.InputEnded, function(input)
+            if input.UserInputType ~= Enum.UserInputType.Touch then return end
+            if not thid then return end
+            local dur = tick() - tp0
+            local endPos = Vector2.new(input.Position.X, input.Position.Y)
+            local moved = (endPos - tpos0).Magnitude
+            if dur >= 0.5 and moved < 14 then
+                if self._STATE.Favorites[thid] then
+                    self._STATE.Favorites[thid] = nil
+                else
+                    self._STATE.Favorites[thid] = true
+                end
+                self:_updateFavoriteStar(thid)
+                self:_applySearchFilter()
+                self:_triggerAutoSave()
+            end
+            thid = nil
+        end, self)
+    end
 end
 
 function Library:SetVersion(text)
@@ -2991,6 +3056,10 @@ function Library:SetWallpaper(assetId, transparency)
     local trans = math.clamp(transparency or 0, 0, 1)
 
     if string.sub(img, 1, 4) == "http" then
+        if string.sub(img, 1, 8) ~= "https://" then
+            self:Notify("WALLPAPER", "Only https:// URLs allowed", "error")
+            return
+        end
         if not (getcustomasset and writefile and type(writefile) == "function") then
             self:Notify("WALLPAPER", "Executor tidak support getcustomasset/writefile", "error")
             return
@@ -3069,6 +3138,153 @@ function Library:SetCursorIcon(assetId)
     end
     if self._UI.CustomCursor then
         self._UI.CustomCursor.Image = img
+    end
+end
+
+function Library:SetCursorTrail(enabled)
+    if self:_isDead() then return end
+    if type(enabled) ~= "boolean" then
+        error("[DoD UI] SetCursorTrail expects a boolean value.")
+    end
+    self._cursorTrailEnabled = enabled
+    if not enabled then
+        for _, dot in ipairs(self._cursorTrailPool or {}) do
+            dot.active = false
+            if dot.img then dot.img.Visible = false end
+        end
+    end
+end
+
+function Library:SetCursorTrailColor(color)
+    if self:_isDead() then return end
+    if typeof(color) ~= "Color3" then
+        error("[DoD UI] SetCursorTrailColor expects a Color3 value.")
+    end
+    self._cursorTrailColor = color
+    for _, dot in ipairs(self._cursorTrailPool or {}) do
+        if dot.img then dot.img.ImageColor3 = color end
+    end
+end
+
+function Library:_initCursorTrail()
+    if self._cursorTrailPool then return end
+    local UI = self._UI
+    if not UI.MainGui then return end
+    if self._cursorTrailEnabled == nil then self._cursorTrailEnabled = false end
+    if self._cursorTrailColor == nil then self._cursorTrailColor = Color3.fromRGB(0, 255, 255) end
+    self._cursorTrailPool = {}
+    self._cursorTrailTexture = "rbxassetid://5029929719"
+    self._cursorTrailSpawnDist = 0
+    self._cursorTrailPrevPos = Vector2.zero
+    for i = 1, 28 do
+        local img = Instance.new("ImageLabel", UI.MainGui)
+        img.Name = "CursorTrail_" .. tostring(i)
+        img.AnchorPoint = Vector2.new(0.5, 0.5)
+        img.Size = UDim2.fromOffset(32, 32)
+        img.BackgroundTransparency = 1
+        img.Image = self._cursorTrailTexture
+        img.ImageColor3 = self._cursorTrailColor
+        img.ImageTransparency = 1
+        img.Visible = false
+        img.ZIndex = 99999
+        img.ScaleType = Enum.ScaleType.Fit
+        img.Active = false
+        table.insert(self._cursorTrailPool, {
+            img = img,
+            active = false,
+            spawnedAt = 0,
+            life = 0.5,
+            baseSize = 32,
+            x = 0,
+            y = 0,
+            offsetX = 0,
+            offsetY = 0,
+            spin = 0,
+            pulsePhase = 0,
+        })
+    end
+end
+
+function Library:_spawnCursorTrailDot(pos, now)
+    if not self._cursorTrailPool then return end
+    local dot = nil
+    for _, d in ipairs(self._cursorTrailPool) do
+        if not d.active then dot = d; break end
+    end
+    if not dot then
+        local oldest = math.huge
+        for _, d in ipairs(self._cursorTrailPool) do
+            if d.spawnedAt < oldest then
+                oldest = d.spawnedAt
+                dot = d
+            end
+        end
+    end
+    if not dot then return end
+    dot.active = true
+    dot.spawnedAt = now
+    dot.x = pos.X
+    dot.y = pos.Y
+    dot.pulsePhase = math.random() * math.pi * 2
+    dot.spin = (math.random() - 0.5) * 1.6
+    dot.baseSize = math.random(22, 42)
+    dot.offsetX = (math.random() - 0.5) * 18
+    dot.offsetY = (math.random() - 0.5) * 18
+    dot.life = 0.42 + math.random() * 0.28
+    dot.img.Visible = true
+    dot.img.ImageColor3 = self._cursorTrailColor
+    dot.img.ImageTransparency = 0.15
+    dot.img.Size = UDim2.fromOffset(dot.baseSize, dot.baseSize)
+    dot.img.Position = UDim2.fromOffset(pos.X + dot.offsetX, pos.Y + dot.offsetY)
+    dot.img.Rotation = 0
+end
+
+function Library:_updateCursorTrail(mouse)
+    if not self._cursorTrailEnabled then return end
+    if not self._cursorTrailPool then return end
+    if self._isMobile then return end
+    if not self._UI.CustomCursor or not self._UI.CustomCursor.Visible then return end
+    local now = tick()
+    local pos = Vector2.new(mouse.X, mouse.Y)
+    local moved = (pos - self._cursorTrailPrevPos).Magnitude
+    self._cursorTrailPrevPos = pos
+    if moved > 2.5 and moved < 200 then
+        self._cursorTrailSpawnDist = self._cursorTrailSpawnDist + moved
+        local threshold = 7
+        while self._cursorTrailSpawnDist >= threshold do
+            self._cursorTrailSpawnDist = self._cursorTrailSpawnDist - threshold
+            self:_spawnCursorTrailDot(pos, now)
+        end
+    else
+        self._cursorTrailSpawnDist = 0
+    end
+    local baseColor = self._cursorTrailColor
+    for _, dot in ipairs(self._cursorTrailPool) do
+        if dot.active then
+            local age = now - dot.spawnedAt
+            if age >= dot.life then
+                dot.active = false
+                dot.img.Visible = false
+            else
+                local t = age / dot.life
+                local alpha = 1 - t
+                local pulse = math.sin(now * 5 + dot.pulsePhase) * 0.35 + 0.65
+                local c = Color3.new(
+                    math.min(baseColor.R * (1 + pulse * 0.35), 1),
+                    math.min(baseColor.G * (1 + pulse * 0.35), 1),
+                    math.min(baseColor.B * (1 + pulse * 0.35), 1)
+                )
+                local sz = dot.baseSize * (0.4 + alpha * 0.6)
+                dot.img.ImageColor3 = c
+                dot.img.ImageTransparency = 0.1 + t * 0.85
+                dot.img.Size = UDim2.fromOffset(sz, sz)
+                dot.img.Position = UDim2.fromOffset(
+                    dot.x + dot.offsetX * (1 - t),
+                    dot.y + dot.offsetY * (1 - t)
+                )
+                dot.img.Rotation = dot.spin * t * 180
+            end
+        end
     end
 end
 
@@ -4056,15 +4272,37 @@ function Library:_initSearchBar()
         end)
     end)
 
+    local _searchSavedPos = nil
     UI.SearchInput.Focused:Connect(function()
         TweenService:Create(UI.SearchBarStroke, TweenInfo.new(0.22), {
             Color = self._Colors.Accent, Transparency = 0.1
         }):Play()
+        if UserInputService.TouchEnabled and UI.MainContainer then
+            _searchSavedPos = UI.MainContainer.Position
+            local cam = getCam()
+            if cam then
+                local vp = cam.ViewportSize
+                local absSize = UI.MainContainer.AbsoluteSize
+                local shift = math.floor(vp.Y * 0.25)
+                local maxShift = math.max(0, vp.Y * 0.5 - absSize.Y * 0.5 - 8)
+                shift = math.min(shift, maxShift)
+                local p = UI.MainContainer.Position
+                TweenService:Create(UI.MainContainer, TweenInfo.new(0.28, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {
+                    Position = UDim2.new(p.X.Scale, p.X.Offset, p.Y.Scale, p.Y.Offset - shift),
+                }):Play()
+            end
+        end
     end)
     UI.SearchInput.FocusLost:Connect(function()
         TweenService:Create(UI.SearchBarStroke, TweenInfo.new(0.22), {
             Color = self._Colors.Border, Transparency = 0.25
         }):Play()
+        if _searchSavedPos and UI.MainContainer then
+            TweenService:Create(UI.MainContainer, TweenInfo.new(0.28, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {
+                Position = _searchSavedPos,
+            }):Play()
+            _searchSavedPos = nil
+        end
     end)
 end
 
@@ -4660,7 +4898,8 @@ function Library:_createWeather(weatherType)
     local STATE = self._STATE
 
     UI.SnowLayer.Visible = STATE.GuiVisible
-    local maxCount = math.max(1, math.floor(preset.count * 100 / 65 + 0.5))
+    local mobileScale = self._isMobile and 0.5 or 1
+    local maxCount = math.max(1, math.floor(preset.count * 100 / 65 * mobileScale + 0.5))
     local colors = preset.colors or { preset.color or Color3.new(1, 1, 1) }
 
     for index = 1, maxCount do
@@ -5263,7 +5502,10 @@ function Library:_layoutCategoryButtons()
     local STATE = self._STATE
     local UI = self._UI
     if not STATE.CategoryButtons then return end
-    if self.TabPosition == "Side" then return end
+    if self.TabPosition == "Side" then
+        if UI.BottomPill then UI.BottomPill.Visible = false end
+        return
+    end
     local names = {}
     for _, name in ipairs(STATE.CategoryOrder or {}) do
         if STATE.CategoryButtons[name] then table.insert(names, name) end
@@ -6680,6 +6922,12 @@ function Library:CreateThemeCustomizer(tabName)
     self:AddToggle(section, "Reduced Motion", self._STATE.ReducedMotion or false, function(enabled)
         self:SetReducedMotion(enabled)
     end)
+    self:AddToggle(section, "Cursor Trail", self._cursorTrailEnabled or false, function(enabled)
+        self:SetCursorTrail(enabled)
+    end)
+    self:AddColorPicker(section, "Cursor Trail Color", self._cursorTrailColor or Color3.fromRGB(0, 255, 255), function(color)
+        self:SetCursorTrailColor(color)
+    end)
     local _densityIdx = 2
     local _curDensity = self._STATE.LayoutDensity or "Normal"
     if _curDensity == "Compact" then _densityIdx = 1
@@ -7369,6 +7617,15 @@ function Library:AddSlider(page, text, minVal, maxVal, default, decimals, callba
     local knobScale = Instance.new("UIScale", knob)
     knobScale.Scale = 1
 
+    local knobHit = Instance.new("Frame", knob)
+    knobHit.Name = "KnobHit"
+    knobHit.AnchorPoint = Vector2.new(0.5, 0.5)
+    knobHit.Position = UDim2.new(0.5, 0, 0.5, 0)
+    knobHit.Size = UDim2.fromOffset(44, 44)
+    knobHit.BackgroundTransparency = 1
+    knobHit.Active = true
+    knobHit.ZIndex = 4
+
     local val = default
     local drag = false
     local editing = false
@@ -7521,7 +7778,7 @@ function Library:AddSlider(page, text, minVal, maxVal, default, decimals, callba
         end
     end)
 
-    knob.InputBegan:Connect(function(inp)
+    knobHit.InputBegan:Connect(function(inp)
         if inp.UserInputType == Enum.UserInputType.MouseButton1 or inp.UserInputType == Enum.UserInputType.Touch then
             drag = true
             TweenService:Create(knobScale, TweenInfo.new(0.1), {Scale = 1.2}):Play()
@@ -9091,13 +9348,35 @@ function Library:AddTextbox(page, text, placeholder, callback)
     inputPadding.PaddingLeft = UDim.new(0, 10)
     inputPadding.PaddingRight = UDim.new(0, 10)
 
+    local _kbSavedPos = nil
     input.Focused:Connect(function()
         TweenService:Create(inputStroke, TweenInfo.new(0.15), {Color = self._Colors.Accent, Transparency = 0.1}):Play()
         TweenService:Create(input, TweenInfo.new(0.15), {BackgroundTransparency = 0}):Play()
+        if UserInputService.TouchEnabled and self._UI.MainContainer then
+            _kbSavedPos = self._UI.MainContainer.Position
+            local cam = getCam()
+            if cam then
+                local vp = cam.ViewportSize
+                local absSize = self._UI.MainContainer.AbsoluteSize
+                local shift = math.floor(vp.Y * 0.30)
+                local maxShift = math.max(0, vp.Y * 0.5 - absSize.Y * 0.5 - 8)
+                shift = math.min(shift, maxShift)
+                local p = self._UI.MainContainer.Position
+                TweenService:Create(self._UI.MainContainer, TweenInfo.new(0.28, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {
+                    Position = UDim2.new(p.X.Scale, p.X.Offset, p.Y.Scale, p.Y.Offset - shift),
+                }):Play()
+            end
+        end
     end)
     input.FocusLost:Connect(function()
         TweenService:Create(inputStroke, TweenInfo.new(0.15), {Color = self._Colors.Border, Transparency = 0.5}):Play()
         TweenService:Create(input, TweenInfo.new(0.15), {BackgroundTransparency = 0.2}):Play()
+        if _kbSavedPos and self._UI.MainContainer then
+            TweenService:Create(self._UI.MainContainer, TweenInfo.new(0.28, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {
+                Position = _kbSavedPos,
+            }):Play()
+            _kbSavedPos = nil
+        end
     end)
 
     input.FocusLost:Connect(function()
@@ -9494,6 +9773,8 @@ function Library:_themeSnapshot()
         SectionTransparency = self._STATE.SectionTransparency,
         TooltipEnabled = self._STATE.TooltipEnabled,
         TooltipTransparency = self._STATE.TooltipTransparency,
+        CursorTrailEnabled = self._cursorTrailEnabled or false,
+        CursorTrailColor = self._cursorTrailColor and { self._cursorTrailColor.R, self._cursorTrailColor.G, self._cursorTrailColor.B } or nil,
         _timestamp = os.time(),
     }
     if self._AccentOverride then
@@ -9554,6 +9835,12 @@ function Library:_applyThemeSnapshot(data, silent)
         end
         if type(data.TooltipTransparency) == "number" then
             self:SetTooltipTransparency(data.TooltipTransparency)
+        end
+        if type(data.CursorTrailEnabled) == "boolean" then
+            self:SetCursorTrail(data.CursorTrailEnabled)
+        end
+        if type(data.CursorTrailColor) == "table" and #data.CursorTrailColor >= 3 then
+            self:SetCursorTrailColor(Color3.new(data.CursorTrailColor[1], data.CursorTrailColor[2], data.CursorTrailColor[3]))
         end
         if type(data.TitleIconName) == "string" and data.TitleIconName ~= "" then
             self:SetTitleIcon(data.TitleIconName)
