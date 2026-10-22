@@ -22,12 +22,61 @@ pcall(function()
     IconsV2.SetIconsType("lucide")
 end)
 
+local _IconCache = {}
+local _FallbackIcons = {
+    ["search"] = "rbxassetid://7733765398",
+    ["x"] = "rbxassetid://7734068321",
+    ["check"] = "rbxassetid://7733954901",
+    ["check-circle"] = "rbxassetid://7733954901",
+    ["x-circle"] = "rbxassetid://7734068321",
+    ["info"] = "rbxassetid://7734014847",
+    ["alert-triangle"] = "rbxassetid://7734057721",
+    ["star"] = "rbxassetid://7734060101",
+    ["heart"] = "rbxassetid://7733994238",
+    ["settings"] = "rbxassetid://7734065547",
+    ["trash-2"] = "rbxassetid://7734086474",
+    ["copy"] = "rbxassetid://7734038559",
+    ["clipboard-paste"] = "rbxassetid://7734013510",
+    ["refresh-cw"] = "rbxassetid://7734052500",
+    ["chevron-down"] = "rbxassetid://7733998010",
+    ["chevron-up"] = "rbxassetid://7733998010",
+    ["chevrons-up"] = "rbxassetid://7734020531",
+    ["chevrons-down"] = "rbxassetid://7734020531",
+    ["arrow-up"] = "rbxassetid://7733988022",
+    ["arrow-down"] = "rbxassetid://7733988022",
+    ["keyboard"] = "rbxassetid://7734003090",
+    ["command"] = "rbxassetid://7734007240",
+    ["mouse-pointer-2"] = "rbxassetid://7734057332",
+    ["panel-top"] = "rbxassetid://7734054207",
+    ["move-diagonal"] = "rbxassetid://7734028058",
+    ["loader"] = "rbxassetid://7734028058",
+    ["hexagon"] = "rbxassetid://7734005169",
+    ["shield"] = "rbxassetid://7734069485",
+    ["user"] = "rbxassetid://7734082053",
+    ["users"] = "rbxassetid://7734082113",
+    ["wifi"] = "rbxassetid://7734083361",
+    ["zap"] = "rbxassetid://7734088669",
+    ["activity"] = "rbxassetid://7733951517",
+    ["server"] = "rbxassetid://7734061229",
+    ["message-circle"] = "rbxassetid://7734037126",
+    ["file-clock"] = "rbxassetid://7733991600",
+    ["id-card"] = "rbxassetid://7734003090",
+}
+
 local function GetIcon(name)
+    name = tostring(name or "")
+    local cached = _IconCache[name]
+    if cached then return cached end
     if IconsV2 then
         local ok, icon = pcall(function() return IconsV2.GetIcon(name) end)
-        if ok and icon then return icon end
+        if ok and icon then
+            _IconCache[name] = icon
+            return icon
+        end
     end
-    return "rbxassetid://6031075931" -- fallback: code icon
+    local fallback = _FallbackIcons[name] or _FallbackIcons[name:lower()] or "rbxassetid://6031075931"
+    _IconCache[name] = fallback
+    return fallback
 end
 
 local Players            = game:GetService("Players")
@@ -138,6 +187,49 @@ Fn.accentTextColor = function(color)
     end
     local lum = 0.2126 * lin(color.R) + 0.7152 * lin(color.G) + 0.0722 * lin(color.B)
     return lum > 0.179 and Color3.fromRGB(20, 22, 28) or Color3.fromRGB(255, 255, 255)
+end
+
+Fn.luminance = function(color)
+    local function lin(c)
+        if c <= 0.04045 then return c / 12.92 end
+        return ((c + 0.055) / 1.055) ^ 2.4
+    end
+    return 0.2126 * lin(color.R) + 0.7152 * lin(color.G) + 0.0722 * lin(color.B)
+end
+
+Fn.contrastRatio = function(a, b)
+    local la = Fn.luminance(a)
+    local lb = Fn.luminance(b)
+    if la < lb then la, lb = lb, la end
+    return (la + 0.05) / (lb + 0.05)
+end
+
+Fn.contrastForeground = function(bg)
+    if typeof(bg) ~= "Color3" then return Color3.fromRGB(255, 255, 255) end
+    return Fn.luminance(bg) > 0.179 and Color3.fromRGB(20, 22, 28) or Color3.fromRGB(255, 255, 255)
+end
+
+Fn.visibleAccent = function(accent, bg, minRatio)
+    if not accent or not bg then return accent end
+    minRatio = minRatio or 3
+    if Fn.contrastRatio(accent, bg) >= minRatio then return accent end
+    local h, s, v = accent:ToHSV()
+    local candidates = {
+        Color3.fromHSV(h, s * 0.85, math.min(1, v + 0.15)),
+        Color3.fromHSV(h, s * 0.70, math.min(1, v + 0.30)),
+        Color3.fromHSV(h, s * 0.50, math.min(1, v + 0.45)),
+        Color3.fromHSV(h, s, math.max(0, v - 0.15)),
+        Color3.fromHSV(h, s, math.max(0, v - 0.30)),
+        Color3.fromHSV(h, s, math.max(0, v - 0.45)),
+    }
+    local best = accent
+    local bestRatio = Fn.contrastRatio(accent, bg)
+    for _, c in ipairs(candidates) do
+        local r = Fn.contrastRatio(c, bg)
+        if r >= minRatio then return c end
+        if r > bestRatio then bestRatio = r; best = c end
+    end
+    return best
 end
 
 -- =========================================================
@@ -737,6 +829,7 @@ function Library.new(opts)
     self.WallpaperTransparency = opts.WallpaperTransparency or 0
     self.AutoTheme = opts.AutoTheme ~= false
     self.Acrylic = opts.Acrylic ~= false
+    self._SmartThemeAutoFix = opts.SmartThemeAutoFix ~= false
     if opts.AcrylicBlur == nil then
         self.AcrylicBlurIntensity = 8
     else
@@ -940,6 +1033,21 @@ function Library.new(opts)
         self:LoadThemeConfig("settings", true)
     end
 
+    task.defer(function()
+        for _ = 1, 100 do
+            task.wait(0.05)
+            if self:_isDead() then return end
+            local p = self._pendingTabRestore
+            if not p then return end
+            if p.tab and self._STATE.ContentPages[p.tab] then
+                self._pendingTabRestore = nil
+                pcall(function() self:SwitchTab(p.tab) end)
+                return
+            end
+        end
+        self._pendingTabRestore = nil
+    end)
+
     return self
 end
 
@@ -968,6 +1076,30 @@ function Library:_applyThemeColors(themeName)
     for key, color in pairs(self._CustomColorOverrides) do
         if self._Colors[key] then
             self._Colors[key] = color
+        end
+    end
+
+    self._themeAutoAdjusted = false
+    if self._SmartThemeAutoFix ~= false then
+        local origAccent = self._Colors.Accent
+        if Fn.contrastRatio(self._Colors.Accent, self._Colors.Bg) < 3 then
+            self._Colors.Accent = Fn.visibleAccent(self._Colors.Accent, self._Colors.Bg, 3)
+            self._themeAutoAdjusted = true
+        end
+        if Fn.contrastRatio(self._Colors.Accent, self._Colors.Card) < 2 then
+            self._Colors.Accent = Fn.visibleAccent(self._Colors.Accent, self._Colors.Card, 2)
+            self._themeAutoAdjusted = true
+        end
+        if Fn.contrastRatio(self._Colors.Text, self._Colors.Bg) < 3 then
+            self._Colors.Text = Fn.contrastForeground(self._Colors.Bg)
+            self._themeAutoAdjusted = true
+        end
+        if Fn.contrastRatio(self._Colors.Border, self._Colors.Card) < 1.4 then
+            self._Colors.Border = self._Colors.Border:Lerp(Fn.contrastForeground(self._Colors.Card), 0.3)
+            self._themeAutoAdjusted = true
+        end
+        if self._themeAutoAdjusted and self._Colors.Accent ~= origAccent then
+            self._Colors.Accent2 = self._Colors.Accent:Lerp(Color3.new(1, 1, 1), 0.25)
         end
     end
     return theme
@@ -1030,7 +1162,7 @@ function Library:SetTheme(themeName, silent)
         if UI.TitleVersionBadge then
             local badgeColor = self._VersionBadgeOverride or self._Colors.Accent
             UI.TitleVersionBadge.BackgroundColor3 = badgeColor
-            UI.TitleVersionBadge.TextColor3 = Color3.fromRGB(255, 255, 255)
+            UI.TitleVersionBadge.TextColor3 = Fn.contrastForeground(badgeColor)
         end
         if UI.MainStroke then UI.MainStroke.Color = self._Colors.Border end
         if UI.TitleGradient then
@@ -1093,7 +1225,7 @@ function Library:SetTheme(themeName, silent)
         self._STATE.SubTabBar:RefreshTheme({
             PillBg       = self._Colors.Card,
             LeftAccent   = self._Colors.Accent,
-            TextActive   = Color3.fromRGB(255, 255, 255),
+            TextActive   = Fn.contrastForeground(self._Colors.Card),
             TextInactive = self._Colors.TextDim,
             FontActive   = Enum.Font.GothamBold,
             FontInactive = Enum.Font.GothamMedium,
@@ -1105,7 +1237,11 @@ function Library:SetTheme(themeName, silent)
     end
 
     if not silent then
-        self:Notify("THEME", "Applied: " .. actualName)
+        if self._themeAutoAdjusted then
+            self:Notify("THEME", "Applied: " .. actualName .. " (auto-adjusted)", "info")
+        else
+            self:Notify("THEME", "Applied: " .. actualName)
+        end
     end
 end
 
@@ -1633,6 +1769,9 @@ function Library:Notify(title, text, notifyType)
     
     if STATE.NotifActive >= STATE.NotifMax then
         table.insert(STATE.NotifQueue, { title = title, text = text, nType = notifyType })
+        while #STATE.NotifQueue > 10 do
+            table.remove(STATE.NotifQueue, 1)
+        end
         return
     end
     STATE.NotifActive = STATE.NotifActive + 1
@@ -3069,9 +3208,18 @@ function Library:SetWallpaper(assetId, transparency)
         if self.ShowLoading then self:ShowLoading("Downloading wallpaper...") end
         
         task.spawn(function()
+            local timedOut = false
+            local watchdog = task.delay(10, function()
+                if timedOut then return end
+                timedOut = true
+                if self.HideLoading then self:HideLoading() end
+                self:Notify("WALLPAPER", "Download timeout (>10s) — server slow or unreachable", "error")
+            end)
             local success, content = pcall(function()
                 return game:HttpGet(img, true)
             end)
+            if watchdog then pcall(task.cancel, watchdog) end
+            if timedOut then return end
             
             if not success or type(content) ~= "string" or #content == 0 then
                 if self.HideLoading then self:HideLoading() end
@@ -5780,7 +5928,7 @@ function Library:SetActiveCategory(categoryName, preferredTab)
         TabWidth = self.TabWidth, TabHeight = 28, Padding = 6,
         Theme = {
             PillBg = self._Colors.Card, LeftAccent = self._Colors.Accent,
-            TextActive = Color3.fromRGB(255, 255, 255), TextInactive = self._Colors.TextDim,
+            TextActive = Fn.contrastForeground(self._Colors.Card), TextInactive = self._Colors.TextDim,
             FontActive = Enum.Font.GothamBold, FontInactive = Enum.Font.GothamMedium,
         },
         Owner = self,
@@ -7339,7 +7487,7 @@ function Library:AddToggle(page, text, default, callback)
     local knob = Instance.new("Frame", switchBg)
     knob.Size = UDim2.new(0, 16, 0, 16)
     knob.Position = default and UDim2.new(1, -18, 0.5, -8) or UDim2.new(0, 2, 0.5, -8)
-    knob.BackgroundColor3 = Color3.new(1, 1, 1)
+    knob.BackgroundColor3 = Fn.contrastForeground(default and self._Colors.Accent or Color3.fromRGB(45, 45, 55))
     knob.BorderSizePixel = 0
     Instance.new("UICorner", knob).CornerRadius = UDim.new(1, 0)
 
@@ -7347,14 +7495,21 @@ function Library:AddToggle(page, text, default, callback)
 
     local function updateVisual(animate)
         local tInfo = TweenInfo.new(0.2, Enum.EasingStyle.Quart, Enum.EasingDirection.Out)
+        local targetBg = state and self._Colors.Accent or Color3.fromRGB(45, 45, 55)
+        local targetStroke = state and self._Colors.Accent or self._Colors.Border
+        local targetKnob = Fn.contrastForeground(targetBg)
         if animate then
-            TweenService:Create(switchBg, tInfo, {BackgroundColor3 = state and self._Colors.Accent or Color3.fromRGB(45, 45, 55)}):Play()
-            TweenService:Create(switchStroke, tInfo, {Color = state and self._Colors.Accent or self._Colors.Border}):Play()
-            TweenService:Create(knob, tInfo, {Position = state and UDim2.new(1, -18, 0.5, -8) or UDim2.new(0, 2, 0.5, -8)}):Play()
+            TweenService:Create(switchBg, tInfo, {BackgroundColor3 = targetBg}):Play()
+            TweenService:Create(switchStroke, tInfo, {Color = targetStroke}):Play()
+            TweenService:Create(knob, tInfo, {
+                Position = state and UDim2.new(1, -18, 0.5, -8) or UDim2.new(0, 2, 0.5, -8),
+                BackgroundColor3 = targetKnob,
+            }):Play()
         else
-            switchBg.BackgroundColor3 = state and self._Colors.Accent or Color3.fromRGB(45, 45, 55)
-            switchStroke.Color = state and self._Colors.Accent or self._Colors.Border
+            switchBg.BackgroundColor3 = targetBg
+            switchStroke.Color = targetStroke
             knob.Position = state and UDim2.new(1, -18, 0.5, -8) or UDim2.new(0, 2, 0.5, -8)
+            knob.BackgroundColor3 = targetKnob
         end
     end
 
@@ -7604,7 +7759,7 @@ function Library:AddSlider(page, text, minVal, maxVal, default, decimals, callba
     local knob = Instance.new("Frame", sliderBg)
     knob.Size = UDim2.new(0, 16, 0, 16)
     knob.Position = UDim2.new((default - minVal) / (maxVal - minVal), -8, 0.5, -8)
-    knob.BackgroundColor3 = Color3.new(1, 1, 1)
+    knob.BackgroundColor3 = Fn.contrastForeground(self._Colors.Accent)
     knob.BorderSizePixel = 0
     knob.ZIndex = 3
     Instance.new("UICorner", knob).CornerRadius = UDim.new(1, 0)
@@ -7852,6 +8007,7 @@ function Library:AddSlider(page, text, minVal, maxVal, default, decimals, callba
         btnPlusStroke.Color = self._Colors.Border
         fill.BackgroundColor3 = self._Colors.Accent
         fillGlow.BackgroundColor3 = self._Colors.Accent
+        knob.BackgroundColor3 = Fn.contrastForeground(self._Colors.Accent)
         knobStroke.Color = self._Colors.Accent
         knobHalo.BackgroundColor3 = self._Colors.Accent
         sliderStroke.Color = self._Colors.Border
@@ -9295,8 +9451,10 @@ function Library:AddParagraph(page, title, desc)
     return self:_registerSearchControl(holder, tostring(title) .. " " .. tostring(desc))
 end
 
-function Library:AddTextbox(page, text, placeholder, callback)
+function Library:AddTextbox(page, text, placeholder, callback, opts)
     if self:_isDead() then return end
+    opts = opts or {}
+    if type(opts) ~= "table" then opts = {} end
     if callback ~= nil and type(callback) ~= "function" then
         error("[DoD UI] AddTextbox callback must be a function.")
     end
@@ -9338,6 +9496,12 @@ function Library:AddTextbox(page, text, placeholder, callback)
     input.TextSize = 11
     input.TextXAlignment = Enum.TextXAlignment.Left
     Instance.new("UICorner", input).CornerRadius = UDim.new(0, 8)
+    if opts.readOnly then
+        input.TextEditable = false
+        input.BackgroundTransparency = 0.6
+        input.TextColor3 = self._Colors.TextDim
+        input.PlaceholderColor3 = self._Colors.TextDim
+    end
 
     local inputStroke = Instance.new("UIStroke", input)
     inputStroke.Color = self._Colors.Border
@@ -9575,6 +9739,7 @@ function Library:AddColorPicker(page, text, defaultColor3, callback)
         currentColor = Color3.fromHSV(hue, saturation, value)
         saturationValue.BackgroundColor3 = Color3.fromHSV(hue, 1, 1)
         selector.Position = UDim2.new(saturation, 0, 1 - value, 0)
+        selectorStroke.Color = Fn.contrastForeground(currentColor)
         preview.BackgroundColor3 = currentColor
         currentPreview.BackgroundColor3 = currentColor
         
@@ -9773,6 +9938,8 @@ function Library:_themeSnapshot()
         SectionTransparency = self._STATE.SectionTransparency,
         TooltipEnabled = self._STATE.TooltipEnabled,
         TooltipTransparency = self._STATE.TooltipTransparency,
+        ActiveCategory = self._STATE.ActiveCategory,
+        ActiveTab = self._STATE.ActiveTab,
         CursorTrailEnabled = self._cursorTrailEnabled or false,
         CursorTrailColor = self._cursorTrailColor and { self._cursorTrailColor.R, self._cursorTrailColor.G, self._cursorTrailColor.B } or nil,
         _timestamp = os.time(),
@@ -9841,6 +10008,12 @@ function Library:_applyThemeSnapshot(data, silent)
         end
         if type(data.CursorTrailColor) == "table" and #data.CursorTrailColor >= 3 then
             self:SetCursorTrailColor(Color3.new(data.CursorTrailColor[1], data.CursorTrailColor[2], data.CursorTrailColor[3]))
+        end
+        if type(data.ActiveTab) == "string" and data.ActiveTab ~= "" then
+            self._pendingTabRestore = {
+                category = type(data.ActiveCategory) == "string" and data.ActiveCategory or nil,
+                tab = data.ActiveTab,
+            }
         end
         if type(data.TitleIconName) == "string" and data.TitleIconName ~= "" then
             self:SetTitleIcon(data.TitleIconName)
