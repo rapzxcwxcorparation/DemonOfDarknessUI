@@ -434,6 +434,38 @@ D.FocusOverlayTypes = {
     "Scanlines", "Bricks", "Concentric", "Stars", "Plus", "Zigzag",
     "Matrix", "Waves"
 }
+D.PerfProfiles = {
+    Potato = {
+        Acrylic = false, AcrylicBlurIntensity = 0,
+        FocusOverlayEnabled = false, FocusOverlayType = "None",
+        WeatherEnabled = false, WeatherIntensity = 0,
+        ReducedMotion = true, LayoutDensity = "Compact",
+        CursorTrail = false, ParticleBG = false, CustomCursor = false,
+        SectionTransparency = 0.02,
+        WeatherParticleCap = 0,
+        PatternScale = 0.25,
+    },
+    Balanced = {
+        Acrylic = true, AcrylicBlurIntensity = 4,
+        FocusOverlayEnabled = true, FocusOverlayType = "Grid",
+        WeatherEnabled = true, WeatherIntensity = 40,
+        ReducedMotion = false, LayoutDensity = "Normal",
+        CursorTrail = true, ParticleBG = true, CustomCursor = true,
+        SectionTransparency = 0.15,
+        WeatherParticleCap = 55,
+        PatternScale = 0.6,
+    },
+    High = {
+        Acrylic = true, AcrylicBlurIntensity = 8,
+        FocusOverlayEnabled = true, FocusOverlayType = "Grid",
+        WeatherEnabled = true, WeatherIntensity = 65,
+        ReducedMotion = false, LayoutDensity = "Normal",
+        CursorTrail = true, ParticleBG = true, CustomCursor = true,
+        SectionTransparency = 0.15,
+        WeatherParticleCap = 200,
+        PatternScale = 1.0,
+    },
+}
 D.WeatherTypes = {
     "Snow", "Rain", "Leaves", "Stars", "Bubbles",
     "Petals", "Embers", "Fireflies", "Mist", "Aurora",
@@ -879,6 +911,19 @@ function Library.new(opts)
 
     self._UI = {}
     self._isMobile = UserInputService.TouchEnabled and not (UserInputService.MouseEnabled and UserInputService.KeyboardEnabled)
+    self._perfAuto = opts.AutoPerformance ~= false
+    local _qScore = 5
+    if self._isMobile then _qScore = _qScore - 3
+    elseif UserInputService.TouchEnabled then _qScore = _qScore - 1 end
+    local _qCam = getCam()
+    if _qCam then
+        local _qPx = _qCam.ViewportSize.X * _qCam.ViewportSize.Y
+        if _qPx < 500000 then _qScore = _qScore - 2
+        elseif _qPx < 1000000 then _qScore = _qScore - 1
+        elseif _qPx > 2000000 then _qScore = _qScore + 1 end
+    end
+    self._perfTier = (_qScore <= 1 and "Potato") or (_qScore <= 3 and "Balanced") or "High"
+    self._perfProfile = D.PerfProfiles[self._perfTier] or D.PerfProfiles.High
     self._CustomColorOverrides = {}
     self._NotifPosition = opts.NotificationPosition or "TopRight"
     self._Colors = table.clone(D.Colors)
@@ -1048,6 +1093,14 @@ function Library.new(opts)
         self._pendingTabRestore = nil
     end)
 
+    if self._savedPerfTier then
+        self:SetPerformanceTier(self._savedPerfTier, true)
+    elseif self._perfAuto then
+        local _initTier = self:_detectPerfTier()
+        self:SetPerformanceTier(_initTier, true)
+    end
+    self:_startPerfWatchdog()
+
     return self
 end
 
@@ -1103,6 +1156,109 @@ function Library:_applyThemeColors(themeName)
         end
     end
     return theme
+end
+
+function Library:_detectPerfTier()
+    local score = 5
+    if self._isMobile then score = score - 3
+    elseif UserInputService.TouchEnabled then score = score - 1 end
+    local cam = getCam()
+    if cam then
+        local px = cam.ViewportSize.X * cam.ViewportSize.Y
+        if px < 500000 then score = score - 2
+        elseif px < 1000000 then score = score - 1
+        elseif px > 2000000 then score = score + 1 end
+    end
+    pcall(function()
+        local q = UserSettings():GetService("UserGameSettings").SavedQualityLevel
+        if q <= Enum.SavedQualitySetting.QualityLevel1 then score = score - 2
+        elseif q <= Enum.SavedQualitySetting.QualityLevel4 then score = score - 1
+        elseif q >= Enum.SavedQualitySetting.QualityLevel8 then score = score + 1 end
+    end)
+    local initial = (score <= 1 and "Potato") or (score <= 3 and "Balanced") or "High"
+    task.spawn(function()
+        local samples = {}
+        local conn
+        conn = RunService.RenderStepped:Connect(function(dt)
+            if #samples < 120 then table.insert(samples, dt) end
+        end)
+        task.wait(1.2)
+        if conn then conn:Disconnect() end
+        if #samples < 15 then return end
+        if self:_isDead() then return end
+        local total = 0
+        for _, d in ipairs(samples) do total = total + d end
+        local fps = #samples / math.max(total, 0.001)
+        if fps < 25 then score = score - 3
+        elseif fps < 40 then score = score - 1
+        elseif fps > 55 then score = score + 1 end
+        local tier = (score <= 1 and "Potato") or (score <= 3 and "Balanced") or "High"
+        if tier ~= self._perfTier then
+            self:SetPerformanceTier(tier, true)
+        end
+    end)
+    self._perfTier = initial
+    return initial
+end
+
+function Library:SetPerformanceTier(tier, silent)
+    if self:_isDead() then return end
+    local p = D.PerfProfiles[tier]
+    if not p then return end
+    self._perfTier = tier
+    self._perfProfile = p
+    self:SetAcrylic(p.Acrylic, p.AcrylicBlurIntensity)
+    self:SetSectionTransparency(p.SectionTransparency)
+    self:SetLayoutDensity(p.LayoutDensity)
+    self:SetReducedMotion(p.ReducedMotion)
+    self._STATE.FocusOverlayEnabled = p.FocusOverlayEnabled
+    self._STATE.FocusOverlayType = p.FocusOverlayType
+    self:_updateFocusOverlay()
+    if p.WeatherEnabled and self._STATE.WeatherEnabled then
+        self:SetWeather(true, self._STATE.WeatherType, p.WeatherIntensity)
+    elseif not p.WeatherEnabled and self._STATE.WeatherEnabled then
+        self:SetWeather(false)
+    end
+    if not p.CursorTrail then
+        self:SetCursorTrail(false)
+    end
+    if self._UI.ParticleBG and not p.ParticleBG then
+        self._UI.ParticleBG.Visible = false
+    end
+    if self._UI.CustomCursor and not p.CustomCursor then
+        self._UI.CustomCursor.Visible = false
+    end
+    if not silent then
+        self:Notify("PERFORMANCE", "Mode: " .. tier, "info")
+    end
+end
+
+function Library:_startPerfWatchdog()
+    task.spawn(function()
+        task.wait(3)
+        while not self:_isDead() do
+            task.wait(3)
+            if self._perfAuto ~= false then
+                local samples = {}
+                local conn
+                conn = RunService.RenderStepped:Connect(function(dt)
+                    if #samples < 120 then table.insert(samples, dt) end
+                end)
+                task.wait(0.5)
+                if conn then conn:Disconnect() end
+                if #samples >= 10 then
+                    local total = 0
+                    for _, d in ipairs(samples) do total = total + d end
+                    local fps = #samples / math.max(total, 0.001)
+                    if fps < 28 and self._perfTier ~= "Potato" then
+                        self:SetPerformanceTier("Potato", false)
+                    elseif fps < 42 and self._perfTier == "High" then
+                        self:SetPerformanceTier("Balanced", false)
+                    end
+                end
+            end
+        end
+    end)
 end
 
 function Library:SetCustomColors(colorTable)
@@ -4751,6 +4907,8 @@ function Library:_rebuildFocusPattern()
     end
     local patternType = self._STATE.FocusOverlayType or "Grid"
     if patternType == "None" then return end
+    local _patScale = (self._perfProfile and self._perfProfile.PatternScale) or 1
+    if _patScale <= 0 then return end
 
     local theme = D.Themes[self.ThemeName] or D.Themes.Dark
     local accent = theme.GridColor or theme.Accent or self._Colors.Accent
@@ -4947,6 +5105,13 @@ function Library:_rebuildFocusPattern()
             end
         end
     end
+    if _patScale < 1 then
+        local _kids = UI.GridPattern:GetChildren()
+        local _keep = math.max(0, math.floor(#_kids * _patScale))
+        for _i = #_kids, _keep + 1, -1 do
+            _kids[_i]:Destroy()
+        end
+    end
 end
 
 function Library:_updateFocusOverlay(theme)
@@ -5048,6 +5213,11 @@ function Library:_createWeather(weatherType)
     UI.SnowLayer.Visible = STATE.GuiVisible
     local mobileScale = self._isMobile and 0.5 or 1
     local maxCount = math.max(1, math.floor(preset.count * 100 / 65 * mobileScale + 0.5))
+    local _cap = (self._perfProfile and self._perfProfile.WeatherParticleCap)
+    if _cap then
+        maxCount = math.min(maxCount, _cap)
+    end
+    if maxCount <= 0 then return end
     local colors = preset.colors or { preset.color or Color3.new(1, 1, 1) }
 
     for index = 1, maxCount do
@@ -6930,6 +7100,24 @@ function Library:CreateThemeCustomizer(tabName)
         "Theme Customizer",
         "Adjust appearance and effects live",
         true
+    )
+    local _perfDefault = 1
+    if self._perfAuto == false then
+        _perfDefault = (self._perfTier == "Potato" and 2) or (self._perfTier == "Balanced" and 3) or 4
+    end
+    self:AddDropdown(section, "Performance Mode", { "Auto", "Potato", "Balanced", "High" },
+        _perfDefault,
+        function(_, val)
+            if val == "Auto" then
+                self._perfAuto = true
+                local _t = self:_detectPerfTier()
+                self:SetPerformanceTier(_t, true)
+                self:Notify("PERFORMANCE", "Auto mode active", "info")
+            else
+                self._perfAuto = false
+                self:SetPerformanceTier(val, false)
+            end
+        end
     )
     local themeIndex = table.find(D.ThemeNames, self.ThemeName) or 1
     self:AddDropdown(section, "Theme", D.ThemeNames, themeIndex, function(_, themeName)
@@ -9919,6 +10107,8 @@ end
 function Library:_themeSnapshot()
     local snap = {
         _version = self.Version,
+        PerfAuto = self._perfAuto,
+        PerfTier = self._perfTier,
         ThemeName = self.ThemeName,
         Acrylic = self.Acrylic,
         AcrylicBlurIntensity = self.AcrylicBlurIntensity,
@@ -9958,6 +10148,12 @@ function Library:_applyThemeSnapshot(data, silent)
     if self:_isDead() then return end
     self._themeLoading = true
     local ok, err = pcall(function()
+        if type(data.PerfAuto) == "boolean" then
+            self._perfAuto = data.PerfAuto
+        end
+        if type(data.PerfTier) == "string" and D.PerfProfiles[data.PerfTier] then
+            self._savedPerfTier = data.PerfTier
+        end
         if type(data.AccentOverride) == "table" and #data.AccentOverride >= 3 then
             self._AccentOverride = Color3.new(data.AccentOverride[1], data.AccentOverride[2], data.AccentOverride[3])
         end
