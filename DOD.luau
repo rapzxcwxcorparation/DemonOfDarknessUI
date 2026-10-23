@@ -69,6 +69,23 @@ local _FallbackIcons = {
     ["message-circle"] = "rbxassetid://7734037126",
     ["file-clock"] = "rbxassetid://7733991600",
     ["id-card"] = "rbxassetid://7734003090",
+    ["house"] = "rbxassetid://7734054207",
+    ["monitor"] = "rbxassetid://7733951517",
+    ["play"] = "rbxassetid://7734088669",
+    ["file"] = "rbxassetid://7733991600",
+    ["sword"] = "rbxassetid://7734069485",
+    ["crosshair"] = "rbxassetid://7734057332",
+    ["target"] = "rbxassetid://7734057332",
+    ["mouse-pointer"] = "rbxassetid://7734057332",
+    ["volume-2"] = "rbxassetid://7734037126",
+    ["palette"] = "rbxassetid://7734060101",
+    ["shield-check"] = "rbxassetid://7734069485",
+    ["eye-off"] = "rbxassetid://7734068321",
+    ["radar"] = "rbxassetid://7733951517",
+    ["save"] = "rbxassetid://7734038559",
+    ["code"] = "rbxassetid://7733991600",
+    ["move"] = "rbxassetid://7734028058",
+    ["cpu"] = "rbxassetid://7734005169",
 }
 
 local function GetIcon(name)
@@ -4727,9 +4744,23 @@ function Library:_initSearchBar()
         end
         self._searchDebounce = task.delay(0.15, function()
             self._searchDebounce = nil
-            if not self:_isDead() then
-                self:_applySearchFilter()
+            if self:_isDead() then return end
+            local query = string.lower(self._STATE.SearchQuery or ""):match("^%s*(.-)%s*$")
+            local currentTab = self._STATE.ActiveTab
+            if #query >= 2 and currentTab and not self._autoJumping then
+                local hasMatch = self:_countTabMatches(currentTab, query) > 0
+                if not hasMatch then
+                    for tabName, _ in pairs(self._STATE.ContentPages) do
+                        if tabName ~= currentTab and self:_countTabMatches(tabName, query) > 0 then
+                            self._autoJumping = true
+                            self:SwitchTab(tabName)
+                            self._autoJumping = false
+                            return
+                        end
+                    end
+                end
             end
+            self:_applySearchFilter()
         end)
     end)
 
@@ -4784,6 +4815,34 @@ function Library:_queueSearchFilter(tabName)
             self:_applySearchFilter(tn)
         end
     end)
+end
+
+function Library:_countTabMatches(tabName, query)
+    if not tabName or not query or query == "" then return 0 end
+    local count = 0
+    for _, sectionData in ipairs(self._STATE.SearchSections[tabName] or {}) do
+        local sectionMatch = string.find(string.lower(sectionData.title or ""), query, 1, true)
+            or string.find(string.lower(sectionData.summary or ""), query, 1, true)
+        if sectionMatch then
+            count = count + 1
+        else
+            for _, control in ipairs(sectionData.controls) do
+                if string.find(string.lower(control.searchText or ""), query, 1, true) then
+                    count = count + 1
+                    break
+                end
+            end
+        end
+    end
+    local pool = self._STATE.SearchTopLevel and self._STATE.SearchTopLevel[tabName]
+    if pool then
+        for _, ctrl in ipairs(pool) do
+            if string.find(string.lower(ctrl.searchText or ""), query, 1, true) then
+                count = count + 1
+            end
+        end
+    end
+    return count
 end
 
 function Library:_applySearchFilter(tabName)
@@ -7967,6 +8026,11 @@ function Library:AddToggle(page, text, default, callback)
     end
     _h.SetValue = _h.Set
     _h.GetValue = _h.Get
+    local _defaultToggleState = default
+    _h.Reset = function(_)
+        if state == _defaultToggleState then return end
+        _h:Set(_defaultToggleState)
+    end
     return _h
 end
 
@@ -8428,6 +8492,10 @@ function Library:AddSlider(page, text, minVal, maxVal, default, decimals, callba
     end
     _h.SetValue = _h.Set
     _h.GetValue = _h.Get
+    local _defaultSliderVal = default
+    _h.Reset = function(_)
+        _h:Set(_defaultSliderVal)
+    end
     return _h
 end
 
@@ -8597,10 +8665,20 @@ function Library:AddDropdown(page, text, options, defaultIndex, callback)
     popupSearch.BorderSizePixel = 0
     popupSearch.ZIndex = 202
     Instance.new("UICorner", popupSearch).CornerRadius = UDim.new(0, 4)
+
+    local searchIcon = Instance.new("ImageLabel", popupSearch)
+    searchIcon.Name = "SearchIcon"
+    searchIcon.Size = UDim2.fromOffset(14, 14)
+    searchIcon.Position = UDim2.new(0, 8, 0.5, -7)
+    searchIcon.BackgroundTransparency = 1
+    searchIcon.Image = GetIcon("search")
+    searchIcon.ImageColor3 = self._Colors.TextDim
+    searchIcon.ScaleType = Enum.ScaleType.Fit
+    searchIcon.ZIndex = 203
     
     local searchBox = Instance.new("TextBox", popupSearch)
-    searchBox.Size = UDim2.new(1, -16, 1, 0)
-    searchBox.Position = UDim2.new(0, 8, 0, 0)
+    searchBox.Size = UDim2.new(1, -36, 1, 0)
+    searchBox.Position = UDim2.new(0, 28, 0, 0)
     searchBox.BackgroundTransparency = 1
     searchBox.Text = ""
     searchBox.PlaceholderText = "Search options..."
@@ -8732,6 +8810,50 @@ function Library:AddDropdown(page, text, options, defaultIndex, callback)
     )
     self:_attachFavorite(holder, _favId, UDim2.new(1, -62, 0.5, -6))
 
+    local keyNavConn = nil
+    local highlightedIndex = 0
+    local function setHighlight(idx)
+        highlightedIndex = idx
+        for i, btn in ipairs(optionButtons) do
+            if i == idx then
+                btn.BackgroundTransparency = 0.4
+            else
+                btn.BackgroundTransparency = 1
+            end
+        end
+    end
+    popup:GetPropertyChangedSignal("Visible"):Connect(function()
+        if popup.Visible then
+            highlightedIndex = currentIndex
+            setHighlight(highlightedIndex)
+            if not keyNavConn then
+                keyNavConn = UserInputService.InputBegan:Connect(function(input, gameProcessed)
+                    if not popup.Visible then return end
+                    if gameProcessed then return end
+                    if UserInputService:GetFocusedTextBox() then return end
+                    local key = input.KeyCode
+                    if key == Enum.KeyCode.Down then
+                        setHighlight(math.clamp(highlightedIndex + 1, 1, #options))
+                    elseif key == Enum.KeyCode.Up then
+                        setHighlight(math.clamp(highlightedIndex - 1, 1, #options))
+                    elseif key == Enum.KeyCode.Return then
+                        if highlightedIndex >= 1 and highlightedIndex <= #options then
+                            currentIndex = highlightedIndex
+                            chipLabel.Text = tostring(options[highlightedIndex])
+                            popup.Visible = false
+                            callback(highlightedIndex, options[highlightedIndex])
+                            self:_triggerAutoSave()
+                        end
+                    elseif key == Enum.KeyCode.Escape then
+                        popup.Visible = false
+                    end
+                end)
+            end
+        else
+            if keyNavConn then keyNavConn:Disconnect(); keyNavConn = nil end
+        end
+    end)
+
     local function updatePopupPosition()
         local camera = getCam()
         if not camera then return end
@@ -8809,6 +8931,7 @@ function Library:AddDropdown(page, text, options, defaultIndex, callback)
         popupStroke.Color = self._Colors.Accent
         popupScroll.ScrollBarImageColor3 = self._Colors.Accent
         popupSearch.BackgroundColor3 = self._Colors.Card
+        if searchIcon then searchIcon.ImageColor3 = self._Colors.TextDim end
         searchBox.TextColor3 = self._Colors.Text
         searchBox.PlaceholderColor3 = self._Colors.TextDim
         for _, btn in ipairs(optionButtons) do
@@ -8838,6 +8961,11 @@ function Library:AddDropdown(page, text, options, defaultIndex, callback)
         if not silent then callback(idx, options[idx]); self:_triggerAutoSave() end
     end
     _h.SetValue = _h.Set
+    local _defaultDropdownIdx = defaultIndex
+    _h.Reset = function(_)
+        if currentIndex == _defaultDropdownIdx then return end
+        _h:Set(_defaultDropdownIdx)
+    end
     return _h
 end
 
@@ -8955,9 +9083,73 @@ function Library:AddMultiDropdown(page, text, options, defaults, callback)
     popupStroke.Thickness = 1
     popupStroke.Transparency = 0.3
 
+    local mdSearchFrame = Instance.new("Frame", popup)
+    mdSearchFrame.Name = "SearchFrame"
+    mdSearchFrame.Size = UDim2.new(1, -10, 0, 24)
+    mdSearchFrame.Position = UDim2.new(0, 5, 0, 5)
+    mdSearchFrame.BackgroundColor3 = self._Colors.Card
+    mdSearchFrame.BackgroundTransparency = 0.5
+    mdSearchFrame.BorderSizePixel = 0
+    mdSearchFrame.ZIndex = 202
+    Instance.new("UICorner", mdSearchFrame).CornerRadius = UDim.new(0, 4)
+
+    local mdSearchIcon = Instance.new("ImageLabel", mdSearchFrame)
+    mdSearchIcon.Name = "SearchIcon"
+    mdSearchIcon.Size = UDim2.fromOffset(14, 14)
+    mdSearchIcon.Position = UDim2.new(0, 8, 0.5, -7)
+    mdSearchIcon.BackgroundTransparency = 1
+    mdSearchIcon.Image = GetIcon("search")
+    mdSearchIcon.ImageColor3 = self._Colors.TextDim
+    mdSearchIcon.ScaleType = Enum.ScaleType.Fit
+    mdSearchIcon.ZIndex = 203
+
+    local mdSearchBox = Instance.new("TextBox", mdSearchFrame)
+    mdSearchBox.Name = "SearchBox"
+    mdSearchBox.Size = UDim2.new(1, -108, 1, 0)
+    mdSearchBox.Position = UDim2.new(0, 28, 0, 0)
+    mdSearchBox.BackgroundTransparency = 1
+    mdSearchBox.Text = ""
+    mdSearchBox.PlaceholderText = "Search..."
+    mdSearchBox.PlaceholderColor3 = self._Colors.TextDim
+    mdSearchBox.TextColor3 = Color3.fromRGB(255, 255, 255)
+    mdSearchBox.TextStrokeTransparency = 1
+    mdSearchBox.Font = Enum.Font.GothamMedium
+    mdSearchBox.TextSize = 11
+    mdSearchBox.TextXAlignment = Enum.TextXAlignment.Left
+    mdSearchBox.ClearTextOnFocus = false
+    mdSearchBox.ZIndex = 203
+
+    local mdAllBtn = Instance.new("TextButton", mdSearchFrame)
+    mdAllBtn.Name = "AllBtn"
+    mdAllBtn.Size = UDim2.new(0, 32, 0, 20)
+    mdAllBtn.Position = UDim2.new(1, -76, 0.5, -10)
+    mdAllBtn.BackgroundColor3 = self._Colors.Accent
+    mdAllBtn.BackgroundTransparency = 0.7
+    mdAllBtn.Text = "All"
+    mdAllBtn.TextColor3 = self._Colors.Accent
+    mdAllBtn.Font = Enum.Font.GothamBold
+    mdAllBtn.TextSize = 10
+    mdAllBtn.AutoButtonColor = false
+    mdAllBtn.ZIndex = 203
+    Instance.new("UICorner", mdAllBtn).CornerRadius = UDim.new(0, 3)
+
+    local mdNoneBtn = Instance.new("TextButton", mdSearchFrame)
+    mdNoneBtn.Name = "NoneBtn"
+    mdNoneBtn.Size = UDim2.new(0, 32, 0, 20)
+    mdNoneBtn.Position = UDim2.new(1, -40, 0.5, -10)
+    mdNoneBtn.BackgroundColor3 = self._Colors.Card
+    mdNoneBtn.BackgroundTransparency = 0.3
+    mdNoneBtn.Text = "None"
+    mdNoneBtn.TextColor3 = self._Colors.TextDim
+    mdNoneBtn.Font = Enum.Font.GothamBold
+    mdNoneBtn.TextSize = 9
+    mdNoneBtn.AutoButtonColor = false
+    mdNoneBtn.ZIndex = 203
+    Instance.new("UICorner", mdNoneBtn).CornerRadius = UDim.new(0, 3)
+
     local popupScroll = Instance.new("ScrollingFrame", popup)
-    popupScroll.Size = UDim2.new(1, 0, 1, -10)
-    popupScroll.Position = UDim2.new(0, 0, 0, 5)
+    popupScroll.Size = UDim2.new(1, 0, 1, -44)
+    popupScroll.Position = UDim2.new(0, 0, 0, 34)
     popupScroll.BackgroundTransparency = 1
     popupScroll.BorderSizePixel = 0
     popupScroll.ScrollBarThickness = 3
@@ -8979,7 +9171,19 @@ function Library:AddMultiDropdown(page, text, options, defaults, callback)
 
     local optionButtons = {}
 
+    mdSearchBox:GetPropertyChangedSignal("Text"):Connect(function()
+        local q = string.lower(mdSearchBox.Text)
+        for _, btn in ipairs(optionButtons) do
+            local optLbl = btn:FindFirstChild("MultiLabel")
+            if optLbl then
+                local txt = string.lower(optLbl.Text)
+                btn.Visible = (q == "" or string.find(txt, q, 1, true) ~= nil)
+            end
+        end
+    end)
+
     local function refreshOptions()
+        if mdSearchBox then mdSearchBox.Text = "" end
         for _, b in ipairs(optionButtons) do b:Destroy() end
         table.clear(optionButtons)
         for i, opt in ipairs(options) do
@@ -9049,12 +9253,46 @@ function Library:AddMultiDropdown(page, text, options, defaults, callback)
         end
     end
 
+    mdAllBtn.MouseButton1Click:Connect(function()
+        for i = 1, #options do selected[i] = true end
+        for i, btn in ipairs(optionButtons) do
+            local box = btn:FindFirstChild("CheckBox")
+            if box then
+                box.BackgroundColor3 = self._Colors.Accent
+                local stroke = box:FindFirstChildOfClass("UIStroke")
+                if stroke then stroke.Color = self._Colors.Accent end
+                local chk = box:FindFirstChild("CheckMark")
+                if chk then chk.Visible = true end
+            end
+        end
+        updateChipLabel()
+        callback(getSelectedIndices(), getSelectedValues())
+        self:_triggerAutoSave()
+    end)
+
+    mdNoneBtn.MouseButton1Click:Connect(function()
+        table.clear(selected)
+        for i, btn in ipairs(optionButtons) do
+            local box = btn:FindFirstChild("CheckBox")
+            if box then
+                box.BackgroundColor3 = self._Colors.Bg
+                local stroke = box:FindFirstChildOfClass("UIStroke")
+                if stroke then stroke.Color = self._Colors.Border end
+                local chk = box:FindFirstChild("CheckMark")
+                if chk then chk.Visible = false end
+            end
+        end
+        updateChipLabel()
+        callback(getSelectedIndices(), getSelectedValues())
+        self:_triggerAutoSave()
+    end)
+
     local function updatePopupPosition()
         local camera = getCam()
         if not camera then return end
         local chipPos = valueChip.AbsolutePosition
         local chipSize = valueChip.AbsoluteSize
-        local totalHeight = math.min(#options * 32 + 12, 260)
+        local totalHeight = math.min(#options * 32 + 44, 260)
         local viewport = camera.ViewportSize
         local width = math.min(chipSize.X, math.max(1, viewport.X - 16))
         local x = math.clamp(chipPos.X, 8, math.max(8, viewport.X - width - 8))
@@ -9176,6 +9414,13 @@ function Library:AddMultiDropdown(page, text, options, defaults, callback)
         if not silent then callback(getSelectedIndices(), getSelectedValues()); self:_triggerAutoSave() end
     end
     _h.SetValue = _h.Set
+    local _defaultMultiIdx = {}
+    if type(defaults) == "table" then
+        for _, idx in ipairs(defaults) do table.insert(_defaultMultiIdx, idx) end
+    end
+    _h.Reset = function(_)
+        _h:Set(_defaultMultiIdx)
+    end
     return _h
 end
 
@@ -10139,6 +10384,7 @@ function Library:AddColorPicker(page, text, defaultColor3, callback)
     local _cpH = self._isMobile and math.min(240, ((_cpCam and _cpCam.ViewportSize.Y) or 600) - 24) or 176
     local popup = Instance.new("Frame", self._UI.MainGui)
     popup.Name = "ColorPickerPopup"
+    _cpH = math.clamp(_cpH or 176, 190, 310)
     popup.Size = UDim2.fromOffset(_cpW, _cpH)
     popup.BackgroundColor3 = self._Colors.Bg2
     popup.BorderSizePixel = 0
@@ -10154,7 +10400,7 @@ function Library:AddColorPicker(page, text, defaultColor3, callback)
     local saturationValue = Instance.new("Frame", popup)
     saturationValue.Name = "SaturationValue"
     saturationValue.Position = UDim2.new(0, 10, 0, 10)
-    saturationValue.Size = UDim2.new(1, -52, 1, -46)
+    saturationValue.Size = UDim2.new(1, -52, 1, -86)
     saturationValue.BackgroundColor3 = Color3.fromHSV(hue, 1, 1)
     saturationValue.BorderSizePixel = 0
     saturationValue.Active = true
@@ -10198,7 +10444,7 @@ function Library:AddColorPicker(page, text, defaultColor3, callback)
     local hueBar = Instance.new("TextButton", popup)
     hueBar.Name = "Hue"
     hueBar.Position = UDim2.new(1, -30, 0, 10)
-    hueBar.Size = UDim2.new(0, 18, 1, -46)
+    hueBar.Size = UDim2.new(0, 18, 1, -86)
     hueBar.BackgroundColor3 = Color3.new(1, 1, 1)
     hueBar.BorderSizePixel = 0
     hueBar.Text = ""
@@ -10218,6 +10464,41 @@ function Library:AddColorPicker(page, text, defaultColor3, callback)
         ColorSequenceKeypoint.new(0.83, Color3.fromRGB(255, 255, 0)),
         ColorSequenceKeypoint.new(1, Color3.fromRGB(255, 0, 0)),
     })
+
+    local alpha = 1
+
+    local alphaBar = Instance.new("TextButton", popup)
+    alphaBar.Name = "Alpha"
+    alphaBar.Position = UDim2.new(0, 10, 1, -70)
+    alphaBar.Size = UDim2.new(1, -52, 0, 12)
+    alphaBar.BackgroundColor3 = currentColor
+    alphaBar.BorderSizePixel = 0
+    alphaBar.Text = ""
+    alphaBar.AutoButtonColor = false
+    alphaBar.Active = true
+    alphaBar.ZIndex = 211
+    Instance.new("UICorner", alphaBar).CornerRadius = UDim.new(0, 3)
+
+    local alphaGradient = Instance.new("UIGradient", alphaBar)
+    alphaGradient.Rotation = 0
+    alphaGradient.Color = ColorSequence.new(currentColor)
+    alphaGradient.Transparency = NumberSequence.new({
+        NumberSequenceKeypoint.new(0, 0.95),
+        NumberSequenceKeypoint.new(1, 0),
+    })
+
+    local alphaSelector = Instance.new("Frame", alphaBar)
+    alphaSelector.Name = "AlphaSelector"
+    alphaSelector.AnchorPoint = Vector2.new(0.5, 0.5)
+    alphaSelector.Size = UDim2.fromOffset(6, 18)
+    alphaSelector.Position = UDim2.new(1, 0, 0.5, 0)
+    alphaSelector.BackgroundTransparency = 1
+    alphaSelector.BorderSizePixel = 0
+    alphaSelector.ZIndex = 213
+    Instance.new("UICorner", alphaSelector).CornerRadius = UDim.new(1, 0)
+    local alphaSelectorStroke = Instance.new("UIStroke", alphaSelector)
+    alphaSelectorStroke.Color = Color3.new(1, 1, 1)
+    alphaSelectorStroke.Thickness = 2
 
     local currentPreview = Instance.new("Frame", popup)
     currentPreview.Name = "CurrentColor"
@@ -10258,7 +10539,14 @@ function Library:AddColorPicker(page, text, defaultColor3, callback)
         selector.Position = UDim2.new(saturation, 0, 1 - value, 0)
         selectorStroke.Color = Fn.contrastForeground(currentColor)
         preview.BackgroundColor3 = currentColor
+        preview.BackgroundTransparency = 1 - math.max(alpha, 0.15)
         currentPreview.BackgroundColor3 = currentColor
+        currentPreview.BackgroundTransparency = 1 - math.max(alpha, 0.15)
+        if alphaBar then
+            alphaBar.BackgroundColor3 = currentColor
+            alphaGradient.Color = ColorSequence.new(currentColor)
+            alphaSelector.Position = UDim2.new(alpha, 0, 0.5, 0)
+        end
         
         if hexBox then
             hexBox.Text = string.format("#%02X%02X%02X", 
@@ -10269,7 +10557,7 @@ function Library:AddColorPicker(page, text, defaultColor3, callback)
         end
 
         if notify then
-            callback(currentColor)
+            callback(currentColor, alpha)
             self:_triggerAutoSave()
         end
     end
@@ -10298,14 +10586,16 @@ function Library:AddColorPicker(page, text, defaultColor3, callback)
 
     local _favId = self:_getConfigId("colorpicker", text)
     self:_registerConfigState(_favId,
-        function() return { currentColor.R, currentColor.G, currentColor.B } end,
+        function() return { currentColor.R, currentColor.G, currentColor.B, alpha } end,
         function(v, silent)
             if type(v) ~= "table" or type(v[1]) ~= "number" or type(v[2]) ~= "number" or type(v[3]) ~= "number" then return end
             local newColor = Color3.new(v[1], v[2], v[3])
+            local newAlpha = type(v[4]) == "number" and math.clamp(v[4], 0, 1) or 1
             hue, saturation, value = newColor:ToHSV()
+            alpha = newAlpha
             updateColor(false)
             if not silent then
-                callback(currentColor)
+                callback(currentColor, alpha)
                 self:_triggerAutoSave()
             end
         end
@@ -10322,6 +10612,10 @@ function Library:AddColorPicker(page, text, defaultColor3, callback)
             local size = hueBar.AbsoluteSize
             if size.Y <= 0 then return end
             hue = 1 - math.clamp((position.Y - hueBar.AbsolutePosition.Y) / size.Y, 0, 1)
+        elseif mode == "Alpha" then
+            local size = alphaBar.AbsoluteSize
+            if size.X <= 0 then return end
+            alpha = math.clamp((position.X - alphaBar.AbsolutePosition.X) / size.X, 0, 1)
         end
         updateColor(true)
     end
@@ -10335,6 +10629,12 @@ function Library:AddColorPicker(page, text, defaultColor3, callback)
     hueBar.InputBegan:Connect(function(input)
         if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
             dragMode = "Hue"
+            pickFromPosition(dragMode, input.Position)
+        end
+    end)
+    alphaBar.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            dragMode = "Alpha"
             pickFromPosition(dragMode, input.Position)
         end
     end)
@@ -10428,14 +10728,19 @@ function Library:AddColorPicker(page, text, defaultColor3, callback)
     self:_bindTooltip(label, text .. " — click preview to open")
     self:_registerSearchControl(holder, text)
     local _h = { __isHandle = true, __tag = "ColorPicker", Raw = holder }
-    _h.Get = function(_) return currentColor end
-    _h.Set = function(_, c, silent)
+    _h.Get = function(_) return currentColor, alpha end
+    _h.Set = function(_, c, a, silent)
         if typeof(c) ~= "Color3" then return end
         hue, saturation, value = c:ToHSV()
+        if type(a) == "number" then alpha = math.clamp(a, 0, 1) end
         updateColor(not silent)
     end
     _h.SetValue = _h.Set
     _h.SetVisible = function(_, v) holder.Visible = v and true or false end
+    local _defaultCPColor = defaultColor3
+    _h.Reset = function(_)
+        _h:Set(_defaultCPColor, 1)
+    end
     return _h
 end
 
