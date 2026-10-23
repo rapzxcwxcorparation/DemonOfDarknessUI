@@ -1013,6 +1013,7 @@ function Library.new(opts)
         TooltipEnabled      = opts.Tooltip ~= false and not (UserInputService.TouchEnabled and not UserInputService.MouseEnabled),
         TooltipTransparency = opts.TooltipTransparency or 0.15,
         StandaloneTabs      = {},
+        _closeCallbacks     = {},
     }
 
     self:_initNotifications()
@@ -1043,8 +1044,16 @@ function Library.new(opts)
         self:SetWeather(true, self._STATE.WeatherType, self._STATE.WeatherIntensity)
     end
 
+    local _navQueued = false
     Fn.track(self._UI.MainContainer:GetPropertyChangedSignal("AbsoluteSize"), function()
-        self:_applyNavigationLayout()
+        if _navQueued then return end
+        _navQueued = true
+        task.defer(function()
+            _navQueued = false
+            if not self:_isDead() then
+                self:_applyNavigationLayout()
+            end
+        end)
     end, self)
 
     -- Mouse state will be handled purely by RenderStepped based on hover
@@ -2560,6 +2569,7 @@ function Library:_initMainGui()
         if not UI.MainScale then return end
         if not UserInputService.TouchEnabled then
             UI.MainScale.Scale = 1
+            self._adaptiveScaleTarget = 1
             return
         end
         local cam = getCam()
@@ -2572,7 +2582,9 @@ function Library:_initMainGui()
         local fitW = (viewport.X * 0.95) / baseW
         local fitH = (viewport.Y * 0.90) / baseH
         local fit = math.min(fitW, fitH)
-        UI.MainScale.Scale = math.clamp(fit, self._isMobile and 0.55 or 0.35, 1.4)
+        local _scale = math.clamp(fit, self._isMobile and 0.55 or 0.35, 1.4)
+        UI.MainScale.Scale = _scale
+        self._adaptiveScaleTarget = _scale
     end
     updateAdaptiveScale()
     local adaptiveCam = getCam()
@@ -2597,11 +2609,23 @@ function Library:_initMainGui()
     
     UI.ResizeHandle = resizeHandle
 
+    local _mBtnCam = getCam()
+    local _mBtnVpX = (_mBtnCam and _mBtnCam.ViewportSize.X) or 800
+    local _mBtnVpY = (_mBtnCam and _mBtnCam.ViewportSize.Y) or 600
+    local _mBtnMob = self._isMobile
+    local _mBtnH = _mBtnMob and math.clamp(math.floor(_mBtnVpY * 0.055), 44, 56) or 28
+    local _mBtnW = _mBtnMob and math.clamp(math.floor(_mBtnVpX * 0.5), 160, 260) or 180
+    local _mIconSz = _mBtnMob and math.clamp(math.floor(_mBtnH * 0.42), 16, 22) or 14
+    local _mFontSz = _mBtnMob and math.clamp(math.floor(_mBtnH * 0.30), 12, 16) or 11
+    self._minBtnBaseW = _mBtnW
+    self._minBtnBaseH = _mBtnH
+    self._minBtnBaseY = _mBtnMob and 20 or 16
+
     local minBtn = Instance.new("TextButton")
     minBtn.Name = "MinimizeButton"
     minBtn.Parent = UI.MainGui
-    minBtn.Size = UDim2.fromOffset(180, 28)
-    minBtn.Position = UDim2.new(0.5, 0, 0, -40)
+    minBtn.Size = UDim2.fromOffset(_mBtnW, _mBtnH)
+    minBtn.Position = UDim2.new(0.5, 0, 0, -(_mBtnH + 12))
     minBtn.AnchorPoint = Vector2.new(0.5, 0)
     minBtn.BackgroundColor3 = self._Colors.Bg2
     minBtn.BackgroundTransparency = 0.12
@@ -2623,8 +2647,8 @@ function Library:_initMainGui()
     minStroke.Transparency = 0.4
     
     local minIcon = Instance.new("ImageLabel")
-    minIcon.Size = UDim2.fromOffset(14, 14)
-    minIcon.Position = UDim2.new(0, 14, 0.5, -7)
+    minIcon.Size = UDim2.fromOffset(_mIconSz, _mIconSz)
+    minIcon.Position = UDim2.new(0, 14, 0.5, -_mIconSz / 2)
     minIcon.BackgroundTransparency = 1
     minIcon.Image = GetIcon("panel-top")
     minIcon.ImageColor3 = self._Colors.Accent
@@ -2632,13 +2656,13 @@ function Library:_initMainGui()
     local mainTitle = self.Title:match("^(.-)%s*|") or self.Title
     
     local minText = Instance.new("TextLabel")
-    minText.Size = UDim2.new(1, -40, 1, 0)
-    minText.Position = UDim2.new(0, 36, 0, 0)
+    minText.Size = UDim2.new(1, -(_mIconSz + 26), 1, 0)
+    minText.Position = UDim2.new(0, 14 + _mIconSz + 8, 0, 0)
     minText.BackgroundTransparency = 1
     minText.Text = mainTitle
     minText.TextColor3 = self._Colors.Text
     minText.Font = Enum.Font.GothamBold
-    minText.TextSize = 11
+    minText.TextSize = _mFontSz
     minText.TextXAlignment = Enum.TextXAlignment.Left
     
     UI.MinimizeButton = minBtn
@@ -2666,6 +2690,29 @@ function Library:_initMainGui()
         minIcon.ImageColor3 = self._Colors.Accent
         minText.TextColor3 = self._Colors.Accent
     end)
+
+    local _mBtnVpCam = getCam()
+    if _mBtnVpCam then
+        Fn.track(_mBtnVpCam:GetPropertyChangedSignal("ViewportSize"), function()
+            local vp = _mBtnVpCam.ViewportSize
+            local mob = self._isMobile
+            local h = mob and math.clamp(math.floor(vp.Y * 0.055), 44, 56) or 28
+            local w = mob and math.clamp(math.floor(vp.X * 0.5), 160, 260) or 180
+            local iconSz = mob and math.clamp(math.floor(h * 0.42), 16, 22) or 14
+            local fontSz = mob and math.clamp(math.floor(h * 0.30), 12, 16) or 11
+            self._minBtnBaseW = w
+            self._minBtnBaseH = h
+            self._minBtnBaseY = mob and 20 or 16
+            minIcon.Size = UDim2.fromOffset(iconSz, iconSz)
+            minIcon.Position = UDim2.new(0, 14, 0.5, -iconSz / 2)
+            minText.Size = UDim2.new(1, -(iconSz + 26), 1, 0)
+            minText.Position = UDim2.new(0, 14 + iconSz + 8, 0, 0)
+            minText.TextSize = fontSz
+            if minBtn.Visible then
+                minBtn.Size = UDim2.fromOffset(w, h)
+            end
+        end, self)
+    end
 
     self._shadowLayers = {}
 
@@ -3250,9 +3297,16 @@ function Library:_bindToggleKey()
     Fn.track(UserInputService.InputBegan, function(input, gameProcessed)
         if input.UserInputType ~= Enum.UserInputType.MouseButton2 then return end
         if not self._STATE.GuiVisible then return end
-        if not (self._UI.MainContainer and self._UI.MainContainer.Visible) then return end
+        local mc = self._UI.MainContainer
+        if not (mc and mc.Visible) then return end
         local mp = UserInputService:GetMouseLocation()
-        for configId, holder in pairs(self._STATE.FavoriteHolders or {}) do
+        local mcp, mcs = mc.AbsolutePosition, mc.AbsoluteSize
+        if mp.X < mcp.X or mp.X > mcp.X + mcs.X or mp.Y < mcp.Y or mp.Y > mcp.Y + mcs.Y then
+            return
+        end
+        local holders = self._STATE.FavoriteHolders
+        if not holders or next(holders) == nil then return end
+        for configId, holder in pairs(holders) do
             if holder and holder.Parent then
                 local p, s = holder.AbsolutePosition, holder.AbsoluteSize
                 if mp.X >= p.X and mp.X <= p.X + s.X and mp.Y >= p.Y and mp.Y <= p.Y + s.Y then
@@ -3276,17 +3330,25 @@ function Library:_bindToggleKey()
         Fn.track(UserInputService.InputBegan, function(input)
             if input.UserInputType ~= Enum.UserInputType.Touch then return end
             if not self._STATE.GuiVisible then return end
-            if not (self._UI.MainContainer and self._UI.MainContainer.Visible) then return end
-            tp0 = tick()
+            local mc = self._UI.MainContainer
+            if not (mc and mc.Visible) then return end
             tpos0 = Vector2.new(input.Position.X, input.Position.Y)
+            local mcp, mcs = mc.AbsolutePosition, mc.AbsoluteSize
+            if tpos0.X < mcp.X or tpos0.X > mcp.X + mcs.X or tpos0.Y < mcp.Y or tpos0.Y > mcp.Y + mcs.Y then
+                thid = nil
+                return
+            end
+            tp0 = tick()
             thid = nil
-            for configId, holder in pairs(self._STATE.FavoriteHolders or {}) do
+            local holders = self._STATE.FavoriteHolders
+            if not holders or next(holders) == nil then return end
+            for configId, holder in pairs(holders) do
                 if holder and holder.Parent then
-                    local ok, res = pcall(function()
-                        local p, s = holder.AbsolutePosition, holder.AbsoluteSize
-                        return tpos0.X >= p.X and tpos0.X <= p.X + s.X and tpos0.Y >= p.Y and tpos0.Y <= p.Y + s.Y
-                    end)
-                    if ok and res then thid = configId; break end
+                    local p, s = holder.AbsolutePosition, holder.AbsoluteSize
+                    if tpos0.X >= p.X and tpos0.X <= p.X + s.X and tpos0.Y >= p.Y and tpos0.Y <= p.Y + s.Y then
+                        thid = configId
+                        break
+                    end
                 end
             end
         end, self)
@@ -7893,7 +7955,19 @@ function Library:AddToggle(page, text, default, callback)
         updateVisual(false)
     end)
     self:_bindTooltip(holder, text)
-    return self:_registerSearchControl(holder, text)
+    self:_registerSearchControl(holder, text)
+    local _h = { __isHandle = true, __tag = "Toggle", Raw = holder }
+    _h.Get = function(_) return state end
+    _h.Set = function(_, v, silent)
+        if type(v) ~= "boolean" then return end
+        if state == v then return end
+        state = v
+        updateVisual(false)
+        if not silent then callback(state); self:_triggerAutoSave() end
+    end
+    _h.SetValue = _h.Set
+    _h.GetValue = _h.Get
+    return _h
 end
 
 function Library:AddSlider(page, text, minVal, maxVal, default, decimals, callback)
@@ -8751,7 +8825,20 @@ function Library:AddDropdown(page, text, options, defaultIndex, callback)
         table.insert(searchableOptions, tostring(option))
     end
     self:_bindTooltip(label, text .. " (" .. #options .. " options)")
-    return self:_registerSearchControl(holder, text .. " " .. table.concat(searchableOptions, " "))
+    self:_registerSearchControl(holder, text .. " " .. table.concat(searchableOptions, " "))
+    local _h = { __isHandle = true, __tag = "Dropdown", Raw = holder }
+    _h.Get = function(_) return currentIndex end
+    _h.GetValue = function(_) return options[currentIndex] end
+    _h.Set = function(_, idx, silent)
+        if type(idx) ~= "number" or idx % 1 ~= 0 then return end
+        if idx < 1 or idx > #options then return end
+        if currentIndex == idx then return end
+        currentIndex = idx
+        chipLabel.Text = tostring(options[idx])
+        if not silent then callback(idx, options[idx]); self:_triggerAutoSave() end
+    end
+    _h.SetValue = _h.Set
+    return _h
 end
 
 function Library:AddMultiDropdown(page, text, options, defaults, callback)
@@ -9073,7 +9160,23 @@ function Library:AddMultiDropdown(page, text, options, defaults, callback)
         table.insert(searchableOptions, tostring(option))
     end
     self:_bindTooltip(label, text .. " (" .. #options .. " options)")
-    return self:_registerSearchControl(holder, text .. " " .. table.concat(searchableOptions, " "))
+    self:_registerSearchControl(holder, text .. " " .. table.concat(searchableOptions, " "))
+    local _h = { __isHandle = true, __tag = "MultiDropdown", Raw = holder }
+    _h.Get = function(_) return getSelectedIndices() end
+    _h.GetValue = function(_) return getSelectedValues() end
+    _h.Set = function(_, indices, silent)
+        if type(indices) ~= "table" then return end
+        table.clear(selected)
+        for _, idx in ipairs(indices) do
+            if type(idx) == "number" and idx >= 1 and idx <= #options then
+                selected[idx] = true
+            end
+        end
+        updateChipLabel()
+        if not silent then callback(getSelectedIndices(), getSelectedValues()); self:_triggerAutoSave() end
+    end
+    _h.SetValue = _h.Set
+    return _h
 end
 
 function Library:AddConfigList(page, onLoad)
@@ -9339,6 +9442,10 @@ function Library:AddConfigList(page, onLoad)
 
     refreshList()
 
+    local _h = { __isHandle = true, __tag = "ConfigList", Raw = holder }
+    _h.Refresh = function(_) refreshList() end
+    _h.SetVisible = function(_, v) holder.Visible = v and true or false end
+
     self:_registerThemeRefresher(function()
         holder.BackgroundColor3 = self._Colors.Card
         title.TextColor3 = self._Colors.Text
@@ -9366,7 +9473,7 @@ function Library:AddConfigList(page, onLoad)
         end
     end)
 
-    return holder
+    return _h
 end
 
 function Library:AddKeybind(page, text, default, callback)
@@ -9639,7 +9746,28 @@ function Library:AddKeybind(page, text, default, callback)
         end
     end)
     self:_bindTooltip(lab, text .. " — click to rebind")
-    return self:_registerSearchControl(holder, text)
+    self:_registerSearchControl(holder, text)
+    local _h = { __isHandle = true, __tag = "Keybind", Raw = holder }
+    _h.Get = function(_) return listener.keyName end
+    _h.GetValue = function(_) return { key = listener.key, mods = listener.mods } end
+    _h.Set = function(_, key, mods, silent)
+        if key == nil then return end
+        local k = key
+        if type(key) == "string" and key ~= "LClick" and key ~= "RClick" then
+            local ok, enum = pcall(function() return Enum.KeyCode[key] end)
+            if ok and enum then k = enum end
+        end
+        if type(mods) ~= "table" then mods = {} end
+        listener.setKey(k, mods)
+        if not silent then
+            local _ok, _err = pcall(listener.callback, k, mods)
+            if not _ok then warn("[DoD UI] Keybind set callback error: " .. tostring(_err)) end
+            self:_triggerAutoSave()
+        end
+    end
+    _h.SetValue = _h.Set
+    _h.SetVisible = function(_, v) holder.Visible = v and true or false end
+    return _h
 end
 
 function Library:AddButton(page, text, callback)
@@ -9706,7 +9834,14 @@ function Library:AddButton(page, text, callback)
         btnGrad.Color = ColorSequence.new(self._Colors.Accent, self._Colors.Accent2 or self._Colors.Accent)
     end)
     self:_bindTooltip(holder, text .. " (click)")
-    return self:_registerSearchControl(holder, text)
+    self:_registerSearchControl(holder, text)
+    local _h = { __isHandle = true, __tag = "Button", Raw = holder }
+    _h.Click = function(_)
+        local _ok, _err = pcall(callback)
+        if not _ok then warn("[DoD UI] Button click error: " .. tostring(_err)) end
+    end
+    _h.SetVisible = function(_, v) holder.Visible = v and true or false end
+    return _h
 end
 
 function Library:_convertRichText(text)
@@ -9738,7 +9873,12 @@ function Library:AddLabel(page, text)
     self:_registerThemeRefresher(function()
         label.TextColor3 = self._Colors.Text
     end)
-    return self:_registerSearchControl(label, text)
+    self:_registerSearchControl(label, text)
+    local _h = { __isHandle = true, __tag = "Label", Raw = label }
+    _h.Get = function(_) return label.Text end
+    _h.Set = function(_, t) label.Text = self:_convertRichText(tostring(t or "")) end
+    _h.SetVisible = function(_, v) label.Visible = v and true or false end
+    return _h
 end
 
 function Library:AddParagraph(page, title, desc)
@@ -9797,7 +9937,14 @@ function Library:AddParagraph(page, title, desc)
         titleLabel.TextColor3 = self._Colors.Text
         description.TextColor3 = self._Colors.TextDim
     end)
-    return self:_registerSearchControl(holder, tostring(title) .. " " .. tostring(desc))
+    self:_registerSearchControl(holder, tostring(title) .. " " .. tostring(desc))
+    local _h = { __isHandle = true, __tag = "Paragraph", Raw = holder }
+    _h.Set = function(_, t, d)
+        if t ~= nil then titleLabel.Text = self:_convertRichText(tostring(t)) end
+        if d ~= nil then description.Text = self:_convertRichText(tostring(d)) end
+    end
+    _h.SetVisible = function(_, v) holder.Visible = v and true or false end
+    return _h
 end
 
 function Library:AddTextbox(page, text, placeholder, callback, opts)
@@ -9922,7 +10069,22 @@ function Library:AddTextbox(page, text, placeholder, callback, opts)
         input.PlaceholderColor3 = self._Colors.TextDim
     end)
     self:_bindTooltip(label, text .. " — press Enter or click outside to submit")
-    return self:_registerSearchControl(holder, tostring(text) .. " " .. tostring(placeholder or ""))
+    self:_registerSearchControl(holder, tostring(text) .. " " .. tostring(placeholder or ""))
+    local _h = { __isHandle = true, __tag = "Textbox", Raw = holder }
+    _h.Get = function(_) return input.Text end
+    _h.Set = function(_, v, silent)
+        if type(v) ~= "string" then return end
+        if input.Text == v then return end
+        input.Text = v
+        if not silent then
+            local _ok, _err = pcall(callback, v)
+            if not _ok then warn("[DoD UI] Textbox set callback error: " .. tostring(_err)) end
+            self:_triggerAutoSave()
+        end
+    end
+    _h.SetValue = _h.Set
+    _h.SetVisible = function(_, v) holder.Visible = v and true or false end
+    return _h
 end
 
 function Library:AddColorPicker(page, text, defaultColor3, callback)
@@ -10264,7 +10426,17 @@ function Library:AddColorPicker(page, text, defaultColor3, callback)
     end)
 
     self:_bindTooltip(label, text .. " — click preview to open")
-    return self:_registerSearchControl(holder, text)
+    self:_registerSearchControl(holder, text)
+    local _h = { __isHandle = true, __tag = "ColorPicker", Raw = holder }
+    _h.Get = function(_) return currentColor end
+    _h.Set = function(_, c, silent)
+        if typeof(c) ~= "Color3" then return end
+        hue, saturation, value = c:ToHSV()
+        updateColor(not silent)
+    end
+    _h.SetValue = _h.Set
+    _h.SetVisible = function(_, v) holder.Visible = v and true or false end
+    return _h
 end
 
 function Library:AddSeparator(page, height)
@@ -10951,7 +11123,8 @@ function Library:Minimize()
     if UI.AcrylicSheen then TweenService:Create(UI.AcrylicSheen, tweenInfo, {BackgroundTransparency = 1}):Play() end
     TweenService:Create(UI.FocusOverlay, tweenInfo, {BackgroundTransparency = 1}):Play()
     
-    local st = TweenService:Create(UI.MainScale, tweenInfo, {Scale = 0.4})
+    local _tScale = self._adaptiveScaleTarget or 1
+    local st = TweenService:Create(UI.MainScale, tweenInfo, {Scale = _tScale * 0.4})
     st:Play()
     
     st.Completed:Connect(function()
@@ -10964,12 +11137,15 @@ function Library:Minimize()
         
         local btn = UI.MinimizeButton
         if btn then
+            local _tw = self._minBtnBaseW or 180
+            local _th = self._minBtnBaseH or 28
+            local _ty = self._minBtnBaseY or 16
             btn.Visible = true
-            btn.Size = UDim2.fromOffset(0, 28)
-            btn.Position = UDim2.new(0.5, 0, 0, -40)
+            btn.Size = UDim2.fromOffset(0, _th)
+            btn.Position = UDim2.new(0.5, 0, 0, -(_th + 12))
             TweenService:Create(btn, TweenInfo.new(0.4, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
-                Size = UDim2.fromOffset(180, 28),
-                Position = UDim2.new(0.5, 0, 0, 16)
+                Size = UDim2.fromOffset(_tw, _th),
+                Position = UDim2.new(0.5, 0, 0, _ty)
             }):Play()
         end
     end)
@@ -11024,6 +11200,9 @@ function Library:Toggle()
 
     local blurTarget = self.Acrylic and self.AcrylicBlurIntensity or 0
     if STATE.FocusOverlayEnabled then blurTarget = math.max(blurTarget, 12) end
+    if self._perfTier == "Potato" then
+        blurTarget = math.min(blurTarget, 3)
+    end
     local mainBgTrans = self.Acrylic and 0.32 or 0.1
 
     if STATE.GuiVisible then
@@ -11044,7 +11223,8 @@ function Library:Toggle()
         if UI.AcrylicSheen then TweenService:Create(UI.AcrylicSheen, tweenInfo, {BackgroundTransparency = 1}):Play() end
         TweenService:Create(UI.FocusOverlay, tweenInfo, {BackgroundTransparency = 1}):Play()
         
-        STATE.GuiTween = TweenService:Create(UI.MainScale, tweenInfo, {Scale = 0.96})
+        local _tScale = self._adaptiveScaleTarget or 1
+        STATE.GuiTween = TweenService:Create(UI.MainScale, tweenInfo, {Scale = _tScale * 0.96})
         STATE.GuiTween:Play()
         
         STATE.GuiTween.Completed:Connect(function()
@@ -11065,7 +11245,14 @@ function Library:Toggle()
 
         local fromPill = UI.MinimizeButton and UI.MinimizeButton.Visible
         UI.MainContainer.Visible = true
-        UI.ParticleBG.Visible = true
+        local _wantParticles = (self._perfProfile and self._perfProfile.ParticleBG) ~= false
+        if _wantParticles then
+            task.delay(0.08, function()
+                if STATE.GuiVisible and not STATE.Destroyed and UI.ParticleBG then
+                    UI.ParticleBG.Visible = true
+                end
+            end)
+        end
         STATE.GuiVisible = true
         if UI.MinimizeButton then
             UI.MinimizeButton.Visible = false
@@ -11074,37 +11261,39 @@ function Library:Toggle()
         local basePos = STATE.SavedPos or UI.MainContainer.Position
         local startPos = UDim2.new(basePos.X.Scale, basePos.X.Offset, basePos.Y.Scale, basePos.Y.Offset + 30)
         
+        local _tScale = self._adaptiveScaleTarget or 1
         if fromPill then
             UI.MainContainer.Position = UDim2.new(0.5, 0, 0, 30)
-            UI.MainScale.Scale = 0.4
+            UI.MainScale.Scale = _tScale * 0.4
         else
             UI.MainContainer.Position = startPos
-            UI.MainScale.Scale = 0.96
+            UI.MainScale.Scale = _tScale * 0.96
         end
         UI.MainContainer.BackgroundTransparency = 1
         if UI.AcrylicTexture then UI.AcrylicTexture.BackgroundTransparency = 1 end
         if UI.AcrylicSheen then UI.AcrylicSheen.BackgroundTransparency = 1 end
-        UI.GuiBlur.Size = 24
+        UI.GuiBlur.Size = 0
         
-        if STATE.FocusOverlayEnabled then
-            UI.FocusOverlay.Visible = true
-            UI.FocusOverlay.BackgroundTransparency = 1
-        end
-
         local tweenInfo = TweenInfo.new(0.4, Enum.EasingStyle.Quart, Enum.EasingDirection.Out)
+        
+        if STATE.FocusOverlayEnabled and self._perfTier ~= "Potato" then
+            task.delay(0.25, function()
+                if not STATE.Destroyed and STATE.GuiVisible and UI.FocusOverlay then
+                    UI.FocusOverlay.Visible = true
+                    UI.FocusOverlay.BackgroundTransparency = 1
+                    TweenService:Create(UI.FocusOverlay, tweenInfo, {
+                        BackgroundTransparency = (D.Themes[self.ThemeName] or {}).OverlayTransparency or 0.45
+                    }):Play()
+                end
+            end)
+        end
         
         TweenService:Create(UI.GuiBlur, tweenInfo, {Size = blurTarget}):Play()
         TweenService:Create(UI.MainContainer, tweenInfo, {BackgroundTransparency = mainBgTrans, Position = basePos}):Play()
         if UI.AcrylicTexture then TweenService:Create(UI.AcrylicTexture, tweenInfo, {BackgroundTransparency = self.Acrylic and 0.94 or 1}):Play() end
         if UI.AcrylicSheen then TweenService:Create(UI.AcrylicSheen, tweenInfo, {BackgroundTransparency = self.Acrylic and 0.72 or 1}):Play() end
         
-        if STATE.FocusOverlayEnabled then
-            TweenService:Create(UI.FocusOverlay, tweenInfo, {
-                BackgroundTransparency = (D.Themes[self.ThemeName] or {}).OverlayTransparency or 0.45
-            }):Play()
-        end
-        
-        STATE.GuiTween = TweenService:Create(UI.MainScale, tweenInfo, {Scale = 1})
+        STATE.GuiTween = TweenService:Create(UI.MainScale, tweenInfo, {Scale = _tScale})
         STATE.GuiTween:Play()
         
         STATE.GuiTween.Completed:Connect(function()
@@ -11112,6 +11301,113 @@ function Library:Toggle()
             STATE.GuiTween = nil
         end)
     end
+end
+
+function Library:BindToClose(callback)
+    if self:_isDead() then return end
+    if type(callback) ~= "function" then return end
+    table.insert(self._STATE._closeCallbacks, callback)
+    return callback
+end
+
+function Library:ShowContextMenu(position, options)
+    if self:_isDead() then return end
+    if type(options) ~= "table" or #options == 0 then return end
+    
+    if self._activeContextMenu and self._activeContextMenu.Parent then
+        self._activeContextMenu:Destroy()
+    end
+    
+    local menu = Instance.new("Frame", self._UI.MainGui)
+    menu.Name = "ContextMenu"
+    menu.Size = UDim2.fromOffset(200, #options * 30 + 8)
+    menu.BackgroundColor3 = self._Colors.Bg2
+    menu.BackgroundTransparency = 0.05
+    menu.BorderSizePixel = 0
+    menu.ZIndex = 9600
+    menu.ClipsDescendants = true
+    Instance.new("UICorner", menu).CornerRadius = UDim.new(0, 8)
+    
+    local mStroke = Instance.new("UIStroke", menu)
+    mStroke.Color = self._Colors.Accent
+    mStroke.Thickness = 1
+    mStroke.Transparency = 0.3
+    
+    local cam = getCam()
+    local vp = cam and cam.ViewportSize or Vector2.new(800, 600)
+    local px = math.clamp(position.X, 8, math.max(8, vp.X - 208))
+    local py = math.clamp(position.Y, 8, math.max(8, vp.Y - menu.Size.Y.Offset - 8))
+    menu.Position = UDim2.fromOffset(px, py)
+    
+    local layout = Instance.new("UIListLayout", menu)
+    layout.SortOrder = Enum.SortOrder.LayoutOrder
+    layout.Padding = UDim.new(0, 1)
+    
+    local pad = Instance.new("UIPadding", menu)
+    pad.PaddingTop = UDim.new(0, 4)
+    pad.PaddingBottom = UDim.new(0, 4)
+    pad.PaddingLeft = UDim.new(0, 4)
+    pad.PaddingRight = UDim.new(0, 4)
+    
+    for i, opt in ipairs(options) do
+        local btn = Instance.new("TextButton", menu)
+        btn.LayoutOrder = i
+        btn.Size = UDim2.new(1, 0, 0, 28)
+        btn.BackgroundColor3 = self._Colors.Card
+        btn.BackgroundTransparency = 1
+        btn.Text = ""
+        btn.AutoButtonColor = false
+        btn.BorderSizePixel = 0
+        btn.ZIndex = 9601
+        Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 5)
+        
+        local lbl = Instance.new("TextLabel", btn)
+        lbl.Size = UDim2.new(1, -12, 1, 0)
+        lbl.Position = UDim2.new(0, 8, 0, 0)
+        lbl.BackgroundTransparency = 1
+        lbl.Text = tostring(opt.label or "")
+        lbl.TextColor3 = self._Colors.Text
+        lbl.Font = Enum.Font.GothamMedium
+        lbl.TextSize = 11
+        lbl.TextXAlignment = Enum.TextXAlignment.Left
+        lbl.ZIndex = 9602
+        
+        btn.MouseEnter:Connect(function()
+            TweenService:Create(btn, TweenInfo.new(0.1), {BackgroundTransparency = 0.6}):Play()
+        end)
+        btn.MouseLeave:Connect(function()
+            TweenService:Create(btn, TweenInfo.new(0.1), {BackgroundTransparency = 1}):Play()
+        end)
+        btn.MouseButton1Click:Connect(function()
+            if self._activeContextMenu == menu then
+                self._activeContextMenu = nil
+            end
+            menu:Destroy()
+            if opt.callback then
+                local _ok, _err = pcall(opt.callback)
+                if not _ok then warn("[DoD UI] ContextMenu callback error: " .. tostring(_err)) end
+            end
+        end)
+    end
+    
+    local dismissConn
+    dismissConn = UserInputService.InputBegan:Connect(function(inp)
+        if inp.UserInputType == Enum.UserInputType.MouseButton1 or inp.UserInputType == Enum.UserInputType.Touch then
+            local mp = inp.Position
+            local mpos, msz = menu.AbsolutePosition, menu.AbsoluteSize
+            if mp.X < mpos.X or mp.X > mpos.X + msz.X or mp.Y < mpos.Y or mp.Y > mpos.Y + msz.Y then
+                menu:Destroy()
+                if dismissConn then pcall(function() dismissConn:Disconnect() end) end
+            end
+        end
+    end)
+    
+    menu.Destroying:Connect(function()
+        if dismissConn then pcall(function() dismissConn:Disconnect() end) end
+    end)
+    
+    self._activeContextMenu = menu
+    return menu
 end
 
 function Library:Destroy()
@@ -11154,6 +11450,12 @@ function Library:Destroy()
     table.clear(STATE.SearchSections)
     table.clear(STATE.SearchBodies)
     table.clear(STATE.SearchTopLevel)
+    
+    for _, cb in ipairs(STATE._closeCallbacks or {}) do
+        local _ok, _err = pcall(cb)
+        if not _ok then warn("[DoD UI] BindToClose callback error: " .. tostring(_err)) end
+    end
+    table.clear(STATE._closeCallbacks or {})
     
     -- Final safety net to restore mouse state globally
     UserInputService.MouseIconEnabled = true
