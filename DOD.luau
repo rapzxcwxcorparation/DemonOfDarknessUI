@@ -1415,7 +1415,7 @@ function Library:SetTheme(themeName, silent)
     for index, fn in ipairs(self._STATE.ThemeRefreshers) do
         local refreshed, refreshError = pcall(fn)
         if not refreshed then
-            self:_reportError("ThemeRefresher", "index " .. tostring(index), refreshError)
+            warn("[DoD UI] Theme refresher " .. index .. " failed: " .. tostring(refreshError))
         end
     end
 
@@ -1624,75 +1624,6 @@ function Library:_triggerAutoSave()
     end)
 end
 
-function Library:SetErrorMode(mode)
-    if self:_isDead() then return end
-    local m = tostring(mode or ""):lower()
-    if m ~= "silent" and m ~= "warn" and m ~= "throw" and m ~= "notify" then
-        error("[DoD UI] SetErrorMode: invalid mode '" .. tostring(mode) .. "', expected 'silent' | 'warn' | 'throw' | 'notify'")
-    end
-    self._STATE._errorMode = m
-end
-
-function Library:GetErrorMode()
-    return self._STATE and self._STATE._errorMode or "warn"
-end
-
-function Library:OnError(hook)
-    if self:_isDead() then return end
-    if hook ~= nil and type(hook) ~= "function" then
-        error("[DoD UI] OnError: expected function or nil")
-    end
-    self._STATE._onError = hook
-end
-
-function Library:_reportError(source, label, err)
-    local STATE = self._STATE
-    if not STATE or STATE.Destroyed then return end
-    STATE._errorCount = (STATE._errorCount or 0) + 1
-    local mode = STATE._errorMode or "warn"
-    local msg = string.format("[DoD UI ERROR] %s on \"%s\":\n%s",
-        tostring(source), tostring(label or "?"), tostring(err))
-    if mode == "silent" then return end
-    if mode == "throw" then
-        error(msg, 0)
-    end
-    STATE._errorSeen = STATE._errorSeen or {}
-    local key = tostring(source) .. ":" .. tostring(label or "?")
-    local now = tick()
-    local last = STATE._errorSeen[key] or 0
-    if now - last < 2 then return end
-    STATE._errorSeen[key] = now
-    warn(msg)
-    if mode == "notify" then
-        pcall(function()
-            if self._UI and self._UI.NotifGui and self._UI.NotifGui.Parent then
-                self:Notify("SCRIPT ERROR", tostring(source) .. ": " .. tostring(label or "?"), "error")
-            end
-        end)
-    end
-    if STATE._onError then
-        local hookOk, hookErr = pcall(STATE._onError, source, label, err)
-        if not hookOk then
-            warn("[DoD UI] OnError hook itself failed: " .. tostring(hookErr))
-        end
-    end
-end
-
-function Library:_wrapCallback(source, label, callback)
-    if type(callback) ~= "function" then return callback end
-    self._wrappedCallbacks = self._wrappedCallbacks or setmetatable({}, {__mode = "k"})
-    if self._wrappedCallbacks[callback] then return callback end
-    local lib = self
-    local wrapped = function(...)
-        local ok, err = pcall(callback, ...)
-        if not ok then
-            lib:_reportError(source, label, err)
-        end
-    end
-    self._wrappedCallbacks[wrapped] = true
-    return wrapped
-end
-
 -- =========================================================
 -- NOTIFICATIONS
 -- =========================================================
@@ -1869,12 +1800,12 @@ function Library:Confirm(title, text, onYes, onNo)
             if confirmed then
                 if onYes then
                     local ok, err = pcall(onYes)
-                    if not ok then self:_reportError("Confirm.onYes", tostring(title or "?"), err) end
+                    if not ok then warn("[DoD UI] Confirm onYes failed: " .. tostring(err)) end
                 end
             else
                 if onNo then
                     local ok, err = pcall(onNo)
-                    if not ok then self:_reportError("Confirm.onNo", tostring(title or "?"), err) end
+                    if not ok then warn("[DoD UI] Confirm onNo failed: " .. tostring(err)) end
                 end
             end
         end)
@@ -1927,8 +1858,6 @@ function Library:ExportConfig()
         local ok, val = pcall(entry.get)
         if ok and val ~= nil then
             out._controls[id] = val
-        elseif not ok then
-            self:_reportError("ExportConfig.getter", id, val)
         end
     end
     out._favorites = {}
@@ -1958,12 +1887,8 @@ function Library:ImportConfig(config, silent)
         total = total + 1
         local entry = self._STATE.ConfigRegistry and self._STATE.ConfigRegistry[id]
         if entry and entry.set then
-            local ok, err = pcall(entry.set, val, true)
-            if ok then
-                applied = applied + 1
-            else
-                self:_reportError("ImportConfig.setter", id, err)
-            end
+            local ok = pcall(entry.set, val, true)
+            if ok then applied = applied + 1 end
         end
     end
     if not silent then
@@ -7630,15 +7555,6 @@ function Library:CreateThemeCustomizer(tabName)
             self:ResetThemeConfig()
         end)
     end)
-    local _errModes = {"Silent", "Warn", "Notify", "Throw"}
-    local _errIdx = 2
-    local _curErrMode = self._STATE._errorMode or "warn"
-    for i, m in ipairs(_errModes) do
-        if string.lower(m) == _curErrMode then _errIdx = i; break end
-    end
-    self:AddDropdown(section, "Error Mode", _errModes, _errIdx, function(idx, val)
-        self:SetErrorMode(string.lower(val))
-    end)
     return section
 end
 
@@ -7980,7 +7896,6 @@ function Library:AddToggle(page, text, default, callback)
         error("[DoD UI] AddToggle callback must be a function.")
     end
     callback = callback or function() end
-    callback = self:_wrapCallback("AddToggle", text, callback)
     local holder = Instance.new("Frame", page)
     holder.Size = UDim2.new(1, 0, 0, 36)
     holder.BackgroundColor3 = self._Colors.Card
@@ -8148,7 +8063,6 @@ function Library:AddSlider(page, text, minVal, maxVal, default, decimals, callba
     end
     default = math.clamp(default, minVal, maxVal)
     callback = callback or function() end
-    callback = self:_wrapCallback("AddSlider", text, callback)
 
     local holder = Instance.new("Frame", page)
     holder.Size = UDim2.new(1, 0, 0, 58)
@@ -8599,7 +8513,6 @@ function Library:AddDropdown(page, text, options, defaultIndex, callback)
         defaultIndex = 1
     end
     callback = callback or function() end
-    callback = self:_wrapCallback("AddDropdown", text, callback)
 
     local STATE = self._STATE
     local UI = self._UI
@@ -8617,7 +8530,7 @@ function Library:AddDropdown(page, text, options, defaultIndex, callback)
     holderStroke.Transparency = 0.5
 
     local label = Instance.new("TextLabel", holder)
-    label.Size = UDim2.new(0, 100, 1, 0)
+    label.Size = UDim2.new(0.42, -20, 1, 0)
     label.Position = UDim2.new(0, 14, 0, 0)
     label.BackgroundTransparency = 1
     label.Text = text
@@ -8626,14 +8539,10 @@ function Library:AddDropdown(page, text, options, defaultIndex, callback)
     label.TextSize = 12
     label.TextXAlignment = Enum.TextXAlignment.Left
     label.TextTruncate = Enum.TextTruncate.AtEnd
-    label.AutomaticSize = Enum.AutomaticSize.X
-    local labelConstraint = Instance.new("UISizeConstraint", label)
-    labelConstraint.MaxSize = Vector2.new(200, 100)
-    labelConstraint.MinSize = Vector2.new(40, 0)
 
     local valueChip = Instance.new("TextButton", holder)
-    valueChip.Size = UDim2.new(0, 150, 0, 30)
-    valueChip.Position = UDim2.new(0, 120, 0.5, -15)
+    valueChip.Size = UDim2.new(0.58, -54, 0, 30)
+    valueChip.Position = UDim2.new(0.42, 4, 0.5, -15)
     valueChip.BackgroundColor3 = self._Colors.Bg2
     valueChip.BackgroundTransparency = 0.2
     valueChip.Text = ""
@@ -8732,32 +8641,6 @@ function Library:AddDropdown(page, text, options, defaultIndex, callback)
         TweenService:Create(navDownStroke, TweenInfo.new(0.15), {Color = self._Colors.Border, Transparency = 0.4}):Play()
         TweenService:Create(navDownIcon, TweenInfo.new(0.15), {ImageColor3 = self._Colors.TextDim}):Play()
     end)
-
-    local function _adaptDropdownLayout()
-        local holderW = holder.AbsoluteSize.X
-        if holderW <= 0 then return end
-        local labelW = label.AbsoluteSize.X
-        if labelW <= 0 then labelW = 40 end
-        local navZone = 48
-        local gap = 10
-        local chipX = 14 + labelW + gap
-        local chipW = holderW - chipX - navZone - 6
-        if chipW < 80 then chipW = 80 end
-        valueChip.Position = UDim2.new(0, chipX, 0.5, -15)
-        valueChip.Size = UDim2.new(0, chipW, 0, 30)
-    end
-    local function _adaptDropdownLabelConstraint()
-        local holderW = holder.AbsoluteSize.X
-        if holderW <= 0 then return end
-        local maxLabel = holderW - 14 - 10 - 48 - 6 - 80
-        if maxLabel < 40 then maxLabel = 40 end
-        local capLabel = math.min(maxLabel, math.floor(holderW * 0.55))
-        labelConstraint.MaxSize = Vector2.new(capLabel, 100)
-        _adaptDropdownLayout()
-    end
-    holder:GetPropertyChangedSignal("AbsoluteSize"):Connect(_adaptDropdownLabelConstraint)
-    label:GetPropertyChangedSignal("AbsoluteSize"):Connect(_adaptDropdownLayout)
-    task.defer(_adaptDropdownLabelConstraint)
 
     local currentIndex = defaultIndex
     local popup = Instance.new("Frame", UI.MainGui)
@@ -9096,7 +8979,6 @@ function Library:AddMultiDropdown(page, text, options, defaults, callback)
         error("[DoD UI] AddMultiDropdown callback must be a function.")
     end
     callback = callback or function() end
-    callback = self:_wrapCallback("AddMultiDropdown", text, callback)
     local selected = {}
     if type(defaults) == "table" then
         for _, idx in ipairs(defaults) do
@@ -9120,7 +9002,7 @@ function Library:AddMultiDropdown(page, text, options, defaults, callback)
     holderStroke.Transparency = 0.5
 
     local label = Instance.new("TextLabel", holder)
-    label.Size = UDim2.new(0, 100, 1, 0)
+    label.Size = UDim2.new(0.42, -20, 1, 0)
     label.Position = UDim2.new(0, 14, 0, 0)
     label.BackgroundTransparency = 1
     label.Text = text
@@ -9129,14 +9011,10 @@ function Library:AddMultiDropdown(page, text, options, defaults, callback)
     label.TextSize = 12
     label.TextXAlignment = Enum.TextXAlignment.Left
     label.TextTruncate = Enum.TextTruncate.AtEnd
-    label.AutomaticSize = Enum.AutomaticSize.X
-    local labelConstraint = Instance.new("UISizeConstraint", label)
-    labelConstraint.MaxSize = Vector2.new(200, 100)
-    labelConstraint.MinSize = Vector2.new(40, 0)
 
     local valueChip = Instance.new("TextButton", holder)
-    valueChip.Size = UDim2.new(0, 150, 0, 30)
-    valueChip.Position = UDim2.new(0, 120, 0.5, -15)
+    valueChip.Size = UDim2.new(0.58, -14, 0, 30)
+    valueChip.Position = UDim2.new(0.42, 4, 0.5, -15)
     valueChip.BackgroundColor3 = self._Colors.Bg2
     valueChip.BackgroundTransparency = 0.2
     valueChip.Text = ""
@@ -9190,31 +9068,6 @@ function Library:AddMultiDropdown(page, text, options, defaults, callback)
         end
     end
     updateChipLabel()
-
-    local function _adaptMultiLayout()
-        local holderW = holder.AbsoluteSize.X
-        if holderW <= 0 then return end
-        local labelW = label.AbsoluteSize.X
-        if labelW <= 0 then labelW = 40 end
-        local gap = 10
-        local chipX = 14 + labelW + gap
-        local chipW = holderW - chipX - 8
-        if chipW < 80 then chipW = 80 end
-        valueChip.Position = UDim2.new(0, chipX, 0.5, -15)
-        valueChip.Size = UDim2.new(0, chipW, 0, 30)
-    end
-    local function _adaptMultiLabelConstraint()
-        local holderW = holder.AbsoluteSize.X
-        if holderW <= 0 then return end
-        local maxLabel = holderW - 14 - 10 - 8 - 80
-        if maxLabel < 40 then maxLabel = 40 end
-        local capLabel = math.min(maxLabel, math.floor(holderW * 0.55))
-        labelConstraint.MaxSize = Vector2.new(capLabel, 100)
-        _adaptMultiLayout()
-    end
-    holder:GetPropertyChangedSignal("AbsoluteSize"):Connect(_adaptMultiLabelConstraint)
-    label:GetPropertyChangedSignal("AbsoluteSize"):Connect(_adaptMultiLayout)
-    task.defer(_adaptMultiLabelConstraint)
 
     local popup = Instance.new("Frame", self._UI.MainGui)
     popup.Name = "MultiDropdownPopup"
@@ -9899,7 +9752,6 @@ function Library:AddKeybind(page, text, default, callback)
     if callback ~= nil and type(callback) ~= "function" then
         error("[DoD UI] AddKeybind callback must be a function.")
     end
-    if callback then callback = self:_wrapCallback("AddKeybind", text, callback) end
     local STATE = self._STATE
     local holder = Instance.new("Frame", page)
     holder.Size = UDim2.new(1, 0, 0, 36)
@@ -10170,7 +10022,6 @@ function Library:AddButton(page, text, callback)
         error("[DoD UI] AddButton callback must be a function.")
     end
     callback = callback or function() end
-    callback = self:_wrapCallback("AddButton", text, callback)
     local holder = Instance.new("Frame", page)
     holder.Size = UDim2.new(1, 0, 0, 42)
     holder.BackgroundColor3 = self._Colors.Card
@@ -10350,7 +10201,6 @@ function Library:AddTextbox(page, text, placeholder, callback, opts)
         error("[DoD UI] AddTextbox callback must be a function.")
     end
     callback = callback or function() end
-    callback = self:_wrapCallback("AddTextbox", text, callback)
 
     local holder = Instance.new("Frame", page)
     holder.Name = "Textbox"
@@ -10492,7 +10342,6 @@ function Library:AddColorPicker(page, text, defaultColor3, callback)
         error("[DoD UI] AddColorPicker callback must be a function.")
     end
     callback = callback or function() end
-    callback = self:_wrapCallback("AddColorPicker", text, callback)
 
     local holder = Instance.new("Frame", page)
     holder.Name = "ColorPicker"
@@ -10926,7 +10775,6 @@ function Library:AddChipBar(page, text, options, defaultIndex, callback)
         error("[DoD UI] AddChipBar callback must be a function.")
     end
     callback = callback or function() end
-    callback = self:_wrapCallback("AddChipBar", text or "?", callback)
     if type(defaultIndex) ~= "number" or defaultIndex % 1 ~= 0
         or defaultIndex < 1 or defaultIndex > #options then
         defaultIndex = 1
