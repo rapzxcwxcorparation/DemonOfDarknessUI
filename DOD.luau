@@ -5082,8 +5082,8 @@ function Library:_attachFavorite(holder, configId, starPos)
     local star = Instance.new("ImageButton", holder)
     star.Name = "FavoriteStar"
     if self._isMobile then
-        star.Size = UDim2.fromOffset(28, 28)
-        star.Position = starPos or UDim2.new(1, -32, 0, 0)
+        star.Size = UDim2.fromOffset(22, 22)
+        star.Position = starPos or UDim2.new(1, -26, 0.5, -11)
     else
         star.Size = UDim2.fromOffset(11, 11)
         star.Position = starPos or UDim2.new(1, -14, 0, 2)
@@ -8684,6 +8684,27 @@ function Library:AddDropdown(page, text, options, defaultIndex, callback)
         TweenService:Create(navDownIcon, TweenInfo.new(0.15), {ImageColor3 = self._Colors.TextDim}):Play()
     end)
 
+    local _textSvc = game:GetService("TextService")
+    local function _adaptDropdownLayout()
+        local holderW = holder.AbsoluteSize.X
+        if holderW <= 0 then return end
+        local bounds = _textSvc:GetTextSize(label.Text, label.TextSize, label.Font, Vector2.new(1000, 100))
+        local rawLabelW = bounds.X + 4
+        local maxLabelW = holderW * 0.55
+        local labelW = math.clamp(rawLabelW, 40, maxLabelW)
+        label.Size = UDim2.new(0, labelW, 1, 0)
+        local navZone = 48
+        local gap = 10
+        local chipX = 14 + labelW + gap
+        local chipW = holderW - chipX - navZone - 6
+        if chipW < 80 then chipW = 80 end
+        valueChip.Position = UDim2.new(0, chipX, 0.5, -15)
+        valueChip.Size = UDim2.new(0, chipW, 0, 30)
+    end
+    holder:GetPropertyChangedSignal("AbsoluteSize"):Connect(_adaptDropdownLayout)
+    label:GetPropertyChangedSignal("AbsoluteSize"):Connect(_adaptDropdownLayout)
+    task.defer(_adaptDropdownLayout)
+
     local currentIndex = defaultIndex
     local popup = Instance.new("Frame", UI.MainGui)
     popup.Name = "DropdownPopup"
@@ -9111,6 +9132,26 @@ function Library:AddMultiDropdown(page, text, options, defaults, callback)
         end
     end
     updateChipLabel()
+
+    local _textSvc = game:GetService("TextService")
+    local function _adaptMultiLayout()
+        local holderW = holder.AbsoluteSize.X
+        if holderW <= 0 then return end
+        local bounds = _textSvc:GetTextSize(label.Text, label.TextSize, label.Font, Vector2.new(1000, 100))
+        local rawLabelW = bounds.X + 4
+        local maxLabelW = holderW * 0.55
+        local labelW = math.clamp(rawLabelW, 40, maxLabelW)
+        label.Size = UDim2.new(0, labelW, 1, 0)
+        local gap = 10
+        local chipX = 14 + labelW + gap
+        local chipW = holderW - chipX - 8
+        if chipW < 80 then chipW = 80 end
+        valueChip.Position = UDim2.new(0, chipX, 0.5, -15)
+        valueChip.Size = UDim2.new(0, chipW, 0, 30)
+    end
+    holder:GetPropertyChangedSignal("AbsoluteSize"):Connect(_adaptMultiLayout)
+    label:GetPropertyChangedSignal("AbsoluteSize"):Connect(_adaptMultiLayout)
+    task.defer(_adaptMultiLayout)
 
     local popup = Instance.new("Frame", self._UI.MainGui)
     popup.Name = "MultiDropdownPopup"
