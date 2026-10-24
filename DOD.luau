@@ -12,14 +12,6 @@
 
 ]]
 
--- Usage (chainable):
--- local UI = Library.CreateWindow({ Title = "..." })
--- local Tab = UI:CreateTab("Combat")
--- local Sec = Tab:CreateSection("Aimbot", "Settings", true, "Left", "target")
--- Sec:AddToggle("Enabled", false, function(v) end)
--- Sec:AddChipBar("Mode", {"LEGIT","RAGE","BLATANT"}, 1, function(i,v) end)
--- Classic style (still works): UI:AddToggle(Sec, "Enabled", false, cb)
-
 local Library = {}
 Library.__index = Library
 
@@ -8530,7 +8522,7 @@ function Library:AddDropdown(page, text, options, defaultIndex, callback)
     holderStroke.Transparency = 0.5
 
     local label = Instance.new("TextLabel", holder)
-    label.Size = UDim2.new(0.42, -20, 1, 0)
+    label.Size = UDim2.new(0, 100, 1, 0)
     label.Position = UDim2.new(0, 14, 0, 0)
     label.BackgroundTransparency = 1
     label.Text = text
@@ -8539,10 +8531,14 @@ function Library:AddDropdown(page, text, options, defaultIndex, callback)
     label.TextSize = 12
     label.TextXAlignment = Enum.TextXAlignment.Left
     label.TextTruncate = Enum.TextTruncate.AtEnd
+    label.AutomaticSize = Enum.AutomaticSize.X
+    local labelConstraint = Instance.new("UISizeConstraint", label)
+    labelConstraint.MaxSize = Vector2.new(200, 100)
+    labelConstraint.MinSize = Vector2.new(40, 0)
 
     local valueChip = Instance.new("TextButton", holder)
-    valueChip.Size = UDim2.new(0.58, -54, 0, 30)
-    valueChip.Position = UDim2.new(0.42, 4, 0.5, -15)
+    valueChip.Size = UDim2.new(0, 150, 0, 30)
+    valueChip.Position = UDim2.new(0, 120, 0.5, -15)
     valueChip.BackgroundColor3 = self._Colors.Bg2
     valueChip.BackgroundTransparency = 0.2
     valueChip.Text = ""
@@ -8641,6 +8637,32 @@ function Library:AddDropdown(page, text, options, defaultIndex, callback)
         TweenService:Create(navDownStroke, TweenInfo.new(0.15), {Color = self._Colors.Border, Transparency = 0.4}):Play()
         TweenService:Create(navDownIcon, TweenInfo.new(0.15), {ImageColor3 = self._Colors.TextDim}):Play()
     end)
+
+    local function _adaptDropdownLayout()
+        local holderW = holder.AbsoluteSize.X
+        if holderW <= 0 then return end
+        local labelW = label.AbsoluteSize.X
+        if labelW <= 0 then labelW = 40 end
+        local navZone = 48
+        local gap = 10
+        local chipX = 14 + labelW + gap
+        local chipW = holderW - chipX - navZone - 6
+        if chipW < 80 then chipW = 80 end
+        valueChip.Position = UDim2.new(0, chipX, 0.5, -15)
+        valueChip.Size = UDim2.new(0, chipW, 0, 30)
+    end
+    local function _adaptDropdownLabelConstraint()
+        local holderW = holder.AbsoluteSize.X
+        if holderW <= 0 then return end
+        local maxLabel = holderW - 14 - 10 - 48 - 6 - 80
+        if maxLabel < 40 then maxLabel = 40 end
+        local capLabel = math.min(maxLabel, math.floor(holderW * 0.55))
+        labelConstraint.MaxSize = Vector2.new(capLabel, 100)
+        _adaptDropdownLayout()
+    end
+    holder:GetPropertyChangedSignal("AbsoluteSize"):Connect(_adaptDropdownLabelConstraint)
+    label:GetPropertyChangedSignal("AbsoluteSize"):Connect(_adaptDropdownLayout)
+    task.defer(_adaptDropdownLabelConstraint)
 
     local currentIndex = defaultIndex
     local popup = Instance.new("Frame", UI.MainGui)
@@ -9002,7 +9024,7 @@ function Library:AddMultiDropdown(page, text, options, defaults, callback)
     holderStroke.Transparency = 0.5
 
     local label = Instance.new("TextLabel", holder)
-    label.Size = UDim2.new(0.42, -20, 1, 0)
+    label.Size = UDim2.new(0, 100, 1, 0)
     label.Position = UDim2.new(0, 14, 0, 0)
     label.BackgroundTransparency = 1
     label.Text = text
@@ -9011,10 +9033,14 @@ function Library:AddMultiDropdown(page, text, options, defaults, callback)
     label.TextSize = 12
     label.TextXAlignment = Enum.TextXAlignment.Left
     label.TextTruncate = Enum.TextTruncate.AtEnd
+    label.AutomaticSize = Enum.AutomaticSize.X
+    local labelConstraint = Instance.new("UISizeConstraint", label)
+    labelConstraint.MaxSize = Vector2.new(200, 100)
+    labelConstraint.MinSize = Vector2.new(40, 0)
 
     local valueChip = Instance.new("TextButton", holder)
-    valueChip.Size = UDim2.new(0.58, -14, 0, 30)
-    valueChip.Position = UDim2.new(0.42, 4, 0.5, -15)
+    valueChip.Size = UDim2.new(0, 150, 0, 30)
+    valueChip.Position = UDim2.new(0, 120, 0.5, -15)
     valueChip.BackgroundColor3 = self._Colors.Bg2
     valueChip.BackgroundTransparency = 0.2
     valueChip.Text = ""
@@ -9068,6 +9094,31 @@ function Library:AddMultiDropdown(page, text, options, defaults, callback)
         end
     end
     updateChipLabel()
+
+    local function _adaptMultiLayout()
+        local holderW = holder.AbsoluteSize.X
+        if holderW <= 0 then return end
+        local labelW = label.AbsoluteSize.X
+        if labelW <= 0 then labelW = 40 end
+        local gap = 10
+        local chipX = 14 + labelW + gap
+        local chipW = holderW - chipX - 8
+        if chipW < 80 then chipW = 80 end
+        valueChip.Position = UDim2.new(0, chipX, 0.5, -15)
+        valueChip.Size = UDim2.new(0, chipW, 0, 30)
+    end
+    local function _adaptMultiLabelConstraint()
+        local holderW = holder.AbsoluteSize.X
+        if holderW <= 0 then return end
+        local maxLabel = holderW - 14 - 10 - 8 - 80
+        if maxLabel < 40 then maxLabel = 40 end
+        local capLabel = math.min(maxLabel, math.floor(holderW * 0.55))
+        labelConstraint.MaxSize = Vector2.new(capLabel, 100)
+        _adaptMultiLayout()
+    end
+    holder:GetPropertyChangedSignal("AbsoluteSize"):Connect(_adaptMultiLabelConstraint)
+    label:GetPropertyChangedSignal("AbsoluteSize"):Connect(_adaptMultiLayout)
+    task.defer(_adaptMultiLabelConstraint)
 
     local popup = Instance.new("Frame", self._UI.MainGui)
     popup.Name = "MultiDropdownPopup"
