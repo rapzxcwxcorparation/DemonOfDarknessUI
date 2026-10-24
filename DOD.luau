@@ -5388,10 +5388,13 @@ function Library:_updateFocusOverlay(theme)
     theme = theme or D.Themes[self.ThemeName] or D.Themes.Dark
     if not UI.FocusOverlay then return end
 
+    local _focusAllowed = self._STATE.FocusOverlayEnabled
+        and self._perfTier ~= "Potato"
+        and self._STATE.GuiVisible
     UI.FocusOverlay.BackgroundColor3 = theme.FocusOverlayColor or theme.OverlayColor or self._Colors.Bg
-    UI.FocusOverlay.BackgroundTransparency = self._STATE.FocusOverlayEnabled
+    UI.FocusOverlay.BackgroundTransparency = _focusAllowed
         and (theme.OverlayTransparency or 0.45) or 1
-    UI.FocusOverlay.Visible = self._STATE.FocusOverlayEnabled and self._STATE.GuiVisible
+    UI.FocusOverlay.Visible = _focusAllowed
 
     if self._lastPatternKey ~= self:_patternCacheKey() then
         if self._patternRebuildDebounce then
@@ -5418,7 +5421,9 @@ function Library:SetFocusOverlay(enabled, patternType)
     self._STATE.FocusOverlayEnabled = enabled
     if patternType ~= nil then
         self._STATE.FocusOverlayType = patternType
-        self:_rebuildFocusPattern()
+        if enabled then
+            self:_rebuildFocusPattern()
+        end
     end
     self:_updateFocusOverlay()
     self:_updateAcrylicBlur()
@@ -5431,7 +5436,12 @@ function Library:_updateAcrylicBlur()
     local blurSize = 0
     if state.GuiVisible then
         if self.Acrylic then blurSize = self.AcrylicBlurIntensity end
-        if state.FocusOverlayEnabled then blurSize = math.max(blurSize, 12) end
+        if state.FocusOverlayEnabled and self._perfTier ~= "Potato" then
+            blurSize = math.max(blurSize, 12)
+        end
+    end
+    if self._perfTier == "Potato" then
+        blurSize = math.min(blurSize, 3)
     end
     blur.Size = blurSize
 end
@@ -5496,10 +5506,14 @@ function Library:_createWeather(weatherType)
     local mobileScale = self._isMobile and 0.5 or 1
     local maxCount = math.max(1, math.floor(preset.count * 100 / 65 * mobileScale + 0.5))
     local _cap = (self._perfProfile and self._perfProfile.WeatherParticleCap)
-    if _cap then
+    if _cap and _cap > 0 then
         maxCount = math.min(maxCount, _cap)
     end
-    if maxCount <= 0 then return end
+    if maxCount <= 0 then
+        UI.SnowLayer.Visible = false
+        STATE.WeatherEnabled = false
+        return
+    end
     local colors = preset.colors or { preset.color or Color3.new(1, 1, 1) }
 
     for index = 1, maxCount do
