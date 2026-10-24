@@ -1680,7 +1680,8 @@ end
 
 function Library:_wrapCallback(source, label, callback)
     if type(callback) ~= "function" then return callback end
-    if callback.__dodWrapped then return callback end
+    self._wrappedCallbacks = self._wrappedCallbacks or setmetatable({}, {__mode = "k"})
+    if self._wrappedCallbacks[callback] then return callback end
     local lib = self
     local wrapped = function(...)
         local ok, err = pcall(callback, ...)
@@ -1688,7 +1689,7 @@ function Library:_wrapCallback(source, label, callback)
             lib:_reportError(source, label, err)
         end
     end
-    wrapped.__dodWrapped = true
+    self._wrappedCallbacks[wrapped] = true
     return wrapped
 end
 
