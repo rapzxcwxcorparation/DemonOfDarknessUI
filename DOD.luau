@@ -827,6 +827,15 @@ function Library.new(opts)
     end
 
     -- ANTI DOUBLE EXECUTION
+    local _gv = (getgenv and getgenv()) or _G
+    if _gv._DoD_ActiveInstances then
+        for _, _old in ipairs(_gv._DoD_ActiveInstances) do
+            pcall(function() _old:Destroy() end)
+        end
+        table.clear(_gv._DoD_ActiveInstances)
+    else
+        _gv._DoD_ActiveInstances = {}
+    end
     local oldMain = CoreGui:FindFirstChild("DoD_UI_Main")
     if oldMain then oldMain:Destroy() end
     local oldNotif = CoreGui:FindFirstChild("DoD_UI_Notifications")
@@ -837,6 +846,7 @@ function Library.new(opts)
     if oldBlur then oldBlur:Destroy() end
 
     local self = setmetatable({}, Library)
+    table.insert(_gv._DoD_ActiveInstances, self)
 
     self._initialized = false
     self._themeLoading = false
@@ -1632,6 +1642,7 @@ function Library:_initNotifications()
     local gui = Instance.new("ScreenGui")
     gui.Name = "DoD_UI_Notifications"
     gui.Parent = CoreGui
+    gui.ResetOnSpawn = false
     gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
     gui.DisplayOrder = 2000
     self._UI.NotifGui = gui
@@ -2647,6 +2658,7 @@ function Library:_initMainGui()
     minBtn.BackgroundColor3 = self._Colors.Bg2
     minBtn.BackgroundTransparency = 0.12
     minBtn.AutoButtonColor = false
+    minBtn.Text = ""
     minBtn.Visible = false
     minBtn.ZIndex = 500
     Instance.new("UICorner", minBtn).CornerRadius = UDim.new(1, 0)
@@ -2681,6 +2693,9 @@ function Library:_initMainGui()
     minText.Font = Enum.Font.GothamBold
     minText.TextSize = _mFontSz
     minText.TextXAlignment = Enum.TextXAlignment.Left
+    
+    minIcon.Parent = minBtn
+    minText.Parent = minBtn
     
     UI.MinimizeButton = minBtn
     UI.MinimizeButtonStroke = minStroke
@@ -3248,8 +3263,9 @@ function Library:_bindTooltip(element, text)
     local showThread
     element.MouseEnter:Connect(function()
         if not self._STATE.TooltipEnabled then return end
-        if showThread then task.cancel(showThread) end
+        if showThread then pcall(function() task.cancel(showThread) end); showThread = nil end
         showThread = task.delay(0.3, function()
+            showThread = nil
             if not self._STATE.TooltipEnabled then return end
             local frame = self._UI.TooltipFrame
             if not frame then return end
@@ -3288,7 +3304,7 @@ function Library:_bindTooltip(element, text)
     end)
     element.MouseLeave:Connect(function()
         if showThread then
-            task.cancel(showThread)
+            pcall(function() task.cancel(showThread) end)
             showThread = nil
         end
         local frame = self._UI.TooltipFrame
@@ -3706,7 +3722,15 @@ function Library:_updateCursorTrail(mouse)
     if self._perfCursorBlocked then return end
     if not self._cursorTrailPool then return end
     if self._isMobile then return end
-    if not self._UI.CustomCursor or not self._UI.CustomCursor.Visible then return end
+    if not self._UI.CustomCursor or not self._UI.CustomCursor.Visible then
+        for _, _dot in ipairs(self._cursorTrailPool) do
+            if _dot.active then
+                _dot.active = false
+                if _dot.img then _dot.img.Visible = false end
+            end
+        end
+        return
+    end
     local now = tick()
     local pos = Vector2.new(mouse.X, mouse.Y)
     local moved = (pos - self._cursorTrailPrevPos).Magnitude
@@ -4527,6 +4551,8 @@ function Library:_applyNavigationLayout()
         end
 
     else -- Top
+        if UI.AccordionScroll then UI.AccordionScroll.Visible = false end
+        if UI.SideProfileMini then UI.SideProfileMini.Visible = false end
         UI.CategoryBar.Size = UDim2.new(1, -20, 0, 46)
         UI.CategoryBar.Position = UDim2.new(0, 10, 0, 42)
         UI.CategoryBar.BackgroundColor3 = self._Colors.Sidebar
@@ -5451,7 +5477,9 @@ function Library:_stopWeather()
         if particle.frame then particle.frame:Destroy() end
     end
     table.clear(STATE.SnowParticles)
-    self._UI.SnowLayer.Visible = false
+    if self._UI and self._UI.SnowLayer then
+        self._UI.SnowLayer.Visible = false
+    end
 end
 
 function Library:_createWeather(weatherType)
@@ -8828,6 +8856,7 @@ function Library:AddDropdown(page, text, options, defaultIndex, callback)
             setHighlight(highlightedIndex)
             if not keyNavConn then
                 keyNavConn = UserInputService.InputBegan:Connect(function(input, gameProcessed)
+                    if self:_isDead() then return end
                     if not popup.Visible then return end
                     if gameProcessed then return end
                     if UserInputService:GetFocusedTextBox() then return end
@@ -9699,10 +9728,11 @@ function Library:AddConfigList(page, onLoad)
         refreshIcon.ImageColor3 = self._Colors.TextDim
         copyIcon.ImageColor3 = self._Colors.TextDim
         pasteIcon.ImageColor3 = self._Colors.TextDim
-        hoverStroke.Color = self._Colors.Border
         for _, child in ipairs(scroll:GetChildren()) do
             if child:IsA("TextButton") then
                 child.BackgroundColor3 = self._Colors.Bg2
+                local _childStroke = child:FindFirstChildOfClass("UIStroke")
+                if _childStroke then _childStroke.Color = self._Colors.Border end
                 local nameLbl = child:FindFirstChildOfClass("TextLabel")
                 if nameLbl then nameLbl.TextColor3 = self._Colors.Text end
                 local dateLbl = child:FindFirstChild("Date")
@@ -9868,11 +9898,19 @@ function Library:AddKeybind(page, text, default, callback)
         function() return listener.keyName end,
         function(v, silent)
             if type(v) ~= "string" then return end
-            listener.keyName = v
-            if listener.btnText then listener.btnText.Text = v end
-            if listener.key then
-                listener.setKey(listener.key, listener.mods)
+            local _k, _mods = nil, {}
+            local _upper = string.upper(v)
+            if _upper == "LCLICK" then _k = "LClick"
+            elseif _upper == "RCLICK" then _k = "RClick"
+            elseif _upper ~= "NONE" and v ~= "" then
+                local _ok, _e = pcall(function() return Enum.KeyCode[_upper] end)
+                if _ok and _e then _k = _e
+                else
+                    if listener.btnText then listener.btnText.Text = v end
+                    return
+                end
             end
+            listener.setKey(_k, _mods)
         end
     )
     self:_attachFavorite(holder, _favId)
@@ -11372,6 +11410,9 @@ function Library:Minimize()
     STATE.AnimatingGui = true
     STATE.GuiVisible = false
     if UI.MobileToggle then UI.MobileToggle.Visible = false end
+    for _, _entry in ipairs(STATE.activeDropdownPopups) do
+        if _entry and _entry.close then pcall(_entry.close) end
+    end
     
     self:PlaySound("ToggleOff")
     
@@ -11513,6 +11554,9 @@ function Library:Toggle()
     if STATE.GuiVisible then
         -- CLOSE ANIMATION (Smooth Slide Down + Fade Out)
         self:PlaySound("ToggleOff")
+        for _, _entry in ipairs(STATE.activeDropdownPopups) do
+            if _entry and _entry.close then pcall(_entry.close) end
+        end
         STATE.GuiVisible = false
         UserInputService.MouseIconEnabled = true
         if UI.CustomCursor then UI.CustomCursor.Visible = false end
@@ -11717,8 +11761,9 @@ end
 
 function Library:Destroy()
     local STATE = self._STATE
-    if STATE.Destroyed then return end
-    STATE.Destroyed = true
+    if not STATE or STATE.Destroyed or STATE._destroying then return end
+    STATE._destroying = true
+    local _ok, _err = pcall(function()
     STATE.GuiVisible = false
     
     UserInputService.MouseIconEnabled = true
@@ -11744,6 +11789,8 @@ function Library:Destroy()
     pcall(function() if self._UI.NotifGui then self._UI.NotifGui:Destroy() end end)
     pcall(function() if self._UI.TooltipGui then self._UI.TooltipGui:Destroy() end end)
     pcall(function() if self._particleBGConn then self._particleBGConn:Disconnect() end end)
+    for _, _snd in pairs(self._Sounds or {}) do pcall(function() _snd:Stop(); _snd:Destroy() end) end
+    self._Sounds = {}
     for _, layer in ipairs(self._shadowLayers or {}) do
         pcall(function() layer.frame:Destroy() end)
     end
@@ -11765,6 +11812,10 @@ function Library:Destroy()
     -- Final safety net to restore mouse state globally
     UserInputService.MouseIconEnabled = true
     UserInputService.MouseBehavior = Enum.MouseBehavior.Default
+    end)
+    STATE._destroying = false
+    STATE.Destroyed = true
+    if not _ok then warn("[DoD UI] Destroy error: " .. tostring(_err)) end
 end
 
 -- =========================================================
