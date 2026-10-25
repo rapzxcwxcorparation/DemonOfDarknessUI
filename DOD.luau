@@ -1301,6 +1301,17 @@ function Library:SetPerformanceTier(tier, silent)
     if self._initialized and not _prevLoading then
         self:_triggerThemeSave()
     end
+    pcall(function()
+        if self._perfDropdown and self._perfDropdown.Set then
+            local idx = 1
+            if self._perfAuto == false then
+                if tier == "Potato" then idx = 2
+                elseif tier == "Balanced" then idx = 3
+                else idx = 4 end
+            end
+            self._perfDropdown:Set(idx, true)
+        end
+    end)
     if not silent then
         self:Notify("PERFORMANCE", "Mode: " .. tier, "info")
     end
@@ -7410,7 +7421,7 @@ function Library:CreateThemeCustomizer(tabName)
     if self._perfAuto == false then
         _perfDefault = (self._perfTier == "Potato" and 2) or (self._perfTier == "Balanced" and 3) or 4
     end
-    self:AddDropdown(section, "Performance Mode", { "Auto", "Potato", "Balanced", "High" },
+    self._perfDropdown = self:AddDropdown(section, "Performance Mode", { "Auto", "Potato", "Balanced", "High" },
         _perfDefault,
         function(_, val)
             if val == "Auto" then
