@@ -1220,6 +1220,8 @@ function Library:_detectPerfTier()
         elseif q >= Enum.SavedQualitySetting.QualityLevel8 then score = score + 1 end
     end)
     local initial = (score <= 1 and "Potato") or (score <= 3 and "Balanced") or "High"
+    self._perfDetectGen = (self._perfDetectGen or 0) + 1
+    local myGen = self._perfDetectGen
     task.spawn(function()
         local samples = {}
         local conn
@@ -1228,6 +1230,8 @@ function Library:_detectPerfTier()
         end)
         task.wait(1.2)
         if conn then conn:Disconnect() end
+        if myGen ~= self._perfDetectGen then return end
+        if self._perfAuto == false then return end
         if #samples < 15 then return end
         if self:_isDead() then return end
         local total = 0
@@ -1237,6 +1241,8 @@ function Library:_detectPerfTier()
         elseif fps < 40 then score = score - 1
         elseif fps > 55 then score = score + 1 end
         local tier = (score <= 1 and "Potato") or (score <= 3 and "Balanced") or "High"
+        if myGen ~= self._perfDetectGen then return end
+        if self._perfAuto == false then return end
         if tier ~= self._perfTier then
             self:SetPerformanceTier(tier, true)
         end
@@ -1292,6 +1298,9 @@ function Library:SetPerformanceTier(tier, silent)
         warn("[DoD UI] SetPerformanceTier failed: " .. tostring(err))
         return
     end
+    if self._initialized and not _prevLoading then
+        self:_triggerThemeSave()
+    end
     if not silent then
         self:Notify("PERFORMANCE", "Mode: " .. tier, "info")
     end
@@ -1302,7 +1311,7 @@ function Library:_startPerfWatchdog()
         task.wait(3)
         while not self:_isDead() do
             task.wait(3)
-            if self._perfAuto ~= false then
+            if self._perfAuto == true then
                 local samples = {}
                 local conn
                 conn = RunService.RenderStepped:Connect(function(dt)
