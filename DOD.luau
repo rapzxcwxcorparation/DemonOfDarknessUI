@@ -2515,7 +2515,7 @@ function Library:_initMainGui()
     local UI = self._UI
     UI.MainGui = Instance.new("ScreenGui")
     UI.MainGui.Name = "DoD_UI_Main"
-    UI.Maingui.Parent = GuiParent
+    UI.MainGui.Parent = GuiParent
     UI.MainGui.ResetOnSpawn = false
     UI.MainGui.IgnoreGuiInset = true
     UI.MainGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
@@ -4590,13 +4590,12 @@ function Library:_initTrafficLights()
 
     local hudTweenInfo = TweenInfo.new(0.3, Enum.EasingStyle.Quart, Enum.EasingDirection.Out)
 
-    local layoutOwned = {
-        [UI.BottomPill] = true,
-        [UI.SideProfileMini] = true,
-        [UI.AccordionScroll] = true,
-        [UI.SearchBar] = true,
-    }
     local function hideChildren(visible)
+        local layoutOwned = {}
+        if UI.BottomPill then layoutOwned[UI.BottomPill] = true end
+        if UI.SideProfileMini then layoutOwned[UI.SideProfileMini] = true end
+        if UI.AccordionScroll then layoutOwned[UI.AccordionScroll] = true end
+        if UI.SearchBar then layoutOwned[UI.SearchBar] = true end
         for _, child in ipairs(UI.MainContainer:GetChildren()) do
             -- Layout-owned widgets are managed by _applyNavigationLayout; blindly
             -- restoring them painted the bottom pill / profile card over the
