@@ -25,10 +25,16 @@ Library.__index = Library
 
 -- Load Icons Library (Footagesus/Icons)
 local IconsV2
-pcall(function()
+local _iconsOk, _iconsErr = pcall(function()
     IconsV2 = loadstring(game:HttpGetAsync("https://raw.githubusercontent.com/Footagesus/Icons/main/Main-v2.lua"))()
     IconsV2.SetIconsType("lucide")
 end)
+-- Surface the failure instead of silently degrading every icon to the fallback
+-- set with no diagnostic.
+if not _iconsOk or not IconsV2 then
+    warn("[DoD UI] Icon pack unavailable (" .. tostring(_iconsErr) .. "), using built-in fallbacks")
+    IconsV2 = nil
+end
 
 local _IconCache = {}
 local _FallbackIcons = {
@@ -114,7 +120,9 @@ local _RealTweenService  = game:GetService("TweenService")
 local TweenService = {
     Create = function(_, obj, info, props)
         if _ReducedMotion and info then
-            info = TweenInfo.new(0, info.EasingStyle, info.EasingDirection, info.RepeatCount, info.Reverses, info.DelayTime)
+            -- Also drop RepeatCount/DelayTime: an infinitely repeating or delayed
+            -- tween kept waiting forever and never fired Completed.
+            info = TweenInfo.new(0, Enum.EasingStyle.Linear, Enum.EasingDirection.Out, 0, false, 0)
         end
         return _RealTweenService:Create(obj, info, props)
     end,
@@ -125,6 +133,36 @@ local SoundService       = game:GetService("SoundService")
 local LocalPlayer        = Players.LocalPlayer
 
 local function getCam() return workspace.CurrentCamera end
+
+-- CoreGui is protected for some executors; fall back to gethui() (the standard
+-- hidden-GUI API) and finally to PlayerGui instead of erroring out of the whole
+-- constructor.
+local function GetGuiParent()
+    local ok, hidden = pcall(function()
+        if gethui then return gethui() end
+        if get_hidden_gui then return get_hidden_gui() end
+        return nil
+    end)
+    if ok and hidden then return hidden end
+    local okCore, core = pcall(function() return game:GetService("CoreGui") end)
+    if okCore and core then
+        local probeOk = pcall(function() return core.Name end)
+        if probeOk then return core end
+    end
+    return Players.LocalPlayer:WaitForChild("PlayerGui")
+end
+
+local GuiParent = GetGuiParent()
+
+local function findInGuiParents(name)
+    local found = GuiParent and GuiParent:FindFirstChild(name)
+    if found then return found end
+    local ok, core = pcall(function() return game:GetService("CoreGui") end)
+    if ok and core and core ~= GuiParent then
+        return core:FindFirstChild(name)
+    end
+    return nil
+end
 
 local GuiSound = {
     Click     = { id = "rbxassetid://6895079853", pitch = 1.10, vol = 0.45 },
@@ -149,6 +187,12 @@ Fn.track = function(signal, callback, owner)
         error("[DoD UI] Tracked connections require a library owner.")
     end
     local conn = signal:Connect(callback)
+    -- A tracked connection created by a deferred thread after Destroy() would be
+    -- appended to a table that has already been drained and never disconnected.
+    if owner._STATE.Destroyed or owner._STATE._destroying then
+        pcall(function() conn:Disconnect() end)
+        return conn
+    end
     table.insert(owner._STATE.TrackedConns, conn)
     return conn
 end
@@ -685,7 +729,9 @@ function SubTabModule:_createSubGroup(mainCategory, subList)
         btn.MouseEnter:Connect(function()
             if self.Owner then self.Owner:PlaySound("Hover") end
             if self.ActiveSubIndices[mainCategory] ~= i then
-                TweenService:Create(btn, TweenInfo.new(0.18), {TextColor3 = Color3.fromRGB(200, 200, 215)}):Play()
+                TweenService:Create(btn, TweenInfo.new(0.18), {
+                    TextColor3 = self.Theme.TextActive or Color3.fromRGB(255, 255, 255)
+                }):Play()
             end
         end)
         btn.MouseLeave:Connect(function()
@@ -728,10 +774,18 @@ function SubTabModule:SwitchCategory(newCategory)
     self.CurrentMainCategory = newCategory
     if oldCategory and self.Groups[oldCategory] then
         local oldGroup = self.Groups[oldCategory].Group
+        self._switchToken = {}
+        local token = self._switchToken
         TweenService:Create(oldGroup, TweenInfo.new(0.15, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
             GroupTransparency = 1
         }):Play()
-        task.delay(0.15, function() oldGroup.Visible = false end)
+        task.delay(0.15, function()
+            -- Guard against A->B->A within 150ms hiding the group that is now active.
+            if self._switchToken ~= token then return end
+            if self.CurrentMainCategory ~= oldCategory then
+                oldGroup.Visible = false
+            end
+        end)
     end
     local newGroupData = self.Groups[newCategory]
     local newGroup = newGroupData.Group
@@ -836,11 +890,11 @@ function Library.new(opts)
     else
         _gv._DoD_ActiveInstances = {}
     end
-    local oldMain = CoreGui:FindFirstChild("DoD_UI_Main")
+    local oldMain = findInGuiParents("DoD_UI_Main")
     if oldMain then oldMain:Destroy() end
-    local oldNotif = CoreGui:FindFirstChild("DoD_UI_Notifications")
+    local oldNotif = findInGuiParents("DoD_UI_Notifications")
     if oldNotif then oldNotif:Destroy() end
-    local oldTooltip = CoreGui:FindFirstChild("DoD_UI_Tooltip")
+    local oldTooltip = findInGuiParents("DoD_UI_Tooltip")
     if oldTooltip then oldTooltip:Destroy() end
     local oldBlur = Lighting:FindFirstChild("DoD_UI_Blur")
     if oldBlur then oldBlur:Destroy() end
@@ -856,6 +910,12 @@ function Library.new(opts)
     self.Version     = opts.Version or "v1.2"
     self.Author      = opts.Author or "@DemonOfDarkness"
     self.ThemeName   = opts.Theme or "Demon of Darkness"
+    -- SetTheme now reports unknown names instead of silently falling back to Dark,
+    -- so an invalid opts.Theme is coerced to the default here instead.
+    if type(self.ThemeName) ~= "string" or not D.Themes[self.ThemeName] then
+        warn("[DoD UI] Unknown theme '" .. tostring(opts.Theme) .. "', using 'Demon of Darkness'")
+        self.ThemeName = "Demon of Darkness"
+    end
     self.TabPosition = opts.TabPosition or "Top"
     self.TabWidth    = opts.TabWidth or 130
     self.ToggleKey   = opts.ToggleKey or Enum.KeyCode.RightShift
@@ -894,7 +954,10 @@ function Library.new(opts)
     self.WindowSize = opts.Size or UDim2.fromOffset(750, 500)
     self.WallpaperSource = opts.Wallpaper
     self.WallpaperTransparency = opts.WallpaperTransparency or 0
-    self.AutoTheme = opts.AutoTheme ~= false
+    -- Opt-in: this "derives" a palette from the URL string (it does not analyse
+    -- the image) and then overrides whatever theme the user picked, so it must
+    -- not happen by surprise.
+    self.AutoTheme = opts.AutoTheme == true
     self.Acrylic = opts.Acrylic ~= false
     self._SmartThemeAutoFix = opts.SmartThemeAutoFix ~= false
     if opts.AcrylicBlur == nil then
@@ -947,17 +1010,10 @@ function Library.new(opts)
     self._UI = {}
     self._isMobile = UserInputService.TouchEnabled and not UserInputService.MouseEnabled
     self._perfAuto = opts.AutoPerformance ~= false
-    local _qScore = 5
-    if self._isMobile then _qScore = _qScore - 3
-    elseif UserInputService.TouchEnabled then _qScore = _qScore - 1 end
-    local _qCam = getCam()
-    if _qCam then
-        local _qPx = _qCam.ViewportSize.X * _qCam.ViewportSize.Y
-        if _qPx < 500000 then _qScore = _qScore - 2
-        elseif _qPx < 1000000 then _qScore = _qScore - 1
-        elseif _qPx > 2000000 then _qScore = _qScore + 1 end
-    end
-    self._perfTier = (_qScore <= 1 and "Potato") or (_qScore <= 3 and "Balanced") or "High"
+    -- Provisional tier only (cheap, no sampling). _detectPerfTier() at the end of
+    -- the constructor replaces it with a measured one; the duplicated scoring
+    -- block that used to sit here was dead work.
+    self._perfTier = self._isMobile and "Balanced" or "High"
     self._perfProfile = D.PerfProfiles[self._perfTier] or D.PerfProfiles.High
     self._CustomColorOverrides = {}
     self._NotifPosition = opts.NotificationPosition or "TopRight"
@@ -1020,7 +1076,10 @@ function Library.new(opts)
         WeatherEnabled      = false,
         WeatherType         = (opts.Weather and opts.Weather.Type) or "Snow",
         WeatherIntensity    = (opts.Weather and opts.Weather.Intensity) or 65,
-        FocusOverlayEnabled = opts.FocusOverlay ~= false,
+        -- Opt-in: a full-screen dim + a 12px BlurEffect on the whole viewport is
+        -- the single most expensive thing this library can do, so it no longer
+        -- switches itself on for every user. Enable it from Theme Customizer.
+        FocusOverlayEnabled = opts.FocusOverlay == true,
         FocusOverlayType    = opts.FocusOverlayType or "Grid",
         notifParts          = {},
         SnowParticles       = {},
@@ -1119,7 +1178,11 @@ function Library.new(opts)
     self._initialized = true
 
     if opts.ThemeAutoLoad ~= false then
-        self:LoadThemeConfig("settings", true)
+        -- Honour the last theme the user actually saved/loaded instead of always
+        -- reloading "settings" (which made custom-named themes unreachable).
+        local _themeGenv = (getgenv and getgenv()) or _G
+        local _lastTheme = _themeGenv.DoD_LastTheme
+        self:LoadThemeConfig(type(_lastTheme) == "string" and _lastTheme or "settings", true)
     end
 
     task.defer(function()
@@ -1142,6 +1205,10 @@ function Library.new(opts)
     elseif self._perfAuto then
         local _initTier = self:_detectPerfTier()
         self:SetPerformanceTier(_initTier, true)
+    else
+        -- AutoPerformance = false used to skip applying the profile entirely, so
+        -- the UI claimed a tier while acrylic/blur/particles were still all on.
+        self:SetPerformanceTier(self._perfTier, true)
     end
     self:_startPerfWatchdog()
 
@@ -1274,8 +1341,8 @@ function Library:SetPerformanceTier(tier, silent)
         end
         if self._STATE.WeatherEnabled then
             if p.WeatherEnabled then
-                self:SetWeather(true, self._STATE.WeatherType,
-                    math.min(self._STATE.WeatherIntensity, p.WeatherIntensity))
+                -- Never write the clamped value back into the user's setting.
+                self:SetWeather(true, self._STATE.WeatherType, nil)
             else
                 self:_stopWeather()
             end
@@ -1320,24 +1387,52 @@ end
 function Library:_startPerfWatchdog()
     task.spawn(function()
         task.wait(3)
+        local goodStreak = 0
+        local badStreak = 0
         while not self:_isDead() do
-            task.wait(3)
+            -- Back off on the lowest tier: the sampler is itself a per-frame cost
+            -- and there is nothing below Potato to fall back to.
+            task.wait(self._perfTier == "Potato" and 12 or 4)
+            if self:_isDead() then return end
             if self._perfAuto == true then
                 local samples = {}
                 local conn
                 conn = RunService.RenderStepped:Connect(function(dt)
-                    if #samples < 120 then table.insert(samples, dt) end
+                    if #samples < 90 then table.insert(samples, dt) end
                 end)
-                task.wait(0.5)
+                task.wait(0.6)
                 if conn then conn:Disconnect() end
                 if #samples >= 10 then
                     local total = 0
                     for _, d in ipairs(samples) do total = total + d end
                     local fps = #samples / math.max(total, 0.001)
-                    if fps < 28 and self._perfTier ~= "Potato" then
-                        self:SetPerformanceTier("Potato", false)
-                    elseif fps < 42 and self._perfTier == "High" then
-                        self:SetPerformanceTier("Balanced", false)
+                    if fps < 30 then
+                        badStreak = badStreak + 1
+                        goodStreak = 0
+                    elseif fps > 58 then
+                        goodStreak = goodStreak + 1
+                        badStreak = 0
+                    else
+                        goodStreak = 0
+                        badStreak = 0
+                    end
+                    -- Two consecutive bad windows before stepping down, so a
+                    -- single hitch (tab build, teleport, server lag spike) can no
+                    -- longer pin the UI at Potato for the whole session.
+                    if badStreak >= 2 then
+                        badStreak = 0
+                        if self._perfTier == "High" then
+                            self:SetPerformanceTier("Balanced", false)
+                        elseif self._perfTier == "Balanced" then
+                            self:SetPerformanceTier("Potato", false)
+                        end
+                    elseif goodStreak >= 3 then
+                        goodStreak = 0
+                        if self._perfTier == "Potato" then
+                            self:SetPerformanceTier("Balanced", true)
+                        elseif self._perfTier == "Balanced" then
+                            self:SetPerformanceTier("High", true)
+                        end
                     end
                 end
             end
@@ -1358,7 +1453,20 @@ end
 
 function Library:SetTheme(themeName, silent)
     if self:_isDead() then return end
-    local actualName = (type(themeName) == "string" and D.Themes[themeName]) and themeName or "Dark"
+    local actualName
+    if type(themeName) == "string" and D.Themes[themeName] then
+        actualName = themeName
+    else
+        -- Report instead of silently resetting the user's theme to Dark and
+        -- adopting "Dark" as the current name.
+        warn("[DoD UI] Unknown theme '" .. tostring(themeName) .. "', keeping " .. tostring(self.ThemeName))
+        return
+    end
+    -- An explicit theme change wins over a one-off accent override; otherwise the
+    -- accent stuck forever and flattened two-tone palettes after the first tweak.
+    if self._applyingAccent ~= true then
+        self._AccentOverride = nil
+    end
     local theme = self:_applyThemeColors(actualName)
     self.ThemeName = actualName
 
@@ -1490,7 +1598,11 @@ function Library:SetAccentColor(color)
         error("[DoD UI] SetAccentColor expects a Color3 value.")
     end
     self._AccentOverride = color
+    -- Flag the internal re-apply so SetTheme does not clear the override we just
+    -- set, while a normal theme change still resets it.
+    self._applyingAccent = true
     self:SetTheme(self.ThemeName, true)
+    self._applyingAccent = false
 end
 
 function Library:SetAcrylic(enabled, blurIntensity)
@@ -1570,10 +1682,20 @@ function Library:SetSectionTransparency(transparency)
     if self:_isDead() then return end
     local trans = math.clamp(tonumber(transparency) or 0.15, 0, 1)
     self._STATE.SectionTransparency = trans
+    -- Direct assignment, and it now also applies to the control rows: the setting
+    -- used to tween every section on every slider tick while barely changing
+    -- anything visible.
+    local rowTrans = math.clamp(trans + 0.1, 0, 1)
     for _, sections in pairs(self._STATE.SearchSections) do
         for _, sec in ipairs(sections) do
             if sec.section and sec.section.Parent then
-                TweenService:Create(sec.section, TweenInfo.new(0.18), {BackgroundTransparency = trans}):Play()
+                sec.section.BackgroundTransparency = trans
+                for _, control in ipairs(sec.controls or {}) do
+                    local inst = control.instance
+                    if inst and inst.Parent and inst:IsA("GuiObject") then
+                        inst.BackgroundTransparency = rowTrans
+                    end
+                end
             end
         end
     end
@@ -1661,7 +1783,7 @@ end
 function Library:_initNotifications()
     local gui = Instance.new("ScreenGui")
     gui.Name = "DoD_UI_Notifications"
-    gui.Parent = CoreGui
+    gui.Parent = GuiParent
     gui.ResetOnSpawn = false
     gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
     gui.DisplayOrder = 2000
@@ -1696,13 +1818,14 @@ end
 
 function Library:Confirm(title, text, onYes, onNo)
     if self:_isDead() then return end
-    if not self._UI.MainGui or not self._UI.MainGui.Parent then return end
-    if self._ConfirmAnimating then return end
-    self._ConfirmAnimating = true
-
-    if self._ActiveConfirm and self._ActiveConfirm.Parent then
-        self._ActiveConfirm:Destroy()
+    if not self._UI.MainContainer or not self._UI.MainContainer.Parent then return end
+    -- Drop any stale modal first: the old guard returned while this cleanup was
+    -- unreachable, so one interrupted Confirm locked the API forever.
+    if self._ActiveConfirm then
+        pcall(function() self._ActiveConfirm:Destroy() end)
+        self._ActiveConfirm = nil
     end
+    self._ConfirmAnimating = true
 
     local overlay = Instance.new("TextButton")
     overlay.Name = "DoD_ConfirmOverlay"
@@ -1712,7 +1835,9 @@ function Library:Confirm(title, text, onYes, onNo)
     overlay.Text = ""
     overlay.AutoButtonColor = false
     overlay.ZIndex = 9500
-    overlay.Parent = self._UI.MainGui
+    -- Parented to MainContainer (not the ScreenGui) so closing/minimising the
+    -- window takes the modal with it instead of leaving a full-screen click trap.
+    overlay.Parent = self._UI.MainContainer
 
     local _cCam = getCam()
     local _cVpX = (_cCam and _cCam.ViewportSize.X) or 800
@@ -1828,6 +1953,9 @@ function Library:Confirm(title, text, onYes, onNo)
         TweenService:Create(confirm, info, {BackgroundTransparency = 1, TextTransparency = 1}):Play()
         task.delay(0.18, function()
             if overlay.Parent then overlay:Destroy() end
+            if self._ActiveConfirm == overlay then self._ActiveConfirm = nil end
+            self._ConfirmAnimating = false
+            if self:_isDead() then return end
             if confirmed then
                 if onYes then
                     local ok, err = pcall(onYes)
@@ -1885,12 +2013,17 @@ end
 function Library:ExportConfig()
     if self:_isDead() then return {} end
     local out = { _version = self.Version, _theme = self.ThemeName, _controls = {}, _timestamp = os.time() }
+    local failures = 0
     for id, entry in pairs(self._STATE.ConfigRegistry or {}) do
         local ok, val = pcall(entry.get)
         if ok and val ~= nil then
             out._controls[id] = val
+        elseif not ok then
+            -- Track failures instead of silently writing an incomplete config.
+            failures = failures + 1
         end
     end
+    self._lastExportFailures = failures
     out._favorites = {}
     for id, val in pairs(self._STATE.Favorites or {}) do
         if val then table.insert(out._favorites, id) end
@@ -1911,6 +2044,9 @@ function Library:ImportConfig(config, silent)
                 self._STATE.Favorites[id] = true
             end
         end
+        for id in pairs(self._STATE.FavoriteStars or {}) do
+            self:_updateFavoriteStar(id)
+        end
         self:_applySearchFilter()
     end
     local applied, total = 0, 0
@@ -1918,7 +2054,10 @@ function Library:ImportConfig(config, silent)
         total = total + 1
         local entry = self._STATE.ConfigRegistry and self._STATE.ConfigRegistry[id]
         if entry and entry.set then
-            local ok = pcall(entry.set, val, true)
+            -- The setter's second argument means "do not fire the user callback".
+            -- It used to be hard-coded true, so loading a config only repainted
+            -- the widgets and never applied anything to the script that owns them.
+            local ok = pcall(entry.set, val, silent == true)
             if ok then applied = applied + 1 end
         end
     end
@@ -1927,7 +2066,10 @@ function Library:ImportConfig(config, silent)
     end
 end
 
-function Library:GetConfigs()
+function Library:GetConfigs(force)
+    if self._configsCache and not force then
+        return self._configsCache
+    end
     local configs = {}
     local prefix = "DoD_UI_"
     local suffix = ".json"
@@ -1935,7 +2077,8 @@ function Library:GetConfigs()
     pcall(function()
         if listfiles and type(listfiles) == "function" then
             for _, file in ipairs(listfiles()) do
-                if string.sub(file, 1, #prefix) == prefix and string.sub(file, -#suffix) == suffix then
+                local base = string.match(tostring(file), "[^\\/]+$") or tostring(file)
+                if string.sub(base, 1, #prefix) == prefix and string.sub(base, -#suffix) == suffix then
                     local ok, content = pcall(readfile, file)
                     local timestamp = 0
                     if ok and content then
@@ -1944,14 +2087,20 @@ function Library:GetConfigs()
                             timestamp = data._timestamp
                         end
                     end
-                    local name = string.sub(file, #prefix + 1, #file - #suffix)
+                    local name = string.match(base, "^" .. prefix .. "(.+)%.json$")
+                        or string.sub(base, #prefix + 1, #base - #suffix)
                     table.insert(configs, { name = name, file = file, time = timestamp })
                 end
             end
-        else
-            local g = (getgenv and getgenv()) or _G
-            if g.__DoDConfigs then
-                for name, json in pairs(g.__DoDConfigs) do
+        end
+        -- Always merge the in-memory store, so configs saved on executors without
+        -- a filesystem still show up.
+        local g = (getgenv and getgenv()) or _G
+        if g.__DoDConfigs then
+            local seen = {}
+            for _, entry in ipairs(configs) do seen[entry.name] = true end
+            for name, json in pairs(g.__DoDConfigs) do
+                if not seen[name] then
                     local timestamp = 0
                     local ok, data = pcall(function() return game:GetService("HttpService"):JSONDecode(json) end)
                     if ok and data and data._timestamp then
@@ -1967,17 +2116,17 @@ function Library:GetConfigs()
         return (a.time or 0) > (b.time or 0)
     end)
 
+    self._configsCache = configs
     return configs
 end
 
 function Library:SaveConfig(name, silent)
-    if self:_isDead() then return end
-    if type(name) ~= "string" or name == "" then return end
+    if self:_isDead() then return false end
+    if type(name) ~= "string" or name == "" then return false end
     name = name:gsub("[^%w_%-]", "_")
-    if name == "" then return end
+    if name == "" then return false end
     
     local g = (getgenv and getgenv()) or _G
-    g.DoD_LastConfig = name
 
     local data = self:ExportConfig()
     local ok, json = pcall(function()
@@ -1985,25 +2134,29 @@ function Library:SaveConfig(name, silent)
     end)
     if not ok or type(json) ~= "string" then
         if not silent then self:Notify("CONFIG", "JSON encode failed", "error") end
-        return
+        return false
     end
     local path = "DoD_UI_" .. name .. ".json"
-    local saved = false
+    -- Mirror to memory too, then report honestly whether the file write worked.
+    g.__DoDConfigs = g.__DoDConfigs or {}
+    g.__DoDConfigs[name] = json
+    local fileOk = false
     pcall(function()
         if writefile and type(writefile) == "function" then
             writefile(path, json)
-            saved = true
+            fileOk = true
         end
     end)
-    if not saved then
-        local g = (getgenv and getgenv()) or _G
-        g.__DoDConfigs = g.__DoDConfigs or {}
-        g.__DoDConfigs[name] = json
-        saved = true
+    g.DoD_LastConfig = name
+    self._configsCache = nil
+    if not silent then
+        if fileOk then
+            self:Notify("CONFIG", "Saved: " .. name, "success")
+        else
+            self:Notify("CONFIG", "Saved (memory only): " .. name, "warning")
+        end
     end
-    if saved and not silent then
-        self:Notify("CONFIG", "Saved: " .. name, "success")
-    end
+    return true
 end
 
 function Library:LoadConfig(name, silent)
@@ -2026,16 +2179,17 @@ function Library:LoadConfig(name, silent)
     end
     if type(json) ~= "string" then
         if not silent then self:Notify("CONFIG", "Not found: " .. name, "warning") end
-        return
+        return false
     end
     local ok, data = pcall(function()
         return game:GetService("HttpService"):JSONDecode(json)
     end)
     if not ok or type(data) ~= "table" then
         if not silent then self:Notify("CONFIG", "Decode failed", "error") end
-        return
+        return false
     end
     self:ImportConfig(data, silent)
+    return true
 end
 
 function Library:EnableAutoSave(name)
@@ -2058,9 +2212,19 @@ function Library:Notify(title, text, notifyType)
     notifyType = tostring(notifyType or "info")
     
     if STATE.NotifActive >= STATE.NotifMax then
-        table.insert(STATE.NotifQueue, { title = title, text = text, nType = notifyType })
-        while #STATE.NotifQueue > 10 do
-            table.remove(STATE.NotifQueue, 1)
+        local queue = STATE.NotifQueue
+        table.insert(queue, { title = title, text = text, nType = notifyType })
+        -- When the backlog is full, drop informational toasts before errors, so
+        -- the messages that actually matter survive a burst.
+        while #queue > 10 do
+            local dropIndex = 1
+            for i, entry in ipairs(queue) do
+                if entry.nType ~= "error" and entry.nType ~= "warning" then
+                    dropIndex = i
+                    break
+                end
+            end
+            table.remove(queue, dropIndex)
         end
         return
     end
@@ -2068,8 +2232,8 @@ function Library:Notify(title, text, notifyType)
     self:PlaySound("Notify")
 
     task.spawn(function()
+        local ok, err = pcall(function()
         if STATE.Destroyed or not self._UI.NotifGui or not self._UI.NotifGui.Parent then
-            STATE.NotifActive = math.max(0, STATE.NotifActive - 1)
             return
         end
         local palette = self._Colors or {}
@@ -2178,7 +2342,6 @@ function Library:Notify(title, text, notifyType)
         if STATE.Destroyed or not frame.Parent then
             STATE.notifParts[frame] = nil
             if frame.Parent then frame:Destroy() end
-            STATE.NotifActive = math.max(0, STATE.NotifActive - 1)
             return
         end
         self:_updateNotifPositions()
@@ -2188,7 +2351,6 @@ function Library:Notify(title, text, notifyType)
         TweenService:Create(icon, TweenInfo.new(0.2), {ImageTransparency = 1}):Play()
         TweenService:Create(frameStroke, TweenInfo.new(0.2), {Transparency = 1}):Play()
 
-        local nPos = self._NotifPosition or "TopRight"
         local exitX = UDim2.new(1, 15, 0, frame.Position.Y.Offset)
         if nPos == "TopLeft" or nPos == "BottomLeft" then
             exitX = UDim2.new(0, -300, 0, frame.Position.Y.Offset)
@@ -2203,12 +2365,21 @@ function Library:Notify(title, text, notifyType)
             {Position = exitX, BackgroundTransparency = 1}
         )
         out:Play()
-        out.Completed:Wait()
+        -- Fixed wait instead of Completed:Wait(): a cancelled tween would suspend
+        -- this coroutine forever, pinning the library and one notification slot.
+        task.wait(0.35)
         STATE.notifParts[frame] = nil
         if frame.Parent then frame:Destroy() end
+        end)
+        if not ok then
+            warn("[DoD UI] Notify failed: " .. tostring(err))
+        end
+        -- Exactly one slot is released here, on every exit path.
         STATE.NotifActive = math.max(0, STATE.NotifActive - 1)
-        local nxt = table.remove(STATE.NotifQueue, 1)
-        if nxt and not STATE.Destroyed then self:Notify(nxt.title, nxt.text, nxt.nType) end
+        if not STATE.Destroyed then
+            local nxt = table.remove(STATE.NotifQueue, 1)
+            if nxt then self:Notify(nxt.title, nxt.text, nxt.nType) end
+        end
     end)
 end
 
@@ -2268,19 +2439,21 @@ function Library:ShowLoading(label)
             pcall(function() self._loadingSpinConn:Disconnect() end)
             self._loadingSpinConn = nil
         end
-        self._loadingSpinConn = RunService.RenderStepped:Connect(function(dt)
+        self._loadingSpinConn = Fn.track(RunService.RenderStepped, function(dt)
+            if _ReducedMotion then return end
             if not spinner or not spinner.Parent then
                 if self._loadingSpinConn then
-                    self._loadingSpinConn:Disconnect()
+                    Fn.untrack(self._loadingSpinConn, self)
                     self._loadingSpinConn = nil
                 end
                 return
             end
             angle = (angle + dt * 360) % 360
             spinner.Rotation = angle
-        end)
+        end, self)
     else
         UI.LoadingLabel.Text = tostring(label or "Loading...")
+        if UI.LoadingBar then UI.LoadingBar.Size = UDim2.new(0, 0, 0, 2) end
     end
 end
 
@@ -2294,12 +2467,14 @@ end
 
 function Library:HideLoading()
     if self:_isDead() then return end
-    local frame = self._UI.LoadingFrame
-    if not frame or not frame.Parent then return end
+    -- Stop the spinner before the early-out, otherwise a frame that was already
+    -- unparented leaves the RenderStepped rotation running forever.
     if self._loadingSpinConn then
-        self._loadingSpinConn:Disconnect()
+        pcall(function() Fn.untrack(self._loadingSpinConn, self) end)
         self._loadingSpinConn = nil
     end
+    local frame = self._UI.LoadingFrame
+    if not frame or not frame.Parent then return end
     local out = TweenService:Create(frame, TweenInfo.new(0.2), {BackgroundTransparency = 1})
     out:Play()
     out.Completed:Connect(function()
@@ -2315,11 +2490,32 @@ end
 -- MAIN GUI
 -- =========================================================
 
+-- Re-binds a viewport handler whenever the active camera is replaced (respawn,
+-- first-person toggle, cinematic cut). The old code captured one Camera at
+-- construction and stayed frozen on it for the rest of the session.
+function Library:_bindViewportSignal(callback)
+    local camConn
+    local function attach()
+        if camConn then pcall(function() camConn:Disconnect() end) end
+        camConn = nil
+        local cam = getCam()
+        if cam then
+            camConn = Fn.track(cam:GetPropertyChangedSignal("ViewportSize"), callback, self)
+        end
+    end
+    attach()
+    Fn.track(workspace:GetPropertyChangedSignal("CurrentCamera"), function()
+        if self:_isDead() then return end
+        attach()
+        pcall(callback)
+    end, self)
+end
+
 function Library:_initMainGui()
     local UI = self._UI
     UI.MainGui = Instance.new("ScreenGui")
     UI.MainGui.Name = "DoD_UI_Main"
-    UI.MainGui.Parent = CoreGui
+    UI.Maingui.Parent = GuiParent
     UI.MainGui.ResetOnSpawn = false
     UI.MainGui.IgnoreGuiInset = true
     UI.MainGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
@@ -2335,22 +2531,27 @@ function Library:_initMainGui()
     UI.CustomCursor.ZIndex = 100000
     UI.CustomCursor.Visible = false
 
+    -- Remember the game's own cursor/camera state so closing the UI can hand it
+    -- back instead of permanently unlocking the mouse.
+    self._savedMouseIconEnabled = UserInputService.MouseIconEnabled
+    self._savedMouseBehavior = UserInputService.MouseBehavior
+    self._overGui = false
+
+    local function pointIn(frame, mx, my)
+        if not frame or not frame.Parent or not frame.Visible then return false end
+        local pos, size = frame.AbsolutePosition, frame.AbsoluteSize
+        return mx >= pos.X and mx <= pos.X + size.X and my >= pos.Y and my <= pos.Y + size.Y
+    end
+
     Fn.track(RunService.RenderStepped, function()
-        if self._STATE.Destroyed then
-            if UI.CustomCursor and UI.CustomCursor.Visible then
-                UI.CustomCursor.Visible = false
-            end
-            if not self._isMobile and not UserInputService.MouseIconEnabled then
-                UserInputService.MouseIconEnabled = true
-            end
-            return
-        end
+        if self._STATE.Destroyed then return end
 
         if self._isMobile then
             if UI.CustomCursor and UI.CustomCursor.Visible then
                 UI.CustomCursor.Visible = false
             end
-            if not UserInputService.MouseIconEnabled then
+            if self._overGui then
+                self._overGui = false
                 UserInputService.MouseIconEnabled = true
             end
             return
@@ -2358,54 +2559,43 @@ function Library:_initMainGui()
 
         local mouse = UserInputService:GetMouseLocation()
         local overGui = false
-        
-        local function checkBounds(frame)
-            if frame and frame.Parent and frame.Visible then
-                local ok, result = pcall(function()
-                    local pos, size = frame.AbsolutePosition, frame.AbsoluteSize
-                    return (mouse.X >= pos.X and mouse.X <= pos.X + size.X and
-                            mouse.Y >= pos.Y and mouse.Y <= pos.Y + size.Y)
-                end)
-                if ok then return result end
-            end
-            return false
-        end
 
         if self._STATE.GuiVisible then
-            if UserInputService.MouseBehavior ~= Enum.MouseBehavior.Default then
-                UserInputService.MouseBehavior = Enum.MouseBehavior.Default
+            overGui = pointIn(UI.MainContainer, mouse.X, mouse.Y)
+            if not overGui then
+                overGui = pointIn(UI.KeybindOverlay, mouse.X, mouse.Y)
             end
-
-            if checkBounds(UI.MainContainer) or checkBounds(UI.KeybindOverlay) then
-                overGui = true
-            end
-        else
-            if checkBounds(UI.MinimizeButton) then
-                overGui = true
-            end
-        end
-
-        if overGui then
-            if not self._isMobile then
-                if UI.CustomCursor and not UI.CustomCursor.Visible then
-                    UI.CustomCursor.Visible = true
-                end
-                if UserInputService.MouseIconEnabled then
-                    UserInputService.MouseIconEnabled = false
+            if not overGui and self._STATE.activeDropdownPopups then
+                for _, entry in ipairs(self._STATE.activeDropdownPopups) do
+                    if pointIn(entry.popup, mouse.X, mouse.Y) then
+                        overGui = true
+                        break
+                    end
                 end
             end
         else
-            if not self._isMobile then
-                if UI.CustomCursor and UI.CustomCursor.Visible then
-                    UI.CustomCursor.Visible = false
-                end
-                if not UserInputService.MouseIconEnabled then
-                    UserInputService.MouseIconEnabled = true
+            overGui = pointIn(UI.MinimizeButton, mouse.X, mouse.Y)
+        end
+
+        -- Transition-only writes: this used to touch UserInputService, the cursor
+        -- label and MouseBehaviour on every single frame.
+        if overGui ~= self._overGui then
+            self._overGui = overGui
+            if UI.CustomCursor then
+                UI.CustomCursor.Visible = overGui
+            end
+            if UserInputService.MouseIconEnabled ~= (not overGui) then
+                UserInputService.MouseIconEnabled = not overGui
+            end
+            if self._STATE.GuiVisible then
+                local wantBehavior = overGui and Enum.MouseBehavior.Default or self._savedMouseBehavior
+                if wantBehavior and UserInputService.MouseBehavior ~= wantBehavior then
+                    UserInputService.MouseBehavior = wantBehavior
                 end
             end
         end
-        
-        if UI.CustomCursor and UI.CustomCursor.Visible then
+
+        if overGui and UI.CustomCursor then
             UI.CustomCursor.Position = UDim2.fromOffset(mouse.X, mouse.Y)
         end
         self:_updateCursorTrail(mouse)
@@ -2499,24 +2689,32 @@ function Library:_initMainGui()
         end
     end, self)
 
-    self._particleBGConn = RunService.RenderStepped:Connect(function(dt)
+    local _particleAccum = 0
+    self._particleBGConn = Fn.track(RunService.RenderStepped, function(dt)
         if not UI.ParticleBG.Visible then return end
+        if _ReducedMotion then return end
+        -- Decorative motion does not need render rate: 30 Hz is indistinguishable
+        -- here and halves the property writes.
+        _particleAccum = _particleAccum + dt
+        if _particleAccum < 1 / 30 then return end
+        local step = _particleAccum
+        _particleAccum = 0
         for _, data in ipairs(particles) do
             local pos = data.obj.Position
-            local nx = pos.X.Scale + data.speedX * dt * 10
-            local ny = pos.Y.Scale + data.speedY * dt * 10
+            local nx = pos.X.Scale + data.speedX * step * 10
+            local ny = pos.Y.Scale + data.speedY * step * 10
             if nx < 0 then nx = 1 elseif nx > 1 then nx = 0 end
             if ny < 0 then ny = 1 elseif ny > 1 then ny = 0 end
             data.obj.Position = UDim2.fromScale(nx, ny)
         end
-    end)
+    end, self)
 
-    -- AUTO DEFENDER: Langsung sembunyiin kursor asli kalau game coba munculin
+    -- Keeps the custom cursor authoritative, but only while the pointer is
+    -- actually over our UI (the old version re-hid the OS cursor everywhere).
     Fn.track(UserInputService:GetPropertyChangedSignal("MouseIconEnabled"), function()
-        if self._STATE and not self._STATE.Destroyed then
-            if UserInputService.MouseIconEnabled and UI.CustomCursor and UI.CustomCursor.Visible then
-                UserInputService.MouseIconEnabled = false
-            end
+        if not self._STATE or self._STATE.Destroyed then return end
+        if self._overGui and not self._isMobile and UserInputService.MouseIconEnabled then
+            UserInputService.MouseIconEnabled = false
         end
     end, self)
 
@@ -2528,7 +2726,8 @@ function Library:_initMainGui()
     UI.SnowLayer.ZIndex = 4
     UI.SnowLayer.Visible = false
 
-    UI.GuiBlur = Lighting:FindFirstChild("DoD_UI_Blur") or Instance.new("BlurEffect")
+    local existingBlur = Lighting:FindFirstChild("DoD_UI_Blur")
+    UI.GuiBlur = (existingBlur and existingBlur:IsA("BlurEffect")) and existingBlur or Instance.new("BlurEffect")
     UI.GuiBlur.Name = "DoD_UI_Blur"
     UI.GuiBlur.Size = 0
     UI.GuiBlur.Parent = Lighting
@@ -2561,10 +2760,7 @@ function Library:_initMainGui()
         )
     end
     updateSizeLimit()
-    local camera = getCam()
-    if camera then
-        Fn.track(camera:GetPropertyChangedSignal("ViewportSize"), updateSizeLimit, self)
-    end
+    self:_bindViewportSignal(updateSizeLimit)
 
     UI.Wallpaper = Instance.new("ImageLabel", MC)
     UI.Wallpaper.Name = "Wallpaper"
@@ -2635,10 +2831,7 @@ function Library:_initMainGui()
         self._adaptiveScaleTarget = _scale
     end
     updateAdaptiveScale()
-    local adaptiveCam = getCam()
-    if adaptiveCam then
-        Fn.track(adaptiveCam:GetPropertyChangedSignal("ViewportSize"), updateAdaptiveScale, self)
-    end
+    self:_bindViewportSignal(updateAdaptiveScale)
 
     UI.MainStroke = Instance.new("UIStroke", MC)
     UI.MainStroke.Color = self._Colors.Border
@@ -2743,43 +2936,32 @@ function Library:_initMainGui()
         minText.TextColor3 = self._Colors.Accent
     end)
 
-    local _mBtnVpCam = getCam()
-    if _mBtnVpCam then
-        Fn.track(_mBtnVpCam:GetPropertyChangedSignal("ViewportSize"), function()
-            local vp = _mBtnVpCam.ViewportSize
-            local mob = self._isMobile
-            local h = mob and math.clamp(math.floor(vp.Y * 0.055), 44, 56) or 28
-            local w = mob and math.clamp(math.floor(vp.X * 0.5), 160, 260) or 180
-            local iconSz = mob and math.clamp(math.floor(h * 0.42), 16, 22) or 14
-            local fontSz = mob and math.clamp(math.floor(h * 0.30), 12, 16) or 11
-            self._minBtnBaseW = w
-            self._minBtnBaseH = h
-            self._minBtnBaseY = mob and 20 or 16
-            minIcon.Size = UDim2.fromOffset(iconSz, iconSz)
-            minIcon.Position = UDim2.new(0, 14, 0.5, -iconSz / 2)
-            minText.Size = UDim2.new(1, -(iconSz + 26), 1, 0)
-            minText.Position = UDim2.new(0, 14 + iconSz + 8, 0, 0)
-            minText.TextSize = fontSz
-            if minBtn.Visible then
-                minBtn.Size = UDim2.fromOffset(w, h)
-            end
-        end, self)
-    end
+    self:_bindViewportSignal(function()
+        local vpCam = getCam()
+        if not vpCam then return end
+        local vp = vpCam.ViewportSize
+        local mob = self._isMobile
+        local h = mob and math.clamp(math.floor(vp.Y * 0.055), 44, 56) or 28
+        local w = mob and math.clamp(math.floor(vp.X * 0.5), 160, 260) or 180
+        local iconSz = mob and math.clamp(math.floor(h * 0.42), 16, 22) or 14
+        local fontSz = mob and math.clamp(math.floor(h * 0.30), 12, 16) or 11
+        self._minBtnBaseW = w
+        self._minBtnBaseH = h
+        self._minBtnBaseY = mob and 20 or 16
+        minIcon.Size = UDim2.fromOffset(iconSz, iconSz)
+        minIcon.Position = UDim2.new(0, 14, 0.5, -iconSz / 2)
+        minText.Size = UDim2.new(1, -(iconSz + 26), 1, 0)
+        minText.Position = UDim2.new(0, 14 + iconSz + 8, 0, 0)
+        minText.TextSize = fontSz
+        if minBtn.Visible then
+            minBtn.Size = UDim2.fromOffset(w, h)
+        end
+    end)
 
     self._shadowLayers = {}
 
-    task.spawn(function()
-        local seen = {}
-        while not self:_isDead() do
-            for _, sf in ipairs(self._STATE.ScrollFrames or {}) do
-                if sf and sf.Parent and not seen[sf] then
-                    seen[sf] = true
-                    self:_attachScrollSound(sf)
-                end
-            end
-            task.wait(0.4)
-        end
-    end)
+    -- Scroll sounds are wired where each ScrollingFrame is created (see
+    -- _registerScrollFrame); the old 0.4s global scan ran for the whole session.
 end
 
 function Library:_initKeybindOverlay()
@@ -2889,7 +3071,7 @@ function Library:_initKeybindOverlay()
     list.AutomaticCanvasSize = Enum.AutomaticSize.Y
     list.CanvasSize = UDim2.new(0, 0, 0, 0)
     list.ZIndex = 251
-    table.insert(self._STATE.ScrollFrames, list)
+    self:_registerScrollFrame(list)
     local layout = Instance.new("UIListLayout", list)
     layout.SortOrder = Enum.SortOrder.LayoutOrder
     layout.Padding = UDim.new(0, 4)
@@ -2972,31 +3154,45 @@ function Library:_initKeybindOverlay()
     end)
 
     local overlayAnimating = false
-    local function toggleOverlay()
-        if overlayAnimating then return end
-        overlayAnimating = true
-        
-        if overlay.Visible then
-            local tw = TweenService:Create(overlay, TweenInfo.new(0.15, Enum.EasingStyle.Quart, Enum.EasingDirection.In), {
-                Position = UDim2.new(1, -18, 1, -48),
-                BackgroundTransparency = 1
-            })
-            tw:Play()
-            tw.Completed:Connect(function()
-                overlay.Visible = false
-                overlayAnimating = false
-            end)
-        else
+    local overlayTween
+    local function setOverlayVisible(want, animate)
+        if overlayTween then pcall(function() overlayTween:Cancel() end) end
+        overlayAnimating = false
+        if not animate then
+            overlay.Visible = want
+            overlay.Position = UDim2.new(1, -18, 1, -58)
+            overlay.BackgroundTransparency = want and 0.15 or 1
+            return
+        end
+        if want == overlay.Visible then return end
+        if want then
             overlay.Visible = true
             overlay.Position = UDim2.new(1, -18, 1, -48)
             overlay.BackgroundTransparency = 1
-            TweenService:Create(overlay, TweenInfo.new(0.2, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {
+            overlayTween = TweenService:Create(overlay, TweenInfo.new(0.2, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {
                 Position = UDim2.new(1, -18, 1, -58),
                 BackgroundTransparency = 0.15
-            }):Play()
-            task.delay(0.2, function() overlayAnimating = false end)
+            })
+            overlayTween:Play()
+        else
+            overlayTween = TweenService:Create(overlay, TweenInfo.new(0.15, Enum.EasingStyle.Quart, Enum.EasingDirection.In), {
+                Position = UDim2.new(1, -18, 1, -48),
+                BackgroundTransparency = 1
+            })
+            overlayTween:Play()
+            overlayTween.Completed:Connect(function(playbackState)
+                if playbackState == Enum.PlaybackState.Cancelled then return end
+                overlay.Visible = false
+            end)
         end
     end
+    local function toggleOverlay()
+        if overlayAnimating then return end
+        overlayAnimating = true
+        setOverlayVisible(not overlay.Visible, true)
+        task.delay(0.2, function() overlayAnimating = false end)
+    end
+    self._setKeybindOverlayVisible = setOverlayVisible
 
     toggle.MouseButton1Click:Connect(toggleOverlay)
     closeButton.MouseButton1Click:Connect(toggleOverlay)
@@ -3158,9 +3354,17 @@ end
 
 function Library:_initTooltip()
     local UI = self._UI
+    -- MOBILE: tooltips need a hover state, and a finger has none. Tapping a
+    -- control would flash a panel that covers the very control being pressed,
+    -- so tooltips are hard-disabled on touch devices (the Theme Customizer
+    -- toggle can no longer re-enable them there, it just reports the reason).
+    if self._isMobile or (UserInputService.TouchEnabled and not UserInputService.MouseEnabled) then
+        self._STATE.TooltipForceDisabled = true
+        self._STATE.TooltipEnabled = false
+    end
     local gui = Instance.new("ScreenGui")
     gui.Name = "DoD_UI_Tooltip"
-    gui.Parent = CoreGui
+    gui.Parent = GuiParent
     gui.ResetOnSpawn = false
     gui.DisplayOrder = 9999
     gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
@@ -3228,35 +3432,77 @@ function Library:_initTooltip()
     end, self)
 end
 
-function Library:_updateTooltipPosition(mousePos)
+function Library:_updateTooltipPosition(mousePos, width, height)
     local frame = self._UI.TooltipFrame
     if not frame or not frame.Visible then return end
     local cam = getCam()
     if not cam then return end
     local vp = cam.ViewportSize
-    local fw = frame.AbsoluteSize.X
-    local fh = frame.AbsoluteSize.Y
+    -- Use the size we just assigned when the caller knows it: AbsoluteSize is
+    -- only recomputed on the next render step, so flipping against it places
+    -- wide tooltips half off-screen right after a resize.
+    local fw = width or frame.AbsoluteSize.X
+    local fh = height or frame.AbsoluteSize.Y
     if fw <= 0 then fw = 120 end
     if fh <= 0 then fh = 28 end
     local x = mousePos.X + 18
     local y = mousePos.Y + 22
     if x + fw > vp.X - 8 then x = mousePos.X - fw - 18 end
     if y + fh > vp.Y - 8 then y = mousePos.Y - fh - 14 end
-    frame.Position = UDim2.fromOffset(math.max(4, x), math.max(4, y))
+    x = math.clamp(x, 8, math.max(8, vp.X - fw - 8))
+    y = math.clamp(y, 8, math.max(8, vp.Y - fh - 8))
+    frame.Position = UDim2.fromOffset(math.floor(x), math.floor(y))
+end
+
+function Library:_tooltipsAvailable()
+    if not self._STATE then return false end
+    if self._STATE.TooltipForceDisabled then return false end
+    return self._STATE.TooltipEnabled == true
+end
+
+function Library:_resetTooltipText()
+    local lbl = self._UI.TooltipLabel
+    if lbl then lbl.Text = "" end
+    local hint = self._UI.TooltipHint
+    if hint then
+        hint.Text = ""
+        hint.Visible = false
+    end
+end
+
+function Library:_hideTooltip(instant)
+    local frame = self._UI.TooltipFrame
+    if not frame then return end
+    local stroke = self._UI.TooltipStroke
+    self:_resetTooltipText()
+    if instant then
+        frame.Visible = false
+        frame.BackgroundTransparency = 1
+        if stroke then stroke.Transparency = 1 end
+        return
+    end
+    TweenService:Create(frame, TweenInfo.new(0.1), {BackgroundTransparency = 1}):Play()
+    if stroke then TweenService:Create(stroke, TweenInfo.new(0.1), {Transparency = 1}):Play() end
+    task.delay(0.12, function()
+        if frame and frame.Parent and frame.BackgroundTransparency >= 0.9 then
+            frame.Visible = false
+        end
+    end)
 end
 
 function Library:SetTooltipEnabled(enabled)
     if self:_isDead() then return end
-    self._STATE.TooltipEnabled = enabled and true or false
-    if not self._STATE.TooltipEnabled then
-        local frame = self._UI.TooltipFrame
-        if frame then
-            frame.Visible = false
-            frame.BackgroundTransparency = 1
+    if self._STATE.TooltipForceDisabled then
+        self._STATE.TooltipEnabled = false
+        self:_hideTooltip(true)
+        if enabled then
+            self:Notify("TOOLTIP", "Tooltip dimatikan di mobile", "info")
         end
-        local stroke = self._UI.TooltipStroke
-        if stroke then stroke.Transparency = 1 end
+        return
     end
+    self._STATE.TooltipEnabled = enabled and true or false
+    if self._STATE.TooltipEnabled then return end
+    self:_hideTooltip(true)
 end
 
 function Library:SetTooltipTransparency(transparency)
@@ -3271,6 +3517,8 @@ end
 
 function Library:_bindTooltip(element, text)
     if not text or text == "" then return end
+    -- Mobile / touch: never wire hover handlers at all.
+    if self._STATE.TooltipForceDisabled then return end
     local favoritable = false
     local cur = element
     while cur do
@@ -3281,30 +3529,48 @@ function Library:_bindTooltip(element, text)
         cur = cur.Parent
     end
     local showThread
+    local function cancelShow()
+        if showThread then
+            pcall(task.cancel, showThread)
+            showThread = nil
+        end
+    end
+
     element.MouseEnter:Connect(function()
-        if not self._STATE.TooltipEnabled then return end
-        if showThread then pcall(function() task.cancel(showThread) end); showThread = nil end
+        if not self:_tooltipsAvailable() then return end
+        if self._STATE.AnimatingGui then return end
+        if self._keybindCapturing then return end
+        cancelShow()
+        -- Any pending "hide" from the control we just left is now stale.
+        self._tooltipSerial = (self._tooltipSerial or 0) + 1
+        local serial = self._tooltipSerial
         showThread = task.delay(0.3, function()
             showThread = nil
-            if not self._STATE.TooltipEnabled then return end
+            if serial ~= self._tooltipSerial then return end
+            if self:_isDead() then return end
+            if not self:_tooltipsAvailable() then return end
             local frame = self._UI.TooltipFrame
-            if not frame then return end
             local lbl = self._UI.TooltipLabel
             local hint = self._UI.TooltipHint
+            local stroke = self._UI.TooltipStroke
+            if not (frame and lbl) then return end
             lbl.Text = tostring(text)
             local charCount = utf8.len(tostring(text)) or #tostring(text)
             local w = math.clamp(charCount * 6.5 + 24, 90, 300)
+            local h
             if favoritable then
                 w = math.max(w, 200)
-                frame.Size = UDim2.fromOffset(w, 40)
+                h = 40
+                frame.Size = UDim2.fromOffset(w, h)
                 lbl.Size = UDim2.new(1, -16, 0, 16)
                 lbl.Position = UDim2.new(0, 8, 0, 5)
                 if hint then
-                    hint.Text = self._isMobile and "Tap star to favorite" or "Right-click to favorite"
+                    hint.Text = self._isMobile and "Long-press to favorite" or "Right-click to favorite"
                     hint.Visible = true
                 end
             else
-                frame.Size = UDim2.fromOffset(w, 26)
+                h = 26
+                frame.Size = UDim2.fromOffset(w, h)
                 lbl.Size = UDim2.new(1, -16, 1, 0)
                 lbl.Position = UDim2.new(0, 8, 0, 0)
                 if hint then
@@ -3314,27 +3580,24 @@ function Library:_bindTooltip(element, text)
             end
             frame.Visible = true
             frame.BackgroundTransparency = 1
-            self._UI.TooltipStroke.Transparency = 1
+            if stroke then stroke.Transparency = 1 end
             local targetTrans = self._STATE.TooltipTransparency or 0.15
             TweenService:Create(frame, TweenInfo.new(0.15), {BackgroundTransparency = targetTrans}):Play()
-            TweenService:Create(self._UI.TooltipStroke, TweenInfo.new(0.15), {Transparency = 0.55}):Play()
-            local mouse = UserInputService:GetMouseLocation()
-            self:_updateTooltipPosition(mouse)
+            if stroke then
+                TweenService:Create(stroke, TweenInfo.new(0.15), {Transparency = 0.55}):Play()
+            end
+            self:_updateTooltipPosition(UserInputService:GetMouseLocation(), w, h)
         end)
     end)
+
     element.MouseLeave:Connect(function()
-        if showThread then
-            pcall(function() task.cancel(showThread) end)
-            showThread = nil
-        end
-        local frame = self._UI.TooltipFrame
-        if not frame then return end
-        TweenService:Create(frame, TweenInfo.new(0.1), {BackgroundTransparency = 1}):Play()
-        TweenService:Create(self._UI.TooltipStroke, TweenInfo.new(0.1), {Transparency = 1}):Play()
+        cancelShow()
+        self._tooltipSerial = (self._tooltipSerial or 0) + 1
+        local serial = self._tooltipSerial
         task.delay(0.12, function()
-            if frame and frame.BackgroundTransparency >= 0.9 then
-                frame.Visible = false
-            end
+            -- A new control got hovered inside the grace period: keep its tooltip.
+            if serial ~= self._tooltipSerial then return end
+            self:_hideTooltip(false)
         end)
     end)
 end
@@ -3343,11 +3606,17 @@ function Library:_bindToggleKey()
     Fn.track(UserInputService.InputBegan, function(input, gameProcessed)
         if gameProcessed then return end
         if input.UserInputType ~= Enum.UserInputType.Keyboard then return end
+        if self._keybindCapturing then return end
         if input.KeyCode == self.ToggleKey then
             self:Toggle()
         end
     end, self)
     Fn.track(UserInputService.InputBegan, function(input, gameProcessed)
+        if gameProcessed then return end
+        -- Right-click favoriting is a desktop affordance; on touch it would fire
+        -- on taps that belong to the control, and inside a TextBox it fires on
+        -- the context-menu paste click.
+        if self._isMobile then return end
         if input.UserInputType ~= Enum.UserInputType.MouseButton2 then return end
         if not self._STATE.GuiVisible then return end
         local mc = self._UI.MainContainer
@@ -3391,7 +3660,7 @@ function Library:_bindToggleKey()
                 thid = nil
                 return
             end
-            tp0 = tick()
+            tp0 = os.clock()
             thid = nil
             local holders = self._STATE.FavoriteHolders
             if not holders or next(holders) == nil then return end
@@ -3408,7 +3677,7 @@ function Library:_bindToggleKey()
         Fn.track(UserInputService.InputEnded, function(input)
             if input.UserInputType ~= Enum.UserInputType.Touch then return end
             if not thid then return end
-            local dur = tick() - tp0
+            local dur = os.clock() - tp0
             local endPos = Vector2.new(input.Position.X, input.Position.Y)
             local moved = (endPos - tpos0).Magnitude
             if dur >= 0.5 and moved < 14 then
@@ -3440,7 +3709,13 @@ function Library:SetVersionBadgeColor(color)
         error("[DoD UI] SetVersionBadgeColor expects a Color3 value.")
     end
     self._VersionBadgeOverride = color
-    self:SetTheme(self.ThemeName, true)
+    -- Was a full SetTheme() rebuild (every refresher + a config write) for one
+    -- BackgroundColor3.
+    local badge = self._UI.TitleVersionBadge
+    if badge then
+        badge.BackgroundColor3 = color
+        badge.TextColor3 = Fn.contrastForeground(color)
+    end
 end
 
 function Library:SetToggleKey(key)
@@ -3480,6 +3755,7 @@ function Library:_generateAutoTheme(imageStr)
         FocusOverlayColor = Color3.fromHSV(h1, 0.5, 0.05),
         OverlayTransparency = 0.4
     }
+    self._autoThemeApplied = true
     self:SetTheme("Auto", true)
 end
 
@@ -3493,6 +3769,8 @@ end
 
 function Library:_getCachedWallpaper(url)
     if type(url) ~= "string" then return nil end
+    self._wallpaperCache = self._wallpaperCache or {}
+    if self._wallpaperCache[url] then return self._wallpaperCache[url] end
     local cacheFile = self:_wallpaperCachePath(url)
     local cached = nil
     pcall(function()
@@ -3502,11 +3780,14 @@ function Library:_getCachedWallpaper(url)
             end
         end
     end)
+    if cached then self._wallpaperCache[url] = cached end
     return cached
 end
 
 function Library:_setWallpaperCache(url, result)
     if type(url) ~= "string" or type(result) ~= "string" then return end
+    self._wallpaperCache = self._wallpaperCache or {}
+    self._wallpaperCache[url] = result
     local cacheFile = self:_wallpaperCachePath(url)
     pcall(function()
         if writefile and type(writefile) == "function" then
@@ -3521,7 +3802,8 @@ function Library:ClearWallpaperCache()
     pcall(function()
         if listfiles and type(listfiles) == "function" and delfile and type(delfile) == "function" then
             for _, f in ipairs(listfiles()) do
-                if string.find(f, "DoD_Wallpaper_", 1, true) and string.sub(f, -4) == ".url" then
+                local base = string.match(tostring(f), "[^\\/]+$") or tostring(f)
+                if string.find(base, "DoD_Wallpaper_", 1, true) then
                     pcall(delfile, f)
                     removed = removed + 1
                 end
@@ -3537,6 +3819,14 @@ function Library:SetWallpaper(assetId, transparency)
     if not UI.Wallpaper then return end
     if assetId == nil or assetId == "" then
         UI.Wallpaper.Visible = false
+        -- Also drop the texture reference and the palette it generated, otherwise
+        -- "remove wallpaper" left both applied.
+        pcall(function() UI.Wallpaper.Image = "" end)
+        if self._autoThemeApplied then
+            self._autoThemeApplied = false
+            pcall(function() self:SetTheme("Demon of Darkness", true) end)
+        end
+        self.WallpaperSource = nil
         return
     end
     
@@ -3554,6 +3844,17 @@ function Library:SetWallpaper(assetId, transparency)
             return
         end
         
+        -- Reuse the cached asset for this URL instead of re-downloading a
+        -- multi-megabyte image every time it is selected.
+        local cachedAsset = self:_getCachedWallpaper(img)
+        if type(cachedAsset) == "string" and cachedAsset ~= "" then
+            UI.Wallpaper.Image = cachedAsset
+            UI.Wallpaper.ImageTransparency = trans
+            UI.Wallpaper.Visible = true
+            self:Notify("WALLPAPER", "Wallpaper restored from cache", "info")
+            return
+        end
+
         self:Notify("WALLPAPER", "Downloading...", "info")
         if self.ShowLoading then self:ShowLoading("Downloading wallpaper...") end
         
@@ -3563,13 +3864,14 @@ function Library:SetWallpaper(assetId, transparency)
                 if timedOut then return end
                 timedOut = true
                 if self.HideLoading then self:HideLoading() end
+                if self:_isDead() then return end
                 self:Notify("WALLPAPER", "Download timeout (>10s) — server slow or unreachable", "error")
             end)
             local success, content = pcall(function()
                 return game:HttpGet(img, true)
             end)
             if watchdog then pcall(task.cancel, watchdog) end
-            if timedOut then return end
+            if timedOut or self:_isDead() then return end
             
             if not success or type(content) ~= "string" or #content == 0 then
                 if self.HideLoading then self:HideLoading() end
@@ -3583,7 +3885,10 @@ function Library:SetWallpaper(assetId, transparency)
             elseif string.find(lowerImg, ".png") then ext = ".png"
             elseif string.find(lowerImg, ".webp") then ext = ".webp"
             end
-            local fileName = "DoD_Wallpaper_" .. tostring(math.random(100000, 999999)) .. ext
+            -- Deterministic, hash-based filename: the old random name leaked a new
+            -- multi-MB file into the executor folder on every single download.
+            local baseName = self:_wallpaperCachePath(img):gsub("%.url$", "")
+            local fileName = baseName .. ext
             local writeOk = pcall(function()
                 writefile(fileName, content)
             end)
@@ -3596,11 +3901,13 @@ function Library:SetWallpaper(assetId, transparency)
             
             local assetOk, assetContent = pcall(getcustomasset, fileName)
             if self.HideLoading then self:HideLoading() end
+            if self:_isDead() then return end
             
             if not assetOk or type(assetContent) ~= "string" then
                 self:Notify("WALLPAPER", "Gagal load file lokal ke Roblox", "error")
                 return
             end
+            pcall(function() self:_setWallpaperCache(img, assetContent) end)
             
             local setOk = pcall(function()
                 UI.Wallpaper.Image = assetContent
@@ -3616,10 +3923,15 @@ function Library:SetWallpaper(assetId, transparency)
             end
         end)
         return
-    elseif string.sub(img, 1, 13) == "rbxassetid://" then
+    elseif string.sub(img, 1, 13) == "rbxassetid://" or string.sub(img, 1, 9) == "rbxasset:" then
         UI.Wallpaper.Image = img
-    else
+    elseif img:match("^%d+$") then
         UI.Wallpaper.Image = "rbxassetid://" .. img
+    else
+        -- A path or a stray string used to become the broken
+        -- "rbxassetid://some/path.png" with no feedback.
+        self:Notify("WALLPAPER", "Invalid wallpaper id/URL: " .. tostring(img), "error")
+        return
     end
     
     UI.Wallpaper.ImageTransparency = trans
@@ -3629,10 +3941,19 @@ end
 
 function Library:SetCursorIcon(assetId)
     if self:_isDead() then return end
-    if type(assetId) ~= "string" then return end
-    local img = "rbxassetid://" .. tostring(assetId)
-    if string.sub(assetId, 1, 13) == "rbxassetid://" then
-        img = assetId
+    local raw = tostring(assetId or "")
+    if raw == "" then return end
+    local img
+    if tonumber(raw) then
+        img = "rbxassetid://" .. raw
+    elseif raw:match("^rbxasset") then
+        img = raw
+    elseif raw:match("^https?://") then
+        img = raw
+    else
+        -- Accept icon names too (consistent with SetTitleIcon); a bare name used
+        -- to become the broken "rbxassetid://shield".
+        img = GetIcon(raw)
     end
     if self._UI.CustomCursor then
         self._UI.CustomCursor.Image = img
@@ -3645,7 +3966,14 @@ function Library:SetCursorTrail(enabled)
         error("[DoD UI] SetCursorTrail expects a boolean value.")
     end
     self._cursorTrailEnabled = enabled
-    if not enabled then
+    if enabled then
+        -- The perf profile used to latch this block on and never release it, so
+        -- the public setter (and the Theme Customizer toggle) did nothing.
+        -- An explicit user request always wins over the automatic tier.
+        self._perfCursorBlocked = false
+        self._cursorTrailPrevPos = UserInputService:GetMouseLocation()
+        self._cursorTrailSpawnDist = 0
+    else
         for _, dot in ipairs(self._cursorTrailPool or {}) do
             dot.active = false
             if dot.img then dot.img.Visible = false end
@@ -3751,21 +4079,26 @@ function Library:_updateCursorTrail(mouse)
         end
         return
     end
-    local now = tick()
+    local now = os.clock()
     local pos = Vector2.new(mouse.X, mouse.Y)
     local moved = (pos - self._cursorTrailPrevPos).Magnitude
     self._cursorTrailPrevPos = pos
     if moved > 2.5 and moved < 200 then
         self._cursorTrailSpawnDist = self._cursorTrailSpawnDist + moved
         local threshold = 7
-        while self._cursorTrailSpawnDist >= threshold do
+        local spawned = 0
+        while self._cursorTrailSpawnDist >= threshold and spawned < 4 do
             self._cursorTrailSpawnDist = self._cursorTrailSpawnDist - threshold
             self:_spawnCursorTrailDot(pos, now)
+            spawned = spawned + 1
         end
     else
         self._cursorTrailSpawnDist = 0
     end
-    local baseColor = self._cursorTrailColor
+    if _ReducedMotion then return end
+    local baseR = self._cursorTrailColor.R
+    local baseG = self._cursorTrailColor.G
+    local baseB = self._cursorTrailColor.B
     for _, dot in ipairs(self._cursorTrailPool) do
         if dot.active then
             local age = now - dot.spawnedAt
@@ -3776,13 +4109,13 @@ function Library:_updateCursorTrail(mouse)
                 local t = age / dot.life
                 local alpha = 1 - t
                 local pulse = math.sin(now * 5 + dot.pulsePhase) * 0.35 + 0.65
-                local c = Color3.new(
-                    math.min(baseColor.R * (1 + pulse * 0.35), 1),
-                    math.min(baseColor.G * (1 + pulse * 0.35), 1),
-                    math.min(baseColor.B * (1 + pulse * 0.35), 1)
+                local boost = 1 + pulse * 0.35
+                dot.img.ImageColor3 = Color3.new(
+                    math.min(baseR * boost, 1),
+                    math.min(baseG * boost, 1),
+                    math.min(baseB * boost, 1)
                 )
                 local sz = dot.baseSize * (0.4 + alpha * 0.6)
-                dot.img.ImageColor3 = c
                 dot.img.ImageTransparency = 0.1 + t * 0.85
                 dot.img.Size = UDim2.fromOffset(sz, sz)
                 dot.img.Position = UDim2.fromOffset(
@@ -3868,7 +4201,9 @@ function Library:SetTitleIcon(iconName)
     
     if tonumber(iconName) then
         finalImage = "rbxassetid://" .. iconName
-    elseif string.sub(lower, 1, 4) == "http" or string.sub(lower, 1, 10) == "rbxassetid:" or string.sub(lower, 1, 10) == "rbxasset://" then
+    elseif string.sub(lower, 1, 4) == "http" or string.sub(lower, 1, 11) == "rbxassetid:" or string.sub(lower, 1, 11) == "rbxasset://" then
+        -- 11, not 10: the literal "rbxassetid:" is 11 characters, so the old
+        -- 10-char comparison could never be true and asset ids were ignored.
         finalImage = iconName
     else
         finalImage = GetIcon(iconName)
@@ -3893,7 +4228,13 @@ function Library:SetKeybindOverlayVisible(visible)
     if type(visible) ~= "boolean" then
         error("[DoD UI] SetKeybindOverlayVisible expects a boolean value.")
     end
-    self._UI.KeybindOverlay.Visible = visible
+    -- Route through the animated setter so a click-tween in flight cannot hide
+    -- the overlay right after the caller asked for it to be shown.
+    if self._setKeybindOverlayVisible then
+        self._setKeybindOverlayVisible(visible, false)
+    elseif self._UI.KeybindOverlay then
+        self._UI.KeybindOverlay.Visible = visible
+    end
 end
 
 -- =========================================================
@@ -3940,7 +4281,7 @@ function Library:_initTitleBar()
     local lowerIcon = string.lower(iconName)
     if tonumber(iconName) then
         logoIcon.Image = "rbxassetid://" .. iconName
-    elseif string.sub(lowerIcon, 1, 4) == "http" or string.sub(lowerIcon, 1, 10) == "rbxassetid:" or string.sub(lowerIcon, 1, 10) == "rbxasset://" then
+    elseif string.sub(lowerIcon, 1, 4) == "http" or string.sub(lowerIcon, 1, 11) == "rbxassetid:" or string.sub(lowerIcon, 1, 11) == "rbxasset://" then
         logoIcon.Image = iconName
     else
         logoIcon.Image = GetIcon(iconName)
@@ -4249,9 +4590,18 @@ function Library:_initTrafficLights()
 
     local hudTweenInfo = TweenInfo.new(0.3, Enum.EasingStyle.Quart, Enum.EasingDirection.Out)
 
+    local layoutOwned = {
+        [UI.BottomPill] = true,
+        [UI.SideProfileMini] = true,
+        [UI.AccordionScroll] = true,
+        [UI.SearchBar] = true,
+    }
     local function hideChildren(visible)
         for _, child in ipairs(UI.MainContainer:GetChildren()) do
-            if child:IsA("GuiObject") and child ~= UI.TitleBar then
+            -- Layout-owned widgets are managed by _applyNavigationLayout; blindly
+            -- restoring them painted the bottom pill / profile card over the
+            -- category bar after maximize -> restore.
+            if child:IsA("GuiObject") and child ~= UI.TitleBar and not layoutOwned[child] then
                 if child == UI.AcrylicTexture or child == UI.AcrylicSheen then
                     child.Visible = visible and self.Acrylic
                 else
@@ -4268,8 +4618,8 @@ function Library:_initTrafficLights()
         if UI.MobileToggle then
             UI.MobileToggle.Visible = visible and UserInputService.TouchEnabled
         end
-        if UI.KeybindOverlay and not visible then
-            UI.KeybindOverlay.Visible = false
+        if UI.KeybindOverlay then
+            UI.KeybindOverlay.Visible = visible and self._keybindOverlayWasVisible == true
         end
         if UI.KeybindOverlayToggle then
             UI.KeybindOverlayToggle.Visible = visible and #self._STATE.activeKeybindListeners > 0
@@ -4285,6 +4635,13 @@ function Library:_initTrafficLights()
 
     local function applyHudState(target)
         if self._hudState == target then return end
+        -- Resolve the camera before committing state, otherwise a missing camera
+        -- left _hudState = MAXIMIZED while the window was never resized.
+        local camera
+        if target == "MAXIMIZED" then
+            camera = getCam()
+            if not camera then return end
+        end
         local prev = self._hudState
         self._hudState = target
 
@@ -4299,13 +4656,15 @@ function Library:_initTrafficLights()
                 self._focusOverlayWasVisible = UI.FocusOverlay.Visible
                 UI.FocusOverlay.Visible = false
             end
+            if UI.KeybindOverlay then
+                self._keybindOverlayWasVisible = UI.KeybindOverlay.Visible
+                UI.KeybindOverlay.Visible = false
+            end
             local curr = UI.MainContainer.Size
             TweenService:Create(UI.MainContainer, hudTweenInfo, {
                 Size = UDim2.new(curr.X.Scale, curr.X.Offset, 0, 42),
             }):Play()
         elseif target == "MAXIMIZED" then
-            local camera = getCam()
-            if not camera then return end
             local vp = camera.ViewportSize
             TweenService:Create(UI.MainContainer, hudTweenInfo, {
                 Size = UDim2.new(0, math.max(1, vp.X - 40), 0, math.max(1, vp.Y - 40)),
@@ -4316,12 +4675,17 @@ function Library:_initTrafficLights()
                 Size = self._hudNormalSize,
                 Position = self._hudNormalPos,
             })
-            tw.Completed:Connect(function()
-                if self._hudState == "NORMAL" then
-                    hideChildren(true)
-                    if self._STATE.FocusOverlayEnabled and self._STATE.GuiVisible and UI.FocusOverlay then
-                        UI.FocusOverlay.Visible = true
-                    end
+            tw.Completed:Connect(function(playbackState)
+                if playbackState == Enum.PlaybackState.Cancelled then return end
+                if self._hudState ~= "NORMAL" then return end
+                hideChildren(true)
+                self:_applyNavigationLayout()
+                if self._STATE.FocusOverlayEnabled and self._STATE.GuiVisible and UI.FocusOverlay then
+                    UI.FocusOverlay.Visible = true
+                end
+                if UI.KeybindOverlay and self._keybindOverlayWasVisible then
+                    UI.KeybindOverlay.Visible = true
+                    self._keybindOverlayWasVisible = false
                 end
             end)
             tw:Play()
@@ -4796,10 +5160,26 @@ function Library:_initSearchBar()
             if #query >= 2 and currentTab and not self._autoJumping then
                 local hasMatch = self:_countTabMatches(currentTab, query) > 0
                 if not hasMatch then
-                    for tabName, _ in pairs(self._STATE.ContentPages) do
-                        if tabName ~= currentTab and self:_countTabMatches(tabName, query) > 0 then
+                    -- Deterministic order: pairs() used to jump to an arbitrary
+                    -- matching tab, and an error inside SwitchTab could strand
+                    -- _autoJumping = true for the rest of the session.
+                    local order = {}
+                    for _, cat in ipairs(self._STATE.CategoryOrder or {}) do
+                        for _, tn in ipairs(self._STATE.CategoryTabs[cat] or {}) do
+                            order[#order + 1] = tn
+                        end
+                    end
+                    if #order == 0 then
+                        for tn in pairs(self._STATE.ContentPages) do
+                            order[#order + 1] = tn
+                        end
+                        table.sort(order)
+                    end
+                    for _, tn in ipairs(order) do
+                        if tn ~= currentTab and self._STATE.ContentPages[tn]
+                            and self:_countTabMatches(tn, query) > 0 then
                             self._autoJumping = true
-                            self:SwitchTab(tabName)
+                            pcall(self.SwitchTab, self, tn)
                             self._autoJumping = false
                             return
                         end
@@ -4867,13 +5247,22 @@ function Library:_countTabMatches(tabName, query)
     if not tabName or not query or query == "" then return 0 end
     local count = 0
     for _, sectionData in ipairs(self._STATE.SearchSections[tabName] or {}) do
-        local sectionMatch = string.find(string.lower(sectionData.title or ""), query, 1, true)
-            or string.find(string.lower(sectionData.summary or ""), query, 1, true)
+        if sectionData.titleLower == nil then
+            sectionData.titleLower = string.lower(sectionData.title or "")
+        end
+        if sectionData.summaryLower == nil then
+            sectionData.summaryLower = string.lower(sectionData.summary or "")
+        end
+        local sectionMatch = string.find(sectionData.titleLower, query, 1, true)
+            or string.find(sectionData.summaryLower, query, 1, true)
         if sectionMatch then
             count = count + 1
         else
             for _, control in ipairs(sectionData.controls) do
-                if string.find(string.lower(control.searchText or ""), query, 1, true) then
+                if control.searchLower == nil then
+                    control.searchLower = string.lower(control.searchText or "")
+                end
+                if string.find(control.searchLower, query, 1, true) then
                     count = count + 1
                     break
                 end
@@ -4883,7 +5272,10 @@ function Library:_countTabMatches(tabName, query)
     local pool = self._STATE.SearchTopLevel and self._STATE.SearchTopLevel[tabName]
     if pool then
         for _, ctrl in ipairs(pool) do
-            if string.find(string.lower(ctrl.searchText or ""), query, 1, true) then
+            if ctrl.searchLower == nil then
+                ctrl.searchLower = string.lower(ctrl.searchText or "")
+            end
+            if string.find(ctrl.searchLower, query, 1, true) then
                 count = count + 1
             end
         end
@@ -4907,25 +5299,41 @@ function Library:_applySearchFilter(tabName)
             sectionData.expandedBeforeSearch = sectionData.expanded
         end
 
-        local sectionMatches = searching and (
-            string.find(string.lower(sectionData.title), query, 1, true) ~= nil
-            or string.find(string.lower(sectionData.summary), query, 1, true) ~= nil
-        )
+        local sectionMatches = false
+        if searching then
+            if sectionData.titleLower == nil then
+                sectionData.titleLower = string.lower(sectionData.title or "")
+            end
+            if sectionData.summaryLower == nil then
+                sectionData.summaryLower = string.lower(sectionData.summary or "")
+            end
+            sectionMatches = string.find(sectionData.titleLower, query, 1, true) ~= nil
+                or string.find(sectionData.summaryLower, query, 1, true) ~= nil
+        end
         local anyControlMatches = false
 
         for _, control in ipairs(sectionData.controls) do
+            if control.searchLower == nil then
+                control.searchLower = string.lower(control.searchText or "")
+            end
             local textMatch = not searching
                 or sectionMatches
-                or string.find(string.lower(control.searchText), query, 1, true) ~= nil
-            local ctrlId = control.instance:GetAttribute("DoD_CtrlId")
+                or string.find(control.searchLower, query, 1, true) ~= nil
+            local ctrlId = control.ctrlId
             local favMatch = not favoritesOnly or (ctrlId ~= nil and STATE.Favorites[ctrlId] ~= nil)
             local matches = textMatch and favMatch
             if matches then
-                if control.instance.Parent == nil and control.parent and control.parent.Parent then
-                    control.instance.Parent = control.parent
+                -- Only reparent on a state transition. Reparenting every control
+                -- on every keystroke invalidated the whole tab's layout.
+                if control.hidden then
+                    control.hidden = false
+                    if control.instance.Parent == nil and control.parent and control.parent.Parent then
+                        control.instance.Parent = control.parent
+                    end
                 end
                 anyControlMatches = true
-            else
+            elseif not control.hidden then
+                control.hidden = true
                 control.instance.Parent = nil
             end
         end
@@ -4942,10 +5350,16 @@ function Library:_applySearchFilter(tabName)
         end
 
         sectionData.section.Visible = sectionVisible
-        if isFiltering and not sectionVisible then
+        local wantSectionHidden = isFiltering and not sectionVisible
+        if wantSectionHidden and not sectionData.hidden then
+            sectionData.hidden = true
             sectionData.section.Parent = nil
-        elseif sectionData.section.Parent == nil and sectionData.parentColumn and sectionData.parentColumn.Parent then
-            sectionData.section.Parent = sectionData.parentColumn
+        elseif not wantSectionHidden and sectionData.hidden then
+            sectionData.hidden = false
+            if sectionData.section.Parent == nil
+                and sectionData.parentColumn and sectionData.parentColumn.Parent then
+                sectionData.section.Parent = sectionData.parentColumn
+            end
         end
         if isFiltering and sectionVisible then totalMatches = totalMatches + 1 end
 
@@ -4965,17 +5379,24 @@ function Library:_applySearchFilter(tabName)
     local pool = STATE.SearchTopLevel and STATE.SearchTopLevel[tabName]
     if pool then
         for _, ctrl in ipairs(pool) do
+            if ctrl.searchLower == nil then
+                ctrl.searchLower = string.lower(ctrl.searchText or "")
+            end
             local textMatch = not searching
-                or string.find(string.lower(ctrl.searchText), query, 1, true) ~= nil
-            local ctrlId = ctrl.instance:GetAttribute("DoD_CtrlId")
+                or string.find(ctrl.searchLower, query, 1, true) ~= nil
+            local ctrlId = ctrl.ctrlId
             local favMatch = not favoritesOnly or (ctrlId ~= nil and STATE.Favorites[ctrlId] ~= nil)
             local matches = textMatch and favMatch
             if matches then
-                if ctrl.instance.Parent == nil and ctrl.parent and ctrl.parent.Parent then
-                    ctrl.instance.Parent = ctrl.parent
+                if ctrl.hidden then
+                    ctrl.hidden = false
+                    if ctrl.instance.Parent == nil and ctrl.parent and ctrl.parent.Parent then
+                        ctrl.instance.Parent = ctrl.parent
+                    end
                 end
                 if isFiltering then totalMatches = totalMatches + 1 end
-            else
+            elseif not ctrl.hidden then
+                ctrl.hidden = true
                 ctrl.instance.Parent = nil
             end
         end
@@ -5061,9 +5482,12 @@ function Library:_registerSearchControl(instance, searchText)
         if tabName then
             self._STATE.SearchTopLevel = self._STATE.SearchTopLevel or {}
             self._STATE.SearchTopLevel[tabName] = self._STATE.SearchTopLevel[tabName] or {}
+            local text = tostring(searchText or "")
             table.insert(self._STATE.SearchTopLevel[tabName], {
                 instance = instance,
-                searchText = tostring(searchText or ""),
+                searchText = text,
+                searchLower = string.lower(text),
+                ctrlId = instance:GetAttribute("DoD_CtrlId"),
                 parent = instance.Parent,
             })
             self:_queueSearchFilter(tabName)
@@ -5071,9 +5495,12 @@ function Library:_registerSearchControl(instance, searchText)
         return instance
     end
 
+    local text = tostring(searchText or "")
     table.insert(sectionData.controls, {
         instance = instance,
-        searchText = tostring(searchText or ""),
+        searchText = text,
+        searchLower = string.lower(text),
+        ctrlId = instance:GetAttribute("DoD_CtrlId"),
         parent = instance.Parent,
     })
     self:_queueSearchFilter(sectionData.tabName)
@@ -5085,11 +5512,36 @@ function Library:_updateFavoriteStar(configId)
     if not star or not star.Parent then return end
     local isFav = self._STATE.Favorites[configId] == true
     local hovering = star:GetAttribute("DoD_Hover") == true
-    local mobileVisible = self._isMobile
-    TweenService:Create(star, TweenInfo.new(0.15, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+    local mobile = self._isMobile
+    -- MOBILE: the star is only a "this row is favorited" badge. It used to be
+    -- drawn at 50% opacity on *every* control, which littered the whole menu and
+    -- (because an ImageButton always sinks input) stole taps from the +/toggle
+    -- widgets sitting under it. Favoriting on mobile is done by long-press.
+    -- DESKTOP: hidden unless favorited or the row is hovered, so an invisible
+    -- star can never intercept a click meant for the control itself.
+    local visible = isFav or (not mobile and hovering)
+    star.Visible = visible
+    if not visible then
+        star:SetAttribute("DoD_Hover", false)
+        return
+    end
+    local transparency
+    if mobile then
+        transparency = 0.12
+    elseif isFav then
+        transparency = hovering and 0 or 0.15
+    else
+        transparency = 0.25
+    end
+    self._favTweens = self._favTweens or {}
+    local prev = self._favTweens[star]
+    if prev then pcall(function() prev:Cancel() end) end
+    local tw = TweenService:Create(star, TweenInfo.new(0.15, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
         ImageColor3 = isFav and self._Colors.Accent or self._Colors.TextDim,
-        ImageTransparency = isFav and (hovering and 0 or 0.15) or (mobileVisible and 0.5 or (hovering and 0.2 or 1)),
-    }):Play()
+        ImageTransparency = transparency,
+    })
+    self._favTweens[star] = tw
+    tw:Play()
 end
 
 function Library:_attachFavorite(holder, configId, starPos)
@@ -5102,8 +5554,9 @@ function Library:_attachFavorite(holder, configId, starPos)
     local star = Instance.new("ImageButton", holder)
     star.Name = "FavoriteStar"
     if self._isMobile then
-        star.Size = UDim2.fromOffset(22, 22)
-        star.Position = starPos or UDim2.new(1, -26, 0.5, -11)
+        -- Small corner badge, clear of the +/toggle widgets on the right edge.
+        star.Size = UDim2.fromOffset(14, 14)
+        star.Position = starPos or UDim2.new(1, -20, 0, 1)
     else
         star.Size = UDim2.fromOffset(11, 11)
         star.Position = starPos or UDim2.new(1, -14, 0, 2)
@@ -5113,29 +5566,48 @@ function Library:_attachFavorite(holder, configId, starPos)
     star.AutoButtonColor = false
     star.Image = GetIcon("star")
     star.ImageColor3 = self._STATE.Favorites[configId] and self._Colors.Accent or self._Colors.TextDim
-    if self._isMobile then
-        star.ImageTransparency = self._STATE.Favorites[configId] and 0.15 or 0.5
-    else
-        star.ImageTransparency = self._STATE.Favorites[configId] and 0.15 or 1
-    end
+    star.ImageTransparency = 0.15
     star.ZIndex = 10
+    star.Visible = self._STATE.Favorites[configId] == true
     self._STATE.FavoriteStars[configId] = star
 
     holder.MouseEnter:Connect(function()
+        if not star.Parent then return end
         star:SetAttribute("DoD_Hover", true)
         self:_updateFavoriteStar(configId)
     end)
     holder.MouseLeave:Connect(function()
-        star:SetAttribute("DoD_Hover", false)
-        self:_updateFavoriteStar(configId)
+        -- The star is a child of the holder, so sliding onto it fires
+        -- holder.MouseLeave first and would hide the star from under the cursor.
+        -- Re-check on the next frame and keep the hover state when the pointer
+        -- actually landed on the star.
+        task.defer(function()
+            if not star.Parent then return end
+            local mp = UserInputService:GetMouseLocation()
+            local sp, ss = star.AbsolutePosition, star.AbsoluteSize
+            local onStar = star.Visible
+                and mp.X >= sp.X and mp.X <= sp.X + ss.X
+                and mp.Y >= sp.Y and mp.Y <= sp.Y + ss.Y
+            if onStar then return end
+            star:SetAttribute("DoD_Hover", false)
+            self:_updateFavoriteStar(configId)
+        end)
     end)
     star.MouseEnter:Connect(function()
         star:SetAttribute("DoD_Hover", true)
         self:_updateFavoriteStar(configId)
     end)
     star.MouseLeave:Connect(function()
-        star:SetAttribute("DoD_Hover", false)
-        self:_updateFavoriteStar(configId)
+        task.defer(function()
+            if not star.Parent then return end
+            local mp = UserInputService:GetMouseLocation()
+            local hp, hs = holder.AbsolutePosition, holder.AbsoluteSize
+            local onHolder = mp.X >= hp.X and mp.X <= hp.X + hs.X
+                and mp.Y >= hp.Y and mp.Y <= hp.Y + hs.Y
+            if onHolder then return end
+            star:SetAttribute("DoD_Hover", false)
+            self:_updateFavoriteStar(configId)
+        end)
     end)
 
     star.MouseButton1Click:Connect(function()
@@ -5152,8 +5624,7 @@ function Library:_attachFavorite(holder, configId, starPos)
 
     self:_registerThemeRefresher(function()
         if star and star.Parent then
-            local isFav = self._STATE.Favorites[configId] == true
-            star.ImageColor3 = isFav and self._Colors.Accent or self._Colors.TextDim
+            self:_updateFavoriteStar(configId)
         end
     end)
 end
@@ -5396,9 +5867,16 @@ function Library:_rebuildFocusPattern()
     end
     if _patScale < 1 then
         local _kids = UI.GridPattern:GetChildren()
-        local _keep = math.max(0, math.floor(#_kids * _patScale))
-        for _i = #_kids, _keep + 1, -1 do
-            _kids[_i]:Destroy()
+        local _total = #_kids
+        local _keep = math.max(1, math.floor(_total * _patScale))
+        -- Sample evenly across the whole child list instead of trimming the tail:
+        -- keeping only the first N left the pattern lopsided (Concentric lost its
+        -- outer rings, Grid clustered in one corner).
+        local _stride = math.max(1, math.floor(_total / _keep))
+        for _i = _total, 1, -1 do
+            if ((_i - 1) % _stride) ~= 0 then
+                _kids[_i]:Destroy()
+            end
         end
     end
 end
@@ -5489,7 +5967,11 @@ function Library:SetWeather(enabled, weatherType, intensity)
     if intensity then self._STATE.WeatherIntensity = intensity end
 
     if enabled then
-        if not wasEnabled or typeChanged or not self._STATE.SnowConnection then
+        -- Rebuild when the active profile's particle budget changed too: a tier
+        -- downgrade used to keep animating the old (larger) pool forever.
+        local wantCap = (self._perfProfile and self._perfProfile.WeatherParticleCap) or -1
+        if not wasEnabled or typeChanged or not self._STATE.SnowConnection
+            or self._weatherCapUsed ~= wantCap then
             self:_createWeather(self._STATE.WeatherType)
         end
     else
@@ -5529,6 +6011,7 @@ function Library:_createWeather(weatherType)
     if _cap and _cap > 0 then
         maxCount = math.min(maxCount, _cap)
     end
+    self._weatherCapUsed = _cap or -1
     if maxCount <= 0 then
         UI.SnowLayer.Visible = false
         STATE.WeatherEnabled = false
@@ -5646,12 +6129,20 @@ function Library:_createWeather(weatherType)
             self:_stopWeather()
             return
         end
-        UI.SnowLayer.Visible = STATE.GuiVisible
+        if UI.SnowLayer.Visible ~= STATE.GuiVisible then
+            UI.SnowLayer.Visible = STATE.GuiVisible
+        end
         if not STATE.GuiVisible then return end
+        -- Reduced motion freezes the field instead of animating it; the old loop
+        -- ignored the setting entirely.
+        if _ReducedMotion then return end
 
         STATE.WeatherClock = STATE.WeatherClock + dt
         local T = STATE.WeatherClock
-        local currentIntensity = math.clamp(tonumber(STATE.WeatherIntensity) or 65, 0, 100)
+        -- The tier's cap must not be written back into the user's intensity (that
+        -- ratcheted it down permanently); it only limits the effective value here.
+        local profileIntensity = (self._perfProfile and self._perfProfile.WeatherIntensity) or 100
+        local currentIntensity = math.clamp(math.min(tonumber(STATE.WeatherIntensity) or 65, profileIntensity), 0, 100)
         local activeCount = math.floor(#STATE.SnowParticles * currentIntensity / 100 + 0.5)
         local speedScale = 0.45 + currentIntensity / 100 * 0.9
 
@@ -5661,7 +6152,8 @@ function Library:_createWeather(weatherType)
         for _, particle in ipairs(STATE.SnowParticles) do
             local frame = particle.frame
             local active = particle.index <= activeCount
-            frame.Visible = active and (particle.fadeAlpha or 1) > 0.01
+            local wantVisible = active and (particle.fadeAlpha or 1) > 0.01
+            if frame.Visible ~= wantVisible then frame.Visible = wantVisible end
             if active then
                 particle.y = particle.y + (particle.speed * speedScale + windY) * dt
                 particle.x = particle.x + (particle.drift * speedScale + windX * particle.windFactor) * dt
@@ -5693,15 +6185,27 @@ function Library:_createWeather(weatherType)
                 end
                 local depthFade = math.clamp(0.45 + particle.depth * 0.55, 0, 1)
                 baseTrans = baseTrans + (1 - depthFade) * 0.12
-                local finalTrans = baseTrans + (1 - particle.fadeAlpha) * (1 - baseTrans)
-                frame.BackgroundTransparency = math.clamp(finalTrans, 0, 1)
+                local finalTrans = math.clamp(baseTrans + (1 - particle.fadeAlpha) * (1 - baseTrans), 0, 1)
+                if particle.lastTrans ~= finalTrans then
+                    frame.BackgroundTransparency = finalTrans
+                    particle.lastTrans = finalTrans
+                end
 
                 local swayA = math.sin(T * particle.frequency + particle.phase) * particle.sway
                 local swayB = math.sin(T * particle.sway2Freq + particle.sway2Phase) * particle.sway2Amp
-                frame.Position = UDim2.fromScale(particle.x + swayA + swayB, particle.y)
+                local px, py = particle.x + swayA + swayB, particle.y
+                if particle.lastX ~= px or particle.lastY ~= py then
+                    frame.Position = UDim2.fromScale(px, py)
+                    particle.lastX, particle.lastY = px, py
+                end
 
-                particle.rotation = particle.rotation + particle.rotationSpeed * dt
-                frame.Rotation = particle.rotation
+                if particle.rotationSpeed ~= 0 then
+                    particle.rotation = particle.rotation + particle.rotationSpeed * dt
+                    if particle.lastRot ~= particle.rotation then
+                        frame.Rotation = particle.rotation
+                        particle.lastRot = particle.rotation
+                    end
+                end
 
                 if particle.breathAmp and particle.breathAmp > 0 then
                     local breath = 1 + math.sin(T * particle.breathFreq + particle.breathPhase) * particle.breathAmp
@@ -5803,12 +6307,20 @@ function Library:_initResize()
     local startSize
     local startInput = Vector2.zero
     local currentInput = Vector2.zero
-    local camera = getCam()
     
     UI.ResizeHandle.InputBegan:Connect(function(input)
         if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
             resizing = true
-            startSize = UI.MainContainer.AbsoluteSize
+            -- AbsoluteSize is post-UIScale, Size is pre-scale. Feeding the scaled
+            -- value back into Size made the window snap to ~55% of itself on the
+            -- first drag frame on any device with an adaptive scale != 1.
+            local s = (UI.MainScale and UI.MainScale.Scale) or 1
+            if s <= 0 then s = 1 end
+            local logicalX = UI.MainContainer.Size.X.Offset
+            local logicalY = UI.MainContainer.Size.Y.Offset
+            if logicalX <= 0 then logicalX = UI.MainContainer.AbsoluteSize.X / s end
+            if logicalY <= 0 then logicalY = UI.MainContainer.AbsoluteSize.Y / s end
+            startSize = Vector2.new(logicalX, logicalY)
             startInput = Vector2.new(input.Position.X, input.Position.Y)
             currentInput = startInput
         end
@@ -5822,18 +6334,41 @@ function Library:_initResize()
     end, self)
     
     Fn.track(RunService.RenderStepped, function()
-        if not resizing or not camera then return end
+        if not resizing then return end
+        local cam = getCam()
+        if not cam then return end
+        local mc = UI.MainContainer
+        local s = (UI.MainScale and UI.MainScale.Scale) or 1
+        if s <= 0 then s = 1 end
         local delta = Vector2.new(currentInput.X - startInput.X, currentInput.Y - startInput.Y)
-        local vp = camera.ViewportSize
-        local minW = math.min(280, vp.X * 0.95)
-        local minH = math.min(240, vp.Y * 0.95)
-        local newX = math.clamp(startSize.X + delta.X, minW, vp.X * 0.95)
-        local newY = math.clamp(startSize.Y + delta.Y, minH, vp.Y * 0.95)
-        
-        UI.MainContainer.Size = UDim2.fromOffset(newX, newY)
-        
-        if UI.Wallpaper and UI.Wallpaper.Visible then
-            UI.Wallpaper.Size = UDim2.fromScale(1, 1)
+        local vp = cam.ViewportSize
+        local maxW = math.max(120, vp.X * 0.95)
+        local maxH = math.max(120, vp.Y * 0.95)
+        -- Derive the floor from the ceiling instead of clamping to the same value,
+        -- which used to turn the handle into a "jump to 95%" button on small
+        -- viewports (minW == maxW).
+        local minW = math.min(280, maxW * 0.6)
+        local minH = math.min(240, maxH * 0.6)
+        local newX = math.clamp(startSize.X + delta.X / s, minW, maxW)
+        local newY = math.clamp(startSize.Y + delta.Y / s, minH, maxH)
+
+        mc.Size = UDim2.fromOffset(newX, newY)
+
+        -- Growing from a bottom/right anchored position used to push the window
+        -- (and its resize handle) off-screen with no way back.
+        local absPos = mc.AbsolutePosition
+        local absSize = mc.AbsoluteSize
+        if absSize.X > 0 and absSize.Y > 0 then
+            local cx = absPos.X + absSize.X / 2
+            local cy = absPos.Y + absSize.Y / 2
+            local halfW = absSize.X / 2
+            local halfH = absSize.Y / 2
+            local wantX = math.clamp(cx, halfW + 4, math.max(halfW + 4, vp.X - halfW - 4))
+            local wantY = math.clamp(cy, halfH + 4, math.max(halfH + 4, vp.Y - halfH - 4))
+            if wantX ~= cx or wantY ~= cy then
+                local p = mc.Position
+                mc.Position = UDim2.new(p.X.Scale, p.X.Offset + (wantX - cx), p.Y.Scale, p.Y.Offset + (wantY - cy))
+            end
         end
     end, self)
     
@@ -5841,6 +6376,10 @@ function Library:_initResize()
         if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
             if resizing then
                 resizing = false
+                local mobileToggle = UI.MobileToggle
+                if mobileToggle then
+                    mobileToggle.Visible = UserInputService.TouchEnabled and self._STATE.GuiVisible
+                end
             end
         end
     end, self)
@@ -6124,8 +6663,10 @@ function Library:CreateCategory(categoryName, iconSpec)
     self:_registerThemeRefresher(function()
         if not btn.Parent then return end
         btn.BackgroundColor3 = self._Colors.Card
+        -- Contrast-derived instead of hard-coded white: the active label was
+        -- unreadable on light themes (Monochrome / Ice / Gold).
         label.TextColor3 = categoryName == STATE.ActiveCategory
-            and Color3.fromRGB(255, 255, 255) or self._Colors.TextDim
+            and Fn.contrastForeground(self._Colors.Sidebar) or self._Colors.TextDim
     end)
 
     self:_layoutCategoryButtons()
@@ -6387,24 +6928,30 @@ function Library:SetActiveCategory(categoryName, preferredTab)
         return
     end
 
-    if STATE.SubTabBar and STATE.SubTabBar.Wrapper then
-        local oldBar = STATE.SubTabBar
-        local oldWrapper = oldBar.Wrapper
-        oldBar.Wrapper = nil
-        STATE.SubTabBar = nil
-        if oldWrapper then
-            for _, child in ipairs(oldWrapper:GetDescendants()) do
-                if child:IsA("CanvasGroup") then
-                    TweenService:Create(child, TweenInfo.new(0.15), {GroupTransparency = 1}):Play()
-                elseif child:IsA("TextButton") or child:IsA("TextLabel") then
-                    TweenService:Create(child, TweenInfo.new(0.15), {TextTransparency = 1}):Play()
-                end
-            end
-            task.delay(0.16, function()
-                if oldWrapper and oldWrapper.Parent then oldWrapper:Destroy() end
-            end)
+    -- The tab strip is cached per category. It used to be destroyed and rebuilt
+    -- from scratch on every category click, churning dozens of instances and
+    -- connections each time.
+    STATE.SubTabBars = STATE.SubTabBars or {}
+    for name, bar in pairs(STATE.SubTabBars) do
+        if name ~= categoryName and bar and bar.Wrapper then
+            bar.Wrapper.Visible = false
         end
-        oldBar:Destroy()
+    end
+
+    local cachedBar = STATE.SubTabBars[categoryName]
+    if cachedBar and cachedBar.Wrapper and cachedBar.Wrapper.Parent then
+        cachedBar.Wrapper.Visible = true
+        STATE.SubTabBar = cachedBar
+        self:_resizeSubTabs()
+        if targetName then
+            STATE.ActiveSubIndices[categoryName] = targetIdx
+            cachedBar:SetActiveSub(categoryName, targetName)
+            if STATE.ContentPages[targetName] then
+                self:SwitchTab(targetName)
+            end
+        end
+        self:_applyNavigationLayout()
+        return
     end
 
     local suppress = false
@@ -6435,6 +6982,7 @@ function Library:SetActiveCategory(categoryName, preferredTab)
     suppress = true
     STATE.SubTabBar:SwitchCategory(categoryName)
     suppress = false
+    STATE.SubTabBars[categoryName] = STATE.SubTabBar
 
     if targetName then
         STATE.SubTabBar:SetActiveSub(categoryName, targetName)
@@ -6480,7 +7028,7 @@ function Library:CreateTab(categoryName, tabName)
     page.VerticalScrollBarInset = Enum.ScrollBarInset.None
     page.HorizontalScrollBarInset = Enum.ScrollBarInset.None
     page.ElasticBehavior = Enum.ElasticBehavior.Never
-    table.insert(self._STATE.ScrollFrames, page)
+    self:_registerScrollFrame(page)
 
     local pagePad = Instance.new("UIPadding", page)
     pagePad.PaddingTop = UDim.new(0, 6)
@@ -6852,7 +7400,7 @@ function Library:CreateSection(tabName, title, summary, defaultOpen, columnName,
     body.CanvasSize = UDim2.new(0, 0, 0, 0)
     body.VerticalScrollBarInset = Enum.ScrollBarInset.None
     body.HorizontalScrollBarInset = Enum.ScrollBarInset.None
-    table.insert(self._STATE.ScrollFrames, body)
+    self:_registerScrollFrame(body)
 
     local bodyLayout = Instance.new("UIListLayout", body)
     bodyLayout.SortOrder = Enum.SortOrder.LayoutOrder
@@ -7009,11 +7557,9 @@ function Library:CreateSection(tabName, title, summary, defaultOpen, columnName,
     body:GetPropertyChangedSignal("AbsoluteCanvasSize"):Connect(updateScrollIndicator)
     body:GetPropertyChangedSignal("AbsoluteSize"):Connect(updateScrollIndicator)
 
-    if self._UI.ContentArea then
-        Fn.track(self._UI.ContentArea:GetPropertyChangedSignal("AbsoluteSize"), function()
-            if expanded and body and body.Parent then updateHeight(false) end
-        end, self)
-    end
+    -- No per-section listener on ContentArea.AbsoluteSize: every section used to
+    -- register one, so a window resize produced N layout flushes per frame. The
+    -- body's own AbsoluteContentSize signal already keeps the height correct.
 
     header.MouseEnter:Connect(function()
         local baseTrans = self._STATE.SectionTransparency or 0.15
@@ -7044,7 +7590,7 @@ function Library:CreateSection(tabName, title, summary, defaultOpen, columnName,
 
     local lastToggleTime = 0
     header.MouseButton1Up:Connect(function()
-        local now = tick()
+        local now = os.clock()
         if now - lastToggleTime < 0.18 then return end
         lastToggleTime = now
         toggle()
@@ -7199,16 +7745,9 @@ function Library:CreateDashboardBanner(tabName)
     local placeName = "Roblox Experience"
     local creatorName = "Roblox Studio"
     local resolvedGameIcon = ""
-    pcall(function()
-        local info = MarketplaceService:GetProductInfo(game.PlaceId)
-        if info then
-            if info.Name and info.Name ~= "" then placeName = info.Name end
-            if info.Creator and info.Creator.Name and info.Creator.Name ~= "" then creatorName = info.Creator.Name end
-            if info.IconImageAssetId and tonumber(info.IconImageAssetId) and tonumber(info.IconImageAssetId) > 0 then
-                resolvedGameIcon = "rbxassetid://" .. tostring(info.IconImageAssetId)
-            end
-        end
-    end)
+    -- The product lookup is an HTTP call: running it inline froze the whole UI
+    -- build for 1-3 seconds. Resolve it from a spawned thread further below and
+    -- patch the labels once it lands.
     if resolvedGameIcon == "" then
         local universeId = (game.GameId and tonumber(game.GameId) and tonumber(game.GameId) > 0) and game.GameId or nil
         if universeId then
@@ -7283,6 +7822,31 @@ function Library:CreateDashboardBanner(tabName)
     GameSubLbl.Text = "by " .. ((creatorName and creatorName ~= "") and creatorName or "Roblox Creator")
     GameSubLbl.ZIndex = 3
 
+    task.spawn(function()
+        local ok = pcall(function()
+            local info = MarketplaceService:GetProductInfo(game.PlaceId)
+            if not info or self:_isDead() then return end
+            if info.Name and info.Name ~= "" then
+                placeName = info.Name
+                if GameTitleLbl.Parent then GameTitleLbl.Text = placeName end
+            end
+            if info.Creator and info.Creator.Name and info.Creator.Name ~= "" then
+                creatorName = info.Creator.Name
+                if GameSubLbl.Parent then
+                    GameSubLbl.Text = "by " .. creatorName
+                end
+            end
+            if info.IconImageAssetId and tonumber(info.IconImageAssetId) and tonumber(info.IconImageAssetId) > 0 then
+                local iconUrl = "rbxassetid://" .. tostring(info.IconImageAssetId)
+                if BannerImg.Parent then BannerImg.Image = iconUrl end
+                if GameThumb.Parent then GameThumb.Image = iconUrl end
+            end
+        end)
+        if not ok then
+            -- Network unavailable or throttled: placeholders stay, which is fine.
+        end
+    end)
+
     local PillsRow = Instance.new("Frame", GameCard)
     PillsRow.Size = UDim2.new(1, -90, 0, 22)
     PillsRow.Position = UDim2.new(0, 84, 0, 52)
@@ -7353,6 +7917,10 @@ function Library:CreateDashboardBanner(tabName)
         local frames = 0
         local timeElapsed = 0
         local fpsConn = RunService.RenderStepped:Connect(function(dt)
+            -- Only sample while the banner is actually on screen (open window and
+            -- visible tab); it used to run for the whole session.
+            if not PlayerCard.Visible then return end
+            if not self._STATE.GuiVisible then return end
             frames = frames + 1
             timeElapsed = timeElapsed + dt
             if timeElapsed >= 0.5 then
@@ -7367,6 +7935,9 @@ function Library:CreateDashboardBanner(tabName)
             if not PlayerCard or not PlayerCard.Parent then
                 fpsConn:Disconnect()
                 break
+            end
+            if not PlayerCard.Visible or not self._STATE.GuiVisible then
+                continue
             end
             ClockLabel.Text = os.date("%H:%M:%S")
             DateLabel.Text = os.date("%d / %m / %Y")
@@ -7706,28 +8277,58 @@ function Library:CreateQuickDashboard(tabName, columnName)
         return holder
     end
 
-    CreateActionRow("Reconnect Instance", "Rejoin current place server directly", "refresh-cw", function()
+    CreateActionRow("Reconnect Instance", "Rejoin the current server", "refresh-cw", function()
+        -- Rejoin the *same* server (JobId) instead of teleporting into a random
+        -- one, and guard against double-clicks creating two teleports.
+        if self._teleporting then return end
+        self._teleporting = true
         self:Notify("TELEPORT", "Reconnecting to server...", "info")
-        task.wait(1)
-        TeleportService:Teleport(game.PlaceId, LocalPlayer)
+        task.spawn(function()
+            task.wait(0.8)
+            local ok = pcall(function()
+                if game.JobId and game.JobId ~= "" then
+                    TeleportService:TeleportToPlaceInstance(game.PlaceId, game.JobId, LocalPlayer)
+                else
+                    TeleportService:Teleport(game.PlaceId, LocalPlayer)
+                end
+            end)
+            if not ok then
+                self._teleporting = false
+                self:Notify("TELEPORT", "Reconnect failed — try again", "error")
+            end
+        end)
     end)
 
-    CreateActionRow("Server Hop", "Relocate to lowest ping active instance", "server", function()
-        self:Notify("SERVER HOP", "Routing to optimal cluster instance...", "info")
+    CreateActionRow("Server Hop", "Move to a different public server", "server", function()
+        if self._teleporting then return end
+        self._teleporting = true
+        self:Notify("SERVER HOP", "Searching for another server...", "info")
         task.spawn(function()
-            local success, err = pcall(function()
-                local url = string.format("https://games.roblox.com/v1/games/%d/servers/Public?sortOrder=Asc&limit=100", game.PlaceId)
+            local success = pcall(function()
+                local url = string.format(
+                    "https://games.roblox.com/v1/games/%d/servers/Public?sortOrder=Asc&limit=100&excludeFullGames=true",
+                    game.PlaceId)
                 local response = HttpService:JSONDecode(game:HttpGet(url))
-                if response and response.data and #response.data > 0 then
-                    local server = response.data[1]
-                    TeleportService:TeleportToPlaceInstance(game.PlaceId, server.id, LocalPlayer)
+                local picked = nil
+                if response and type(response.data) == "table" then
+                    -- Skip the server we are already on; prefer populated-but-not-full.
+                    for _, server in ipairs(response.data) do
+                        if server.id ~= game.JobId then
+                            picked = server
+                            if (server.playing or 0) > 0 then break end
+                        end
+                    end
+                end
+                if picked then
+                    TeleportService:TeleportToPlaceInstance(game.PlaceId, picked.id, LocalPlayer)
                 else
                     TeleportService:Teleport(game.PlaceId, LocalPlayer)
                 end
             end)
             if not success then
+                self._teleporting = false
                 self:Notify("ERROR", "Server hop failed, rejoining instead...", "error")
-                TeleportService:Teleport(game.PlaceId, LocalPlayer)
+                pcall(function() TeleportService:Teleport(game.PlaceId, LocalPlayer) end)
             end
         end)
     end)
@@ -7895,14 +8496,21 @@ function Library:CreatePerformanceDashboard(tabName, columnName)
     -- 3. Live Logic
     local currentFPS = 60
     local frameCount = 0
-    local lastCheck = tick()
-    local startTime = tick()
+    local lastCheck = os.clock()
+    local startTime = os.clock()
     local maxObservedFPS = 60
 
     Fn.track(RunService.RenderStepped, function()
         if not WaveBox.Parent then return end
+        -- Idle when the dashboard is not on screen: this used to run for the whole
+        -- session on every rendered frame.
+        if not WaveBox.Visible or not self._STATE.GuiVisible then
+            lastCheck = os.clock()
+            frameCount = 0
+            return
+        end
         frameCount = frameCount + 1
-        local now = tick()
+        local now = os.clock()
         local elapsed = now - lastCheck
         if elapsed >= 0.2 then
             currentFPS = math.clamp(math.floor((frameCount / elapsed) + 0.5), 1, 360)
@@ -7918,12 +8526,11 @@ function Library:CreatePerformanceDashboard(tabName, columnName)
             table.remove(fpsHistory, 1)
             table.insert(fpsHistory, currentFPS)
 
+            -- Direct sizing instead of 24 fresh tweens every 0.2s.
             for i, bar in ipairs(graphBars) do
                 local sample = fpsHistory[i] or 60
                 local targetHeight = math.clamp(sample / maxObservedFPS, 0.1, 0.95)
-                TweenService:Create(bar, TweenInfo.new(0.15, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
-                    Size = UDim2.new(0, 4, targetHeight, 0)
-                }):Play()
+                bar.Size = UDim2.new(0, 4, targetHeight, 0)
             end
         end
     end, self)
@@ -7931,7 +8538,8 @@ function Library:CreatePerformanceDashboard(tabName, columnName)
     task.spawn(function()
         while task.wait(0.5) do
             if not WaveBox.Parent then break end
-            local elapsed = math.floor(tick() - startTime)
+            if not WaveBox.Visible or not self._STATE.GuiVisible then continue end
+            local elapsed = math.floor(os.clock() - startTime)
             sessM.Text = string.format("%02d:%02d", math.floor(elapsed / 60), elapsed % 60)
             plM.Text = tostring(#Players:GetPlayers()) .. " / " .. tostring(Players.MaxPlayers)
             pcall(function()
@@ -7947,6 +8555,22 @@ end
 -- =========================================================
 -- CONTROLS
 -- =========================================================
+
+-- One shared pointer pump for every draggable control. Each slider/color picker
+-- used to register its own permanent UserInputService.InputChanged listener, so
+-- every mouse movement ran N Lua closures for the whole session.
+function Library:_ensureDragPump()
+    if self._dragPumpInstalled then return end
+    self._dragPumpInstalled = true
+    Fn.track(UserInputService.InputChanged, function(input)
+        local handler = self._activeDragHandler
+        if handler then handler(input) end
+    end, self)
+    Fn.track(UserInputService.InputEnded, function(input)
+        local handler = self._activeDragEnd
+        if handler then handler(input) end
+    end, self)
+end
 
 function Library:AddToggle(page, text, default, callback)
     if self:_isDead() then return end
@@ -8022,15 +8646,18 @@ function Library:AddToggle(page, text, default, callback)
     holder.InputBegan:Connect(function(inp)
         if inp.UserInputType == Enum.UserInputType.MouseButton1 or inp.UserInputType == Enum.UserInputType.Touch then
             local starBtn = holder:FindFirstChild("FavoriteStar")
-            if starBtn and starBtn.Parent then
-                local mp = UserInputService:GetMouseLocation()
+            -- Only honour the star's hitbox while it is actually on screen (it is
+            -- hidden unless favorited / hovered now), and use the event position
+            -- rather than the mouse: a finger does not move the cursor.
+            if starBtn and starBtn.Parent and starBtn.Visible then
+                local mp = inp.Position
                 local sp = starBtn.AbsolutePosition
                 local ss = starBtn.AbsoluteSize
                 if mp.X >= sp.X and mp.X <= sp.X + ss.X and mp.Y >= sp.Y and mp.Y <= sp.Y + ss.Y then
                     return
                 end
             end
-            local now = tick()
+            local now = os.clock()
             if now - lastToggle < 0.15 then return end
             lastToggle = now
             state = not state
@@ -8319,13 +8946,16 @@ function Library:AddSlider(page, text, minVal, maxVal, default, decimals, callba
     local function applyValue(newVal, animate)
         newVal = math.clamp(newVal, minVal, maxVal)
         local mult = 10 ^ decimals
-        if math.abs(newVal) <= math.huge / mult then
+        if math.abs(newVal) * mult < 2 ^ 52 then
             if newVal >= 0 then
                 newVal = math.floor(newVal * mult + 0.5) / mult
             else
                 newVal = math.ceil(newVal * mult - 0.5) / mult
             end
         end
+        -- Rounding can push the value back past the limit (e.g. max 0.95 with
+        -- 1 decimal rounds up to 1.0), so clamp again before storing it.
+        newVal = math.clamp(newVal, minVal, maxVal)
         val = newVal
         local rel = math.clamp((newVal - minVal) / (maxVal - minVal), 0, 1)
         if animate then
@@ -8361,15 +8991,19 @@ function Library:AddSlider(page, text, minVal, maxVal, default, decimals, callba
                 end
                 thread = task.spawn(function()
                     task.wait(0.35)
-                    while active do
+                    -- Tie the repeat loop to the widget's lifetime: hiding the
+                    -- window or destroying the library mid-press used to leave it
+                    -- spinning at 20 Hz, driving the value to max on its own.
+                    while active and holder.Parent and not self:_isDead() do
                         local prevV = val
-                        applyValue(val + dir * step, true)
+                        applyValue(val + dir * step, false)
                         if val ~= prevV then
                             callback(val)
                             self:_triggerAutoSave()
                         end
                         task.wait(0.05)
                     end
+                    active = false
                 end)
             end,
             stop = function()
@@ -8413,7 +9047,11 @@ function Library:AddSlider(page, text, minVal, maxVal, default, decimals, callba
         if width <= 0 then return end
         local rel = math.clamp((position.X - sliderBg.AbsolutePosition.X) / width, 0, 1)
         local newVal = minVal + (maxVal - minVal) * rel
+        local previous = val
         applyValue(newVal, false)
+        -- Dragging vertically or within one step used to re-fire the callback and
+        -- an autosave at 60+ Hz with an identical value.
+        if val == previous then return end
         callback(val)
         self:_triggerAutoSave()
     end
@@ -8456,9 +9094,42 @@ function Library:AddSlider(page, text, minVal, maxVal, default, decimals, callba
         end
     end)
 
+    local dragInput = nil
+    self:_ensureDragPump()
+
+    local function endSliderDrag(inp)
+        if inp.UserInputType ~= Enum.UserInputType.MouseButton1
+            and inp.UserInputType ~= Enum.UserInputType.Touch then return end
+        if drag then
+            TweenService:Create(knobScale, TweenInfo.new(0.15, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {Scale = 1}):Play()
+            TweenService:Create(knobStroke, TweenInfo.new(0.15), {Transparency = 0.2}):Play()
+        end
+        drag = false
+        dragInput = nil
+        if self._activeDragEnd == endSliderDrag then
+            self._activeDragEnd = nil
+            self._activeDragHandler = nil
+        end
+    end
+
+    local function moveSliderDrag(inp)
+        if not drag then return end
+        if dragInput and inp ~= dragInput then return end
+        if inp.UserInputType ~= Enum.UserInputType.MouseMovement
+            and inp.UserInputType ~= Enum.UserInputType.Touch then return end
+        setFromPosition(inp.Position)
+    end
+
+    local function beginSliderDrag(inp)
+        drag = true
+        dragInput = inp
+        self._activeDragHandler = moveSliderDrag
+        self._activeDragEnd = endSliderDrag
+    end
+
     knobHit.InputBegan:Connect(function(inp)
         if inp.UserInputType == Enum.UserInputType.MouseButton1 or inp.UserInputType == Enum.UserInputType.Touch then
-            drag = true
+            beginSliderDrag(inp)
             TweenService:Create(knobScale, TweenInfo.new(0.1), {Scale = 1.2}):Play()
             TweenService:Create(knobStroke, TweenInfo.new(0.1), {Transparency = 0}):Play()
         end
@@ -8466,27 +9137,11 @@ function Library:AddSlider(page, text, minVal, maxVal, default, decimals, callba
 
     sliderBg.InputBegan:Connect(function(inp)
         if inp.UserInputType == Enum.UserInputType.MouseButton1 or inp.UserInputType == Enum.UserInputType.Touch then
-            drag = true
+            beginSliderDrag(inp)
             TweenService:Create(knobScale, TweenInfo.new(0.1), {Scale = 1.2}):Play()
             setFromPosition(inp.Position)
         end
     end)
-
-    Fn.track(UserInputService.InputEnded, function(inp)
-        if inp.UserInputType == Enum.UserInputType.MouseButton1 or inp.UserInputType == Enum.UserInputType.Touch then
-            if drag then
-                TweenService:Create(knobScale, TweenInfo.new(0.15, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {Scale = 1}):Play()
-                TweenService:Create(knobStroke, TweenInfo.new(0.15), {Transparency = 0.2}):Play()
-            end
-            drag = false
-        end
-    end, self)
-
-    Fn.track(UserInputService.InputChanged, function(inp)
-        if drag and (inp.UserInputType == Enum.UserInputType.MouseMovement or inp.UserInputType == Enum.UserInputType.Touch) then
-            setFromPosition(inp.Position)
-        end
-    end, self)
 
     local _favId = self:_getConfigId("slider", text)
     self:_registerConfigState(_favId,
@@ -8784,14 +9439,14 @@ function Library:AddDropdown(page, text, options, defaultIndex, callback)
     popupScroll.CanvasSize = UDim2.new(0, 0, 0, 0)
     popupScroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
     popupScroll.ZIndex = 201
-    table.insert(self._STATE.ScrollFrames, popupScroll)
+    self:_registerScrollFrame(popupScroll)
 
     local optionButtons = {}
 
     searchBox:GetPropertyChangedSignal("Text"):Connect(function()
         local q = string.lower(searchBox.Text)
         for _, btn in ipairs(optionButtons) do
-            local lbl = btn:FindFirstChildOfClass("TextLabel")
+            local lbl = btn:FindFirstChild("OptLabel")
             if lbl then
                 local txt = string.lower(lbl.Text)
                 btn.Visible = (q == "" or string.find(txt, q, 1, true) ~= nil)
@@ -8809,7 +9464,20 @@ function Library:AddDropdown(page, text, options, defaultIndex, callback)
     popupPad.PaddingLeft = UDim.new(0, 5)
     popupPad.PaddingRight = UDim.new(0, 5)
 
+    local optionsBuilt = false
     local function refreshOptions()
+        if optionsBuilt then
+            -- Rows already exist: refresh their state only. Rebuilding all of them
+            -- on every open churned ~4 instances per option per click.
+            for i, btn in ipairs(optionButtons) do
+                local check = btn:FindFirstChild("Check")
+                if check then check.Visible = (i == currentIndex) end
+                if not btn.Visible then btn.Visible = true end
+            end
+            if searchBox.Text ~= "" then searchBox.Text = "" end
+            return
+        end
+        optionsBuilt = true
         for _, b in ipairs(optionButtons) do b:Destroy() end
         table.clear(optionButtons)
         for i, opt in ipairs(options) do
@@ -8881,7 +9549,8 @@ function Library:AddDropdown(page, text, options, defaultIndex, callback)
     self:_registerConfigState(_favId,
         function() return currentIndex end,
         function(v, silent)
-            if type(v) ~= "number" or v < 1 or v > #options then return end
+            -- Fractional indices used to pass this guard and render "nil".
+            if type(v) ~= "number" or v % 1 ~= 0 or v < 1 or v > #options then return end
             if v == currentIndex then return end
             currentIndex = v
             chipLabel.Text = tostring(options[v])
@@ -8904,24 +9573,36 @@ function Library:AddDropdown(page, text, options, defaultIndex, callback)
                 btn.BackgroundTransparency = 1
             end
         end
+        if idx >= 1 and idx <= #optionButtons then
+            popupScroll.CanvasPosition = Vector2.new(0, math.max(0, (idx - 1) * 32 - 60))
+        end
+    end
+    local function stepHighlight(delta)
+        local count = #optionButtons
+        if count == 0 then return end
+        local nextIndex = highlightedIndex + delta
+        if nextIndex < 1 then nextIndex = count end
+        if nextIndex > count then nextIndex = 1 end
+        setHighlight(nextIndex)
     end
     popup:GetPropertyChangedSignal("Visible"):Connect(function()
         if popup.Visible then
             highlightedIndex = currentIndex
             setHighlight(highlightedIndex)
             if not keyNavConn then
-                keyNavConn = UserInputService.InputBegan:Connect(function(input, gameProcessed)
+                keyNavConn = Fn.track(UserInputService.InputBegan, function(input, gameProcessed)
                     if self:_isDead() then return end
                     if not popup.Visible then return end
                     if gameProcessed then return end
                     if UserInputService:GetFocusedTextBox() then return end
                     local key = input.KeyCode
                     if key == Enum.KeyCode.Down then
-                        setHighlight(math.clamp(highlightedIndex + 1, 1, #options))
+                        stepHighlight(1)
                     elseif key == Enum.KeyCode.Up then
-                        setHighlight(math.clamp(highlightedIndex - 1, 1, #options))
+                        stepHighlight(-1)
                     elseif key == Enum.KeyCode.Return then
-                        if highlightedIndex >= 1 and highlightedIndex <= #options then
+                        if highlightedIndex >= 1 and highlightedIndex <= #options
+                            and highlightedIndex ~= currentIndex then
                             currentIndex = highlightedIndex
                             chipLabel.Text = tostring(options[highlightedIndex])
                             popup.Visible = false
@@ -8931,10 +9612,13 @@ function Library:AddDropdown(page, text, options, defaultIndex, callback)
                     elseif key == Enum.KeyCode.Escape then
                         popup.Visible = false
                     end
-                end)
+                end, self)
             end
         else
-            if keyNavConn then keyNavConn:Disconnect(); keyNavConn = nil end
+            if keyNavConn then
+                pcall(function() Fn.untrack(keyNavConn, self) end)
+                keyNavConn = nil
+            end
         end
     end)
 
@@ -8991,11 +9675,10 @@ function Library:AddDropdown(page, text, options, defaultIndex, callback)
         if not inPopup and not inBtn then popup.Visible = false end
     end, self)
 
-    task.spawn(function()
-        while popup.Parent do
-            if popup.Visible then updatePopupPosition() end
-            task.wait(0.1)
-        end
+    -- Reposition on demand (open / resize) instead of a 10 Hz poll that ran for
+    -- the whole session, even with the popup closed.
+    popup:GetPropertyChangedSignal("Visible"):Connect(function()
+        if popup.Visible then task.defer(updatePopupPosition) end
     end)
 
     self:_registerThemeRefresher(function()
@@ -9044,7 +9727,12 @@ function Library:AddDropdown(page, text, options, defaultIndex, callback)
         chipLabel.Text = tostring(options[idx])
         if not silent then callback(idx, options[idx]); self:_triggerAutoSave() end
     end
-    _h.SetValue = _h.Set
+    -- SetValue takes a value (what GetValue returns), not an index: aliasing it to
+    -- Set made the canonical `h:SetValue(h:GetValue())` copy a silent no-op.
+    _h.SetValue = function(_, value, silent)
+        local idx = table.find(options, value)
+        if idx then _h:Set(idx, silent) end
+    end
     local _defaultDropdownIdx = defaultIndex
     _h.Reset = function(_)
         if currentIndex == _defaultDropdownIdx then return end
@@ -9252,7 +9940,7 @@ function Library:AddMultiDropdown(page, text, options, defaults, callback)
     Instance.new("UICorner", mdNoneBtn).CornerRadius = UDim.new(0, 3)
 
     local popupScroll = Instance.new("ScrollingFrame", popup)
-    popupScroll.Size = UDim2.new(1, 0, 1, -44)
+    popupScroll.Size = UDim2.new(1, 0, 1, -34)
     popupScroll.Position = UDim2.new(0, 0, 0, 34)
     popupScroll.BackgroundTransparency = 1
     popupScroll.BorderSizePixel = 0
@@ -9261,7 +9949,7 @@ function Library:AddMultiDropdown(page, text, options, defaults, callback)
     popupScroll.CanvasSize = UDim2.new(0, 0, 0, 0)
     popupScroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
     popupScroll.ZIndex = 201
-    table.insert(self._STATE.ScrollFrames, popupScroll)
+    self:_registerScrollFrame(popupScroll)
 
     local popupList = Instance.new("UIListLayout", popupScroll)
     popupList.SortOrder = Enum.SortOrder.LayoutOrder
@@ -9286,8 +9974,29 @@ function Library:AddMultiDropdown(page, text, options, defaults, callback)
         end
     end)
 
+    local optionsBuilt = false
     local function refreshOptions()
-        if mdSearchBox then mdSearchBox.Text = "" end
+        if mdSearchBox and mdSearchBox.Text ~= "" then mdSearchBox.Text = "" end
+        if optionsBuilt then
+            -- Built once, then only the checkbox state is re-synced. Every open
+            -- used to destroy and recreate ~8 instances per option.
+            for i, btn in ipairs(optionButtons) do
+                local isSel = selected[i] == true
+                local box = btn:FindFirstChild("CheckBox")
+                if box then
+                    box.BackgroundColor3 = isSel and self._Colors.Accent or self._Colors.Bg
+                    local stroke = box:FindFirstChildOfClass("UIStroke")
+                    if stroke then
+                        stroke.Color = isSel and self._Colors.Accent or self._Colors.Border
+                    end
+                    local chk = box:FindFirstChild("CheckMark")
+                    if chk then chk.Visible = isSel end
+                end
+                if not btn.Visible then btn.Visible = true end
+            end
+            return
+        end
+        optionsBuilt = true
         for _, b in ipairs(optionButtons) do b:Destroy() end
         table.clear(optionButtons)
         for i, opt in ipairs(options) do
@@ -9444,11 +10153,9 @@ function Library:AddMultiDropdown(page, text, options, defaults, callback)
         if not inPopup and not inBtn then popup.Visible = false end
     end, self)
 
-    task.spawn(function()
-        while popup.Parent do
-            if popup.Visible then updatePopupPosition() end
-            task.wait(0.1)
-        end
+    -- Same as the single dropdown: no permanent 10 Hz poll.
+    popup:GetPropertyChangedSignal("Visible"):Connect(function()
+        if popup.Visible then task.defer(updatePopupPosition) end
     end)
 
     local _favId = self:_getConfigId("multi_dropdown", text)
@@ -9517,7 +10224,16 @@ function Library:AddMultiDropdown(page, text, options, defaults, callback)
         updateChipLabel()
         if not silent then callback(getSelectedIndices(), getSelectedValues()); self:_triggerAutoSave() end
     end
-    _h.SetValue = _h.Set
+    -- SetValue accepts the values array that GetValue returns.
+    _h.SetValue = function(_, values, silent)
+        if type(values) ~= "table" then return end
+        local indices = {}
+        for _, value in ipairs(values) do
+            local idx = table.find(options, value)
+            if idx then table.insert(indices, idx) end
+        end
+        _h:Set(indices, silent)
+    end
     local _defaultMultiIdx = {}
     if type(defaults) == "table" then
         for _, idx in ipairs(defaults) do table.insert(_defaultMultiIdx, idx) end
@@ -9655,7 +10371,7 @@ function Library:AddConfigList(page, onLoad)
             if child:IsA("TextButton") then child:Destroy() end
         end
         
-        local configs = self:GetConfigs()
+        local configs = self:GetConfigs(true)
         emptyLabel.Visible = (#configs == 0)
         
         for i, cfg in ipairs(configs) do
@@ -9755,22 +10471,26 @@ function Library:AddConfigList(page, onLoad)
             loadBtn.MouseLeave:Connect(function() TweenService:Create(loadBtn, TweenInfo.new(0.15), {BackgroundTransparency = 0.8}):Play() end)
             loadBtn.MouseButton1Click:Connect(function()
                 self:PlaySound("Click")
-                self:LoadConfig(cfg.name)
-                if onLoad then onLoad(cfg.name) end
+                -- Only fire onLoad when the load actually succeeded.
+                if self:LoadConfig(cfg.name) then
+                    if onLoad then onLoad(cfg.name) end
+                end
             end)
 
             delBtn.MouseEnter:Connect(function() TweenService:Create(delBtn, TweenInfo.new(0.15), {BackgroundTransparency = 0.5}):Play() end)
             delBtn.MouseLeave:Connect(function() TweenService:Create(delBtn, TweenInfo.new(0.15), {BackgroundTransparency = 0.8}):Play() end)
             delBtn.MouseButton1Click:Connect(function()
                 self:PlaySound("Click")
-                pcall(function()
-                    if delfile and cfg.file then
-                        delfile(cfg.file)
-                    else
-                        local g = (getgenv and getgenv()) or _G
-                        if g.__DoDConfigs then g.__DoDConfigs[cfg.name] = nil end
-                    end
-                end)
+                local deleted = false
+                if cfg.file and type(delfile) == "function" then
+                    deleted = pcall(delfile, cfg.file)
+                end
+                local g = (getgenv and getgenv()) or _G
+                if g.__DoDConfigs then g.__DoDConfigs[cfg.name] = nil end
+                if not deleted and cfg.file then
+                    -- Do not silently pretend: the row will reappear otherwise.
+                    self:Notify("CONFIG", "Delete failed: " .. tostring(cfg.name), "error")
+                end
                 refreshList()
             end)
         end
@@ -10000,6 +10720,7 @@ function Library:AddKeybind(page, text, default, callback)
             self:PlaySound("Click")
             if listener.active then
                 listener.active = false
+                self._keybindCapturing = false
                 btnText.Text = listener.keyName
                 TweenService:Create(btnStroke, TweenInfo.new(0.15), {Color = self._Colors.Border, Transparency = 0.5}):Play()
                 TweenService:Create(btn, TweenInfo.new(0.15), {BackgroundTransparency = 0.2}):Play()
@@ -10011,6 +10732,7 @@ function Library:AddKeybind(page, text, default, callback)
                 if l.btnStroke then TweenService:Create(l.btnStroke, TweenInfo.new(0.15), {Color = self._Colors.Border, Transparency = 0.5}):Play() end
             end
             listener.active = true
+            self._keybindCapturing = true
             btnText.Text = "PRESS A KEY..."
             TweenService:Create(btnStroke, TweenInfo.new(0.15), {Color = self._Colors.Accent, Transparency = 0}):Play()
             TweenService:Create(btn, TweenInfo.new(0.15), {BackgroundTransparency = 0}):Play()
@@ -10051,6 +10773,7 @@ function Library:AddKeybind(page, text, default, callback)
                 if l.active then
                     if not onClickBtn then
                         l.active = false
+                        self._keybindCapturing = false
                         local capturedMods = getMods()
                         if inp.UserInputType == Enum.UserInputType.Keyboard then
                             l.setKey(inp.KeyCode, capturedMods)
@@ -10064,6 +10787,10 @@ function Library:AddKeybind(page, text, default, callback)
                         elseif inp.UserInputType == Enum.UserInputType.Touch then
                             l.setKey("LClick", capturedMods)
                             l.callback(Enum.UserInputType.MouseButton1, capturedMods)
+                        else
+                            -- Gamepad / wheel / focus: not bindable. Restore the
+                            -- label instead of leaving "PRESS A KEY..." stuck.
+                            l.setKey(l.key, l.mods)
                         end
                     end
                 elseif l.key ~= nil and not onClickBtn then
@@ -10079,13 +10806,15 @@ function Library:AddKeybind(page, text, default, callback)
                     elseif inp.UserInputType == Enum.UserInputType.MouseButton2 and l.key == "RClick" then
                         matched = true
                         firedKey = Enum.UserInputType.MouseButton2
-                    elseif inp.UserInputType == Enum.UserInputType.Touch and l.key == "LClick" and not self._isMobile then
+                    elseif inp.UserInputType == Enum.UserInputType.Touch and l.key == "LClick" then
                         matched = true
                         firedKey = Enum.UserInputType.MouseButton1
                     end
                     if matched and modsMatch(l.mods, currentMods) then
+                        -- No autosave here: firing a bind does not change any
+                        -- persisted value (it used to rewrite the config every
+                        -- 0.6s whenever a movement key was held).
                         l.callback(firedKey, l.mods)
-                        self:_triggerAutoSave()
                     end
                 end
             end
@@ -10109,13 +10838,29 @@ function Library:AddKeybind(page, text, default, callback)
     _h.Get = function(_) return listener.keyName end
     _h.GetValue = function(_) return { key = listener.key, mods = listener.mods } end
     _h.Set = function(_, key, mods, silent)
-        if key == nil then return end
+        if type(mods) ~= "table" then mods = {} end
+        if key == nil then
+            -- Unbinding used to be impossible, so "NONE" could never be reached
+            -- through the API even though the UI can display it.
+            listener.setKey(nil, {})
+            if not silent then
+                pcall(listener.callback, nil, {})
+                self:_triggerAutoSave()
+            end
+            return
+        end
         local k = key
         if type(key) == "string" and key ~= "LClick" and key ~= "RClick" then
             local ok, enum = pcall(function() return Enum.KeyCode[key] end)
-            if ok and enum then k = enum end
+            if ok and enum then
+                k = enum
+            else
+                -- Storing the raw string left a bind that looked set but could
+                -- never match an EnumItem, so it silently never fired.
+                warn("[DoD UI] Keybind.Set: unknown key name '" .. tostring(key) .. "'")
+                return
+            end
         end
-        if type(mods) ~= "table" then mods = {} end
         listener.setKey(k, mods)
         if not silent then
             local _ok, _err = pcall(listener.callback, k, mods)
@@ -10204,7 +10949,11 @@ end
 
 function Library:_convertRichText(text)
     if type(text) ~= "string" then text = tostring(text or "") end
+    -- Escape first: a literal "<" in user text used to be interpreted as a tag.
     local s = text
+        :gsub("&", "&amp;")
+        :gsub("<", "&lt;")
+        :gsub(">", "&gt;")
     s = s:gsub("%*%*(.-)%*%*", "<b>%1</b>")
     s = s:gsub("__(.-)__", "<i>%1</i>")
     s = s:gsub("`(.-)`", '<font name="RobotoMono">%1</font>')
@@ -10369,10 +11118,12 @@ function Library:AddTextbox(page, text, placeholder, callback, opts)
     inputPadding.PaddingRight = UDim.new(0, 10)
 
     local _kbSavedPos = nil
+    local lastSubmitted = ""
     input.Focused:Connect(function()
         TweenService:Create(inputStroke, TweenInfo.new(0.15), {Color = self._Colors.Accent, Transparency = 0.1}):Play()
         TweenService:Create(input, TweenInfo.new(0.15), {BackgroundTransparency = 0}):Play()
         if UserInputService.TouchEnabled and self._UI.MainContainer then
+            if _kbSavedPos then return end
             _kbSavedPos = self._UI.MainContainer.Position
             local cam = getCam()
             if cam then
@@ -10382,9 +11133,14 @@ function Library:AddTextbox(page, text, placeholder, callback, opts)
                 local maxShift = math.max(0, vp.Y * 0.5 - absSize.Y * 0.5 - 8)
                 shift = math.min(shift, maxShift)
                 local p = self._UI.MainContainer.Position
-                TweenService:Create(self._UI.MainContainer, TweenInfo.new(0.28, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {
-                    Position = UDim2.new(p.X.Scale, p.X.Offset, p.Y.Scale, p.Y.Offset - shift),
-                }):Play()
+                -- Cancel the previous shift tween: two of them fighting over
+                -- Position left the window parked at an offset.
+                if self._kbTween then pcall(function() self._kbTween:Cancel() end) end
+                self._kbTween = TweenService:Create(self._UI.MainContainer,
+                    TweenInfo.new(0.28, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {
+                        Position = UDim2.new(p.X.Scale, p.X.Offset, p.Y.Scale, p.Y.Offset - shift),
+                    })
+                self._kbTween:Play()
             end
         end
     end)
@@ -10392,15 +11148,20 @@ function Library:AddTextbox(page, text, placeholder, callback, opts)
         TweenService:Create(inputStroke, TweenInfo.new(0.15), {Color = self._Colors.Border, Transparency = 0.5}):Play()
         TweenService:Create(input, TweenInfo.new(0.15), {BackgroundTransparency = 0.2}):Play()
         if _kbSavedPos and self._UI.MainContainer then
-            TweenService:Create(self._UI.MainContainer, TweenInfo.new(0.28, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {
-                Position = _kbSavedPos,
-            }):Play()
+            if self._kbTween then pcall(function() self._kbTween:Cancel() end) end
+            self._kbTween = TweenService:Create(self._UI.MainContainer,
+                TweenInfo.new(0.28, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {
+                    Position = _kbSavedPos,
+                })
+            self._kbTween:Play()
             _kbSavedPos = nil
         end
-    end)
-
-    input.FocusLost:Connect(function()
-        callback(input.Text)
+        -- A single FocusLost handler: the old pair ran the callback even when the
+        -- text had not changed, and without pcall.
+        if input.Text == lastSubmitted then return end
+        lastSubmitted = input.Text
+        local ok, err = pcall(callback, input.Text)
+        if not ok then warn("[DoD UI] Textbox callback error: " .. tostring(err)) end
         self:_triggerAutoSave()
     end)
 
@@ -10411,6 +11172,7 @@ function Library:AddTextbox(page, text, placeholder, callback, opts)
             if type(v) ~= "string" then return end
             if input.Text == v then return end
             input.Text = v
+            lastSubmitted = v
             if not silent then
                 callback(v)
                 self:_triggerAutoSave()
@@ -10434,6 +11196,7 @@ function Library:AddTextbox(page, text, placeholder, callback, opts)
         if type(v) ~= "string" then return end
         if input.Text == v then return end
         input.Text = v
+        lastSubmitted = v
         if not silent then
             local _ok, _err = pcall(callback, v)
             if not _ok then warn("[DoD UI] Textbox set callback error: " .. tostring(_err)) end
@@ -10670,8 +11433,13 @@ function Library:AddColorPicker(page, text, defaultColor3, callback)
         end
 
         if notify then
-            callback(currentColor, alpha)
-            self:_triggerAutoSave()
+            -- Throttle the user callback during a drag; the final value is
+            -- delivered on release. It used to fire 60+ times per second.
+            local now = os.clock()
+            if now - (self._cpLastNotify or 0) >= 0.05 then
+                self._cpLastNotify = now
+                callback(currentColor, alpha)
+            end
         end
     end
 
@@ -10733,34 +11501,53 @@ function Library:AddColorPicker(page, text, defaultColor3, callback)
         updateColor(true)
     end
 
+    local dragInput = nil
+    self:_ensureDragPump()
+    local function endColorDrag(input)
+        if input.UserInputType ~= Enum.UserInputType.MouseButton1
+            and input.UserInputType ~= Enum.UserInputType.Touch then return end
+        dragMode = nil
+        dragInput = nil
+        if self._activeDragEnd == endColorDrag then
+            self._activeDragEnd = nil
+            self._activeDragHandler = nil
+        end
+        callback(currentColor, alpha)
+        -- Persist once, on release, instead of re-arming the autosave every frame.
+        self:_triggerAutoSave()
+    end
+    local function moveColorDrag(input)
+        if not dragMode then return end
+        if dragInput and input ~= dragInput then return end
+        if input.UserInputType ~= Enum.UserInputType.MouseMovement
+            and input.UserInputType ~= Enum.UserInputType.Touch then return end
+        pickFromPosition(dragMode, input.Position)
+    end
+    local function beginColorDrag(input, mode)
+        dragMode = mode
+        dragInput = input
+        self._activeDragHandler = moveColorDrag
+        self._activeDragEnd = endColorDrag
+    end
+
     saturationValue.InputBegan:Connect(function(input)
         if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-            dragMode = "SV"
-            pickFromPosition(dragMode, input.Position)
+            beginColorDrag(input, "SV")
+            pickFromPosition("SV", input.Position)
         end
     end)
     hueBar.InputBegan:Connect(function(input)
         if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-            dragMode = "Hue"
-            pickFromPosition(dragMode, input.Position)
+            beginColorDrag(input, "Hue")
+            pickFromPosition("Hue", input.Position)
         end
     end)
     alphaBar.InputBegan:Connect(function(input)
         if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-            dragMode = "Alpha"
-            pickFromPosition(dragMode, input.Position)
+            beginColorDrag(input, "Alpha")
+            pickFromPosition("Alpha", input.Position)
         end
     end)
-    Fn.track(UserInputService.InputChanged, function(input)
-        if dragMode and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
-            pickFromPosition(dragMode, input.Position)
-        end
-    end, self)
-    Fn.track(UserInputService.InputEnded, function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-            dragMode = nil
-        end
-    end, self)
 
     preview.MouseButton1Click:Connect(function()
         if popup.Visible then
@@ -10807,24 +11594,24 @@ function Library:AddColorPicker(page, text, defaultColor3, callback)
         end,
     })
 
-    task.spawn(function()
-        while popup.Parent do
-            if popup.Visible then
-                local camera = getCam()
-                if camera then
-                    local viewport = camera.ViewportSize
-                    local pw = popup.AbsoluteSize.X
-                    local ph = popup.AbsoluteSize.Y
-                    local x = math.clamp(preview.AbsolutePosition.X, 8, math.max(8, viewport.X - pw - 8))
-                    local y = preview.AbsolutePosition.Y + preview.AbsoluteSize.Y + 6
-                    if y + ph > viewport.Y - 8 then
-                        y = preview.AbsolutePosition.Y - ph - 6
-                    end
-                    popup.Position = UDim2.fromOffset(x, math.max(8, y))
-                end
+    -- Position on demand instead of polling at 10 Hz for the picker's lifetime.
+    -- The popup closes as soon as the pointer leaves it, so it cannot be dragged
+    -- around while open.
+    popup:GetPropertyChangedSignal("Visible"):Connect(function()
+        if not popup.Visible then return end
+        task.defer(function()
+            if not popup.Visible then return end
+            local camera = getCam()
+            if not camera then return end
+            local viewport = camera.ViewportSize
+            local pw, ph = popup.AbsoluteSize.X, popup.AbsoluteSize.Y
+            local x = math.clamp(preview.AbsolutePosition.X, 8, math.max(8, viewport.X - pw - 8))
+            local y = preview.AbsolutePosition.Y + preview.AbsoluteSize.Y + 6
+            if y + ph > viewport.Y - 8 then
+                y = preview.AbsolutePosition.Y - ph - 6
             end
-            task.wait(0.1)
-        end
+            popup.Position = UDim2.fromOffset(x, math.max(8, y))
+        end)
     end)
 
     self:_registerThemeRefresher(function()
@@ -10850,9 +11637,10 @@ function Library:AddColorPicker(page, text, defaultColor3, callback)
     end
     _h.SetValue = _h.Set
     _h.SetVisible = function(_, v) holder.Visible = v and true or false end
+    local _defaultCPAlpha = alpha
     local _defaultCPColor = defaultColor3
     _h.Reset = function(_)
-        _h:Set(_defaultCPColor, 1)
+        _h:Set(_defaultCPColor, _defaultCPAlpha)
     end
     return _h
 end
@@ -10875,7 +11663,10 @@ function Library:AddSeparator(page, height)
     self:_registerThemeRefresher(function()
         line.BackgroundColor3 = self._Colors.Border
     end)
-    return container
+    -- Return the same handle shape as every other Add* so SetVisible/Raw work.
+    local _h = { __isHandle = true, __tag = "Separator", Raw = container }
+    _h.SetVisible = function(_, visible) container.Visible = visible and true or false end
+    return _h
 end
 
 function Library:AddChipBar(page, text, options, defaultIndex, callback)
@@ -10988,7 +11779,7 @@ function Library:AddChipBar(page, text, options, defaultIndex, callback)
     scroller.ElasticBehavior = Enum.ElasticBehavior.Never
     scroller.VerticalScrollBarInset = Enum.ScrollBarInset.None
     scroller.HorizontalScrollBarInset = Enum.ScrollBarInset.None
-    table.insert(self._STATE.ScrollFrames, scroller)
+    self:_registerScrollFrame(scroller)
 
     local layout = Instance.new("UIListLayout", scroller)
     layout.FillDirection = Enum.FillDirection.Horizontal
@@ -11190,7 +11981,13 @@ function Library:AddChipBar(page, text, options, defaultIndex, callback)
         updateChips()
         if not silent then callback(idx, options[idx]); self:_triggerAutoSave() end
     end
-    _h.SetValue = _h.Set
+    _h.SetValue = function(_, value, silent)
+        local idx = table.find(options, value)
+        if idx then _h:Set(idx, silent) end
+    end
+    -- Every other control exposes SetVisible; generic code that loops over handles
+    -- used to break on the chip bar.
+    _h.SetVisible = function(_, visible) holder.Visible = visible and true or false end
     return _h
 end
 
@@ -11234,19 +12031,51 @@ function Library:_themeSnapshot()
     if self._VersionBadgeOverride then
         snap.VersionBadgeOverride = { self._VersionBadgeOverride.R, self._VersionBadgeOverride.G, self._VersionBadgeOverride.B }
     end
+    -- Custom palette overrides were never serialised, so they were silently
+    -- dropped by every save/export.
+    local custom = {}
+    for key, color in pairs(self._CustomColorOverrides or {}) do
+        if typeof(color) == "Color3" then
+            custom[key] = { color.R, color.G, color.B }
+        end
+    end
+    snap.CustomColorOverrides = custom
     return snap
 end
 
 function Library:_applyThemeSnapshot(data, silent)
-    if type(data) ~= "table" then return end
-    if self:_isDead() then return end
+    if type(data) ~= "table" then return false, "invalid snapshot" end
+    if self:_isDead() then return false, "library destroyed" end
+    local previousLoading = self._themeLoading
     self._themeLoading = true
     local ok, err = pcall(function()
+        -- Clear overrides the snapshot does not carry, otherwise importing a
+        -- partial/older theme leaves the previous session's accent and badge
+        -- colour in place and the theme looks half-applied.
+        if type(data.AccentOverride) ~= "table" then
+            self._AccentOverride = nil
+        end
+        if type(data.VersionBadgeOverride) ~= "table" then
+            self._VersionBadgeOverride = nil
+        end
+        self._CustomColorOverrides = {}
+        if type(data.CustomColorOverrides) == "table" then
+            for key, rgb in pairs(data.CustomColorOverrides) do
+                if type(rgb) == "table" and #rgb >= 3 then
+                    self._CustomColorOverrides[key] = Color3.new(rgb[1], rgb[2], rgb[3])
+                end
+            end
+        end
         if type(data.PerfAuto) == "boolean" then
             self._perfAuto = data.PerfAuto
         end
         if type(data.PerfTier) == "string" and D.PerfProfiles[data.PerfTier] then
             self._savedPerfTier = data.PerfTier
+            -- Applying it only in the constructor meant a runtime load reported
+            -- success while the tier never changed.
+            if self._initialized then
+                self:SetPerformanceTier(data.PerfTier, true)
+            end
         end
         if type(data.AccentOverride) == "table" and #data.AccentOverride >= 3 then
             self._AccentOverride = Color3.new(data.AccentOverride[1], data.AccentOverride[2], data.AccentOverride[3])
@@ -11324,10 +12153,16 @@ function Library:_applyThemeSnapshot(data, silent)
             end
         end
     end)
-    self._themeLoading = false
-    if not ok and not silent then
-        warn("[DoD UI] Theme apply failed: " .. tostring(err))
+    -- Restore the previous value instead of clearing it: a snapshot applied from
+    -- inside another theme operation used to re-enable autosave mid-flight.
+    self._themeLoading = previousLoading
+    if not ok then
+        if not silent then
+            warn("[DoD UI] Theme apply failed: " .. tostring(err))
+        end
+        return false, err
     end
+    return true
 end
 
 function Library:_triggerThemeSave()
@@ -11350,41 +12185,53 @@ end
 
 function Library:ImportTheme(data, silent)
     if self:_isDead() then return end
-    self:_applyThemeSnapshot(data, silent)
+    if type(data) ~= "table" then
+        if not silent then self:Notify("THEME", "Invalid theme data", "error") end
+        return
+    end
+    local ok, err = self:_applyThemeSnapshot(data, silent)
     if not silent then
-        self:Notify("THEME", "Theme applied", "success")
+        if ok then
+            self:Notify("THEME", "Theme applied", "success")
+        else
+            self:Notify("THEME", "Apply failed: " .. tostring(err), "error")
+        end
     end
 end
 
 function Library:SaveThemeConfig(name, silent)
-    if self:_isDead() then return end
+    if self:_isDead() then return false end
     local key = type(name) == "string" and name ~= "" and name or "settings"
     local g = (getgenv and getgenv()) or _G
-    g.DoD_LastTheme = key
     local snap = self:_themeSnapshot()
     local ok, json = pcall(function()
         return game:GetService("HttpService"):JSONEncode(snap)
     end)
     if not ok or type(json) ~= "string" then
         if not silent then self:Notify("THEME", "JSON encode failed", "error") end
-        return
+        return false
     end
+    -- Always mirror into memory as well: an executor that exposes writefile but
+    -- not isfile/readfile used to write where the loader never looked.
+    g.__DoDThemeConfigs = g.__DoDThemeConfigs or {}
+    g.__DoDThemeConfigs[key] = json
     local path = "DoD_Theme_" .. key .. ".json"
-    local saved = false
+    local fileOk = false
     pcall(function()
         if writefile and type(writefile) == "function" then
             writefile(path, json)
-            saved = true
+            fileOk = true
         end
     end)
-    if not saved then
-        g.__DoDThemeConfigs = g.__DoDThemeConfigs or {}
-        g.__DoDThemeConfigs[key] = json
-        saved = true
+    g.DoD_LastTheme = key
+    if not silent then
+        if fileOk then
+            self:Notify("THEME", "Saved: " .. key, "success")
+        else
+            self:Notify("THEME", "Saved (memory only): " .. key, "warning")
+        end
     end
-    if saved and not silent then
-        self:Notify("THEME", "Saved: " .. key, "success")
-    end
+    return true
 end
 
 function Library:LoadThemeConfig(name, silent)
@@ -11414,35 +12261,44 @@ function Library:LoadThemeConfig(name, silent)
         if not silent then self:Notify("THEME", "Decode failed", "error") end
         return
     end
-    self:_applyThemeSnapshot(data, true)
+    local appliedOk, applyErr = self:_applyThemeSnapshot(data, true)
+    if not appliedOk then
+        if not silent then
+            self:Notify("THEME", "Load failed: " .. tostring(applyErr), "error")
+        end
+        return false
+    end
     local g = (getgenv and getgenv()) or _G
     g.DoD_LastTheme = key
     if not silent then
         self:Notify("THEME", "Loaded: " .. key, "success")
     end
+    return true
 end
 
 function Library:GetThemeConfigs()
-    local configs = {}
-    local prefix = "DoD_Theme_"
-    local suffix = ".json"
+    local seen, configs = {}, {}
+    local g = (getgenv and getgenv()) or _G
+    local function add(name)
+        if type(name) ~= "string" or name == "" then return end
+        if seen[name] then return end
+        seen[name] = true
+        table.insert(configs, name)
+    end
     pcall(function()
         if listfiles and type(listfiles) == "function" then
             for _, file in ipairs(listfiles()) do
-                if string.sub(file, 1, #prefix) == prefix and string.sub(file, -#suffix) == suffix then
-                    local name = string.sub(file, #prefix + 1, #file - #suffix)
-                    table.insert(configs, name)
-                end
-            end
-        else
-            local g = (getgenv and getgenv()) or _G
-            if g.__DoDThemeConfigs then
-                for name, _ in pairs(g.__DoDThemeConfigs) do
-                    table.insert(configs, name)
-                end
+                local base = string.match(tostring(file), "[^\\/]+$") or tostring(file)
+                local name = string.match(base, "^DoD_Theme_(.+)%.json$")
+                if name then add(name) end
             end
         end
     end)
+    -- Merge the in-memory store unconditionally; the old code only looked there
+    -- when listfiles was missing entirely, so memory-only themes were invisible.
+    if g.__DoDThemeConfigs then
+        for name in pairs(g.__DoDThemeConfigs) do add(name) end
+    end
     table.sort(configs)
     return configs
 end
@@ -11451,14 +12307,16 @@ function Library:ResetThemeConfig(silent)
     if self:_isDead() then return end
     self._AccentOverride = nil
     self._VersionBadgeOverride = nil
+    self._CustomColorOverrides = {}
     self:_applyThemeSnapshot({
         ThemeName = "Demon of Darkness",
+        PerfAuto = true,
         Acrylic = true,
         AcrylicBlurIntensity = 8,
         SoundsEnabled = true,
         SoundVolume = 1,
         NotifPosition = "TopRight",
-        FocusOverlayEnabled = true,
+        FocusOverlayEnabled = false,
         FocusOverlayType = "Grid",
         WeatherEnabled = false,
         WeatherType = "Snow",
@@ -11468,13 +12326,25 @@ function Library:ResetThemeConfig(silent)
         SectionTransparency = 0.15,
         TooltipEnabled = true,
         TooltipTransparency = 0.15,
+        CursorTrailEnabled = false,
+        TitleIconName = "hexagon",
         WallpaperSource = false,
+        WallpaperTransparency = 0,
+        CustomColorOverrides = {},
     }, true)
+    -- Persist, otherwise the next launch reloads the old settings and the reset
+    -- silently undoes itself.
+    self:SaveThemeConfig("settings", true)
     if not silent then self:Notify("THEME", "Reset to defaults", "info") end
 end
 
 function Library:_isDead()
-    return self._STATE ~= nil and self._STATE.Destroyed == true
+    local state = self._STATE
+    if not state then return true end
+    if state.Destroyed then return true end
+    -- Treat a half-built instance (constructor threw after _STATE existed) as
+    -- dead instead of letting every method index a missing _UI.
+    return self._UI == nil
 end
 
 function Library:Minimize()
@@ -11491,8 +12361,16 @@ function Library:Minimize()
     
     self:PlaySound("ToggleOff")
     
-    UserInputService.MouseIconEnabled = true
+    self._overGui = false
+    if self._savedMouseIconEnabled ~= nil then
+        UserInputService.MouseIconEnabled = self._savedMouseIconEnabled
+    else
+        UserInputService.MouseIconEnabled = true
+    end
     if UI.CustomCursor then UI.CustomCursor.Visible = false end
+    if self._savedMouseBehavior then
+        UserInputService.MouseBehavior = self._savedMouseBehavior
+    end
     
     local centerX = 0.5
     local centerY = 0.5
@@ -11505,7 +12383,11 @@ function Library:Minimize()
         centerY = (pos.Y + size.Y / 2) / vp.Y
     end
     
-    for i = 1, 40 do
+    -- The burst is decorative: skip most of it on the tier that was auto-selected
+    -- because the machine could not afford exactly this kind of work.
+    local burstCount = (self._perfTier == "Potato" and 8) or (self._perfTier == "Balanced" and 20) or 40
+    if _ReducedMotion then burstCount = 0 end
+    for i = 1, burstCount do
         local p = Instance.new("Frame")
         p.Parent = UI.MainGui
         local pSize = math.random(4, 12)
@@ -11548,8 +12430,12 @@ function Library:Minimize()
     local st = TweenService:Create(UI.MainScale, tweenInfo, {Scale = _tScale * 0.4})
     st:Play()
     
-    st.Completed:Connect(function()
+    st.Completed:Connect(function(playbackState)
         if STATE.Destroyed then return end
+        if playbackState == Enum.PlaybackState.Cancelled then
+            STATE.AnimatingGui = false
+            return
+        end
         UI.MainContainer.Visible = false
         UI.ParticleBG.Visible = false
         UI.FocusOverlay.Visible = false
@@ -11572,6 +12458,13 @@ function Library:Minimize()
     end)
 end
 
+function Library:_registerScrollFrame(frame)
+    if not frame then return end
+    table.insert(self._STATE.ScrollFrames, frame)
+    self:_attachScrollSound(frame)
+    return frame
+end
+
 function Library:_attachScrollSound(frame)
     if not frame or not frame.Parent then return end
     if self._isMobile then return end
@@ -11582,7 +12475,7 @@ function Library:_attachScrollSound(frame)
         if self:_isDead() then return end
         if not self._STATE.GuiVisible then return end
         if not self._SoundsEnabled then return end
-        local now = tick()
+        local now = os.clock()
         if now - lastPlay < 0.12 then return end
         lastPlay = now
         self:PlaySound("Scroll")
@@ -11615,9 +12508,28 @@ function Library:Toggle()
     if self:_isDead() then return end
     local STATE = self._STATE
     local UI = self._UI
-    if STATE.AnimatingGui then return end
+    if STATE.AnimatingGui then
+        -- Record the intent instead of dropping the press: double-tapping the
+        -- hotkey used to leave the window in the state the *first* press started.
+        STATE.ToggleQueued = not STATE.GuiVisible
+        return
+    end
     STATE.AnimatingGui = true
     if STATE.GuiTween then STATE.GuiTween:Cancel() end
+
+    local function settleAnimation()
+        STATE.AnimatingGui = false
+        STATE.GuiTween = nil
+        local queued = STATE.ToggleQueued
+        if queued ~= nil then
+            STATE.ToggleQueued = nil
+            if queued ~= STATE.GuiVisible then
+                task.defer(function()
+                    if not self:_isDead() then self:Toggle() end
+                end)
+            end
+        end
+    end
 
     local blurTarget = self.Acrylic and self.AcrylicBlurIntensity or 0
     if STATE.FocusOverlayEnabled then blurTarget = math.max(blurTarget, 12) end
@@ -11633,8 +12545,17 @@ function Library:Toggle()
             if _entry and _entry.close then pcall(_entry.close) end
         end
         STATE.GuiVisible = false
-        UserInputService.MouseIconEnabled = true
+        self._overGui = false
+        -- Hand the OS cursor back the way the game had it, not always "visible".
+        if self._savedMouseIconEnabled ~= nil then
+            UserInputService.MouseIconEnabled = self._savedMouseIconEnabled
+        else
+            UserInputService.MouseIconEnabled = true
+        end
         if UI.CustomCursor then UI.CustomCursor.Visible = false end
+        if self._savedMouseBehavior then
+            UserInputService.MouseBehavior = self._savedMouseBehavior
+        end
         
         STATE.SavedPos = UI.MainContainer.Position
         local targetPos = UDim2.new(STATE.SavedPos.X.Scale, STATE.SavedPos.X.Offset, STATE.SavedPos.Y.Scale, STATE.SavedPos.Y.Offset + 30)
@@ -11651,18 +12572,21 @@ function Library:Toggle()
         STATE.GuiTween = TweenService:Create(UI.MainScale, tweenInfo, {Scale = _tScale * 0.96})
         STATE.GuiTween:Play()
         
-        STATE.GuiTween.Completed:Connect(function()
+        STATE.GuiTween.Completed:Connect(function(playbackState)
+            if STATE.Destroyed then return end
+            if playbackState == Enum.PlaybackState.Cancelled then
+                settleAnimation()
+                return
+            end
             UI.MainContainer.Visible = false
             UI.ParticleBG.Visible = false
             UI.FocusOverlay.Visible = false
             STATE.GuiVisible = false
-            STATE.AnimatingGui = false
-            STATE.GuiTween = nil
+            settleAnimation()
         end)
     else
         -- OPEN ANIMATION (Smooth Slide Up + Fade In)
         self:PlaySound("ToggleOn")
-        UserInputService.MouseIconEnabled = false
         if not self._isMobile and UI.CustomCursor then 
             UI.CustomCursor.Visible = true 
         end
@@ -11720,9 +12644,13 @@ function Library:Toggle()
         STATE.GuiTween = TweenService:Create(UI.MainScale, tweenInfo, {Scale = _tScale})
         STATE.GuiTween:Play()
         
-        STATE.GuiTween.Completed:Connect(function()
-            STATE.AnimatingGui = false
-            STATE.GuiTween = nil
+        STATE.GuiTween.Completed:Connect(function(playbackState)
+            if STATE.Destroyed then return end
+            if playbackState == Enum.PlaybackState.Cancelled then
+                settleAnimation()
+                return
+            end
+            settleAnimation()
         end)
     end
 end
@@ -11731,6 +12659,19 @@ function Library:BindToClose(callback)
     if self:_isDead() then return end
     if type(callback) ~= "function" then return end
     table.insert(self._STATE._closeCallbacks, callback)
+    -- Actually bind to the engine: the old version only stored the callback, so
+    -- "save my config on exit" handlers never ran when the player left.
+    if not self._engineCloseBound then
+        self._engineCloseBound = true
+        pcall(function()
+            game:BindToClose(function()
+                if self:_isDead() then return end
+                for _, cb in ipairs(self._STATE._closeCallbacks or {}) do
+                    pcall(cb)
+                end
+            end)
+        end)
+    end
     return callback
 end
 
@@ -11773,7 +12714,16 @@ function Library:ShowContextMenu(position, options)
     pad.PaddingLeft = UDim.new(0, 4)
     pad.PaddingRight = UDim.new(0, 4)
     
-    for i, opt in ipairs(options) do
+    for i, rawOpt in ipairs(options) do
+        -- Normalise entries: a bare string used to raise "attempt to index
+        -- string" mid-build, leaving a half-constructed menu on screen forever.
+        local opt = rawOpt
+        if type(opt) == "string" then
+            opt = { label = opt }
+        elseif type(opt) ~= "table" then
+            warn("[DoD UI] ShowContextMenu: skipping invalid option #" .. tostring(i))
+            opt = { label = tostring(opt) }
+        end
         local btn = Instance.new("TextButton", menu)
         btn.LayoutOrder = i
         btn.Size = UDim2.new(1, 0, 0, 28)
@@ -11840,36 +12790,76 @@ function Library:Destroy()
     STATE._destroying = true
     local _ok, _err = pcall(function()
     STATE.GuiVisible = false
-    
-    UserInputService.MouseIconEnabled = true
-    UserInputService.MouseBehavior = Enum.MouseBehavior.Default
-    
-    UserInputService.MouseIconEnabled = true
-    STATE.WeatherEnabled = false
-    if STATE.GuiTween then
-        STATE.GuiTween:Cancel()
-        STATE.GuiTween = nil
+
+    -- Flush debounced writes first: `Destroyed` is only set after this pcall, so
+    -- the public save methods still function here. Without this the last 0.6-0.8s
+    -- of user changes were silently dropped on close.
+    pcall(function()
+        local auto = STATE.ConfigAutoSave
+        if auto and auto.name then self:SaveConfig(auto.name, true) end
+        if self._initialized then self:SaveThemeConfig("settings", true) end
+    end)
+
+    self._overGui = false
+    if self._savedMouseIconEnabled ~= nil then
+        UserInputService.MouseIconEnabled = self._savedMouseIconEnabled
+    else
+        UserInputService.MouseIconEnabled = true
+    end
+    if self._savedMouseBehavior then
+        UserInputService.MouseBehavior = self._savedMouseBehavior
     end
 
-    self:_stopWeather()
+    STATE.WeatherEnabled = false
+    if STATE.GuiTween then
+        pcall(function() STATE.GuiTween:Cancel() end)
+        STATE.GuiTween = nil
+    end
+    STATE.AnimatingGui = false
+    if self._loadingSpinConn then
+        pcall(function() Fn.untrack(self._loadingSpinConn, self) end)
+        self._loadingSpinConn = nil
+    end
+
+    pcall(function() self:_hideTooltip(true) end)
+    pcall(function() self:_stopWeather() end)
+    for _, entry in ipairs(STATE.activeDropdownPopups or {}) do
+        if entry and entry.close then pcall(entry.close) end
+    end
+    if self._activeContextMenu then
+        pcall(function() self._activeContextMenu:Destroy() end)
+        self._activeContextMenu = nil
+    end
+    if self._ActiveConfirm then
+        pcall(function() self._ActiveConfirm:Destroy() end)
+        self._ActiveConfirm = nil
+    end
+    self._ConfirmAnimating = false
+
     for _, frame in ipairs(STATE.activeNotifs) do
         if frame and frame.Parent then frame:Destroy() end
         STATE.notifParts[frame] = nil
     end
     table.clear(STATE.activeNotifs)
     table.clear(STATE.NotifQueue)
+    table.clear(STATE.notifParts)
     STATE.NotifActive = 0
+
     pcall(function() if self._UI.GuiBlur then self._UI.GuiBlur:Destroy() end end)
     pcall(function() if self._UI.MainGui then self._UI.MainGui:Destroy() end end)
     pcall(function() if self._UI.NotifGui then self._UI.NotifGui:Destroy() end end)
     pcall(function() if self._UI.TooltipGui then self._UI.TooltipGui:Destroy() end end)
-    pcall(function() if self._particleBGConn then self._particleBGConn:Disconnect() end end)
+
     for _, _snd in pairs(self._Sounds or {}) do pcall(function() _snd:Stop(); _snd:Destroy() end) end
     self._Sounds = {}
-    for _, layer in ipairs(self._shadowLayers or {}) do
-        pcall(function() layer.frame:Destroy() end)
-    end
+
     Fn.disconnectAll(self)
+    self._particleBGConn = nil
+    self._loadingSpinConn = nil
+    self._favTweens = nil
+    self._cursorTrailPool = nil
+    self._UI = {}
+
     table.clear(STATE.ThemeRefreshers)
     table.clear(STATE.activeKeybindListeners)
     table.clear(STATE.KeybindOverlayRows)
@@ -11877,16 +12867,24 @@ function Library:Destroy()
     table.clear(STATE.SearchSections)
     table.clear(STATE.SearchBodies)
     table.clear(STATE.SearchTopLevel)
-    
+    table.clear(STATE.ConfigRegistry)
+    table.clear(STATE.ScrollFrames)
+    table.clear(STATE.FavoriteHolders)
+    if STATE.FavoriteStars then table.clear(STATE.FavoriteStars) end
+    if STATE.ConfigCounter then table.clear(STATE.ConfigCounter) end
+    if STATE.SubTabBars then table.clear(STATE.SubTabBars) end
+    table.clear(STATE.SavedScrollPositions)
+
+    -- Module-level flags outlive the instance: leaving them set made the *next*
+    -- library instance start with every tween at zero duration.
+    _ReducedMotion = false
+    STATE.ReducedMotion = false
+
     for _, cb in ipairs(STATE._closeCallbacks or {}) do
-        local _ok, _err = pcall(cb)
-        if not _ok then warn("[DoD UI] BindToClose callback error: " .. tostring(_err)) end
+        local cbOk, cbErr = pcall(cb)
+        if not cbOk then warn("[DoD UI] BindToClose callback error: " .. tostring(cbErr)) end
     end
     table.clear(STATE._closeCallbacks or {})
-    
-    -- Final safety net to restore mouse state globally
-    UserInputService.MouseIconEnabled = true
-    UserInputService.MouseBehavior = Enum.MouseBehavior.Default
     end)
     STATE._destroying = false
     STATE.Destroyed = true
