@@ -12,6 +12,14 @@
 
 ]]
 
+-- Usage (chainable):
+-- local UI = Library.CreateWindow({ Title = "..." })
+-- local Tab = UI:CreateTab("Combat")
+-- local Sec = Tab:CreateSection("Aimbot", "Settings", true, "Left", "target")
+-- Sec:AddToggle("Enabled", false, function(v) end)
+-- Sec:AddChipBar("Mode", {"LEGIT","RAGE","BLATANT"}, 1, function(i,v) end)
+-- Classic style (still works): UI:AddToggle(Sec, "Enabled", false, cb)
+
 local Library = {}
 Library.__index = Library
 
@@ -21,7 +29,8 @@ local _iconsOk, _iconsErr = pcall(function()
     IconsV2 = loadstring(game:HttpGetAsync("https://raw.githubusercontent.com/Footagesus/Icons/main/Main-v2.lua"))()
     IconsV2.SetIconsType("lucide")
 end)
-
+-- Surface the failure instead of silently degrading every icon to the fallback
+-- set with no diagnostic.
 if not _iconsOk or not IconsV2 then
     warn("[DoD UI] Icon pack unavailable (" .. tostring(_iconsErr) .. "), using built-in fallbacks")
     IconsV2 = nil
@@ -4538,8 +4547,12 @@ function Library:_initTrafficLights()
     local UI = self._UI
     local container = Instance.new("Frame", UI.TitleBar)
     container.Name = "TrafficLights"
-    container.Size = UDim2.new(0, 62, 0, 14)
-    container.Position = UDim2.new(1, -76, 0.5, -7)
+    local _isMobTL = self._isMobile
+    local _tlDot = _isMobTL and 20 or 14
+    local _tlSpace = _isMobTL and 26 or 18
+    local _tlTotal = _tlDot + _tlSpace * 2
+    container.Size = UDim2.fromOffset(_tlTotal, _tlDot)
+    container.Position = UDim2.new(1, -(_tlTotal + 14), 0.5, -(_tlDot / 2))
     container.BackgroundTransparency = 1
 
     local baseColors = {
@@ -4553,9 +4566,9 @@ function Library:_initTrafficLights()
         Color3.fromRGB(60, 220, 80),
     }
     UI.TrafficDots = {}
-    local isMobile = self._isMobile
-    local dotSize = isMobile and 18 or 14
-    local dotSpacing = isMobile and 24 or 18
+    local isMobile = _isMobTL
+    local dotSize = _tlDot
+    local dotSpacing = _tlSpace
     for i = 1, 3 do
         local dot = Instance.new("TextButton", container)
         dot.Size = UDim2.new(0, dotSize, 0, dotSize)
@@ -8572,8 +8585,20 @@ function Library:AddToggle(page, text, default, callback)
         error("[DoD UI] AddToggle callback must be a function.")
     end
     callback = callback or function() end
+    local _isMobTgl = self._isMobile
+    local _swW = _isMobTgl and 52 or 36
+    local _swH = _isMobTgl and 28 or 20
+    local _knSz = _isMobTgl and 22 or 16
+    local _knOnX = -(_knSz + 2)
+    local _knOffX = 2
+    local _knY = -(_knSz / 2)
+    local _swRightX = -(_swW + 14)
+    local _swY = -(_swH / 2)
+    local _rowH = _isMobTgl and 48 or 36
+    local _labPad = _swW + 68
+
     local holder = Instance.new("Frame", page)
-    holder.Size = UDim2.new(1, 0, 0, 36)
+    holder.Size = UDim2.new(1, 0, 0, _rowH)
     holder.BackgroundColor3 = self._Colors.Card
     holder.BackgroundTransparency = 0.3
     holder.BorderSizePixel = 0
@@ -8582,19 +8607,19 @@ function Library:AddToggle(page, text, default, callback)
     Instance.new("UICorner", holder).CornerRadius = UDim.new(0, 8)
 
     local lab = Instance.new("TextLabel", holder)
-    lab.Size = UDim2.new(1, -104, 1, 0)
+    lab.Size = UDim2.new(1, -_labPad, 1, 0)
     lab.Position = UDim2.new(0, 12, 0, 0)
     lab.BackgroundTransparency = 1
     lab.Text = text
     lab.TextColor3 = self._Colors.Text
     lab.Font = Enum.Font.GothamBold
-    lab.TextSize = 12
+    lab.TextSize = _isMobTgl and 13 or 12
     lab.TextXAlignment = Enum.TextXAlignment.Left
     lab.TextTruncate = Enum.TextTruncate.AtEnd
 
     local switchBg = Instance.new("Frame", holder)
-    switchBg.Size = UDim2.new(0, 36, 0, 20)
-    switchBg.Position = UDim2.new(1, -50, 0.5, -10)
+    switchBg.Size = UDim2.fromOffset(_swW, _swH)
+    switchBg.Position = UDim2.new(1, _swRightX, 0.5, _swY)
     switchBg.BackgroundColor3 = default and self._Colors.Accent or Color3.fromRGB(45, 45, 55)
     switchBg.BorderSizePixel = 0
     Instance.new("UICorner", switchBg).CornerRadius = UDim.new(1, 0)
@@ -8604,8 +8629,8 @@ function Library:AddToggle(page, text, default, callback)
     switchStroke.Thickness = 1
 
     local knob = Instance.new("Frame", switchBg)
-    knob.Size = UDim2.new(0, 16, 0, 16)
-    knob.Position = default and UDim2.new(1, -18, 0.5, -8) or UDim2.new(0, 2, 0.5, -8)
+    knob.Size = UDim2.fromOffset(_knSz, _knSz)
+    knob.Position = default and UDim2.new(1, _knOnX, 0.5, _knY) or UDim2.new(0, _knOffX, 0.5, _knY)
     knob.BackgroundColor3 = Fn.contrastForeground(default and self._Colors.Accent or Color3.fromRGB(45, 45, 55))
     knob.BorderSizePixel = 0
     Instance.new("UICorner", knob).CornerRadius = UDim.new(1, 0)
@@ -8617,45 +8642,60 @@ function Library:AddToggle(page, text, default, callback)
         local targetBg = state and self._Colors.Accent or Color3.fromRGB(45, 45, 55)
         local targetStroke = state and self._Colors.Accent or self._Colors.Border
         local targetKnob = Fn.contrastForeground(targetBg)
+        local onPos = UDim2.new(1, _knOnX, 0.5, _knY)
+        local offPos = UDim2.new(0, _knOffX, 0.5, _knY)
         if animate then
             TweenService:Create(switchBg, tInfo, {BackgroundColor3 = targetBg}):Play()
             TweenService:Create(switchStroke, tInfo, {Color = targetStroke}):Play()
             TweenService:Create(knob, tInfo, {
-                Position = state and UDim2.new(1, -18, 0.5, -8) or UDim2.new(0, 2, 0.5, -8),
+                Position = state and onPos or offPos,
                 BackgroundColor3 = targetKnob,
             }):Play()
         else
             switchBg.BackgroundColor3 = targetBg
             switchStroke.Color = targetStroke
-            knob.Position = state and UDim2.new(1, -18, 0.5, -8) or UDim2.new(0, 2, 0.5, -8)
+            knob.Position = state and onPos or offPos
             knob.BackgroundColor3 = targetKnob
         end
     end
 
     local lastToggle = 0
+    local function _doToggle()
+        local now = os.clock()
+        if now - lastToggle < 0.15 then return end
+        lastToggle = now
+        state = not state
+        self:PlaySound(state and "ToggleOn" or "ToggleOff")
+        updateVisual(true)
+        callback(state)
+        self:_triggerAutoSave()
+    end
     holder.InputBegan:Connect(function(inp)
-        if inp.UserInputType == Enum.UserInputType.MouseButton1 or inp.UserInputType == Enum.UserInputType.Touch then
-            local starBtn = holder:FindFirstChild("FavoriteStar")
-            -- Only honour the star's hitbox while it is actually on screen (it is
-            -- hidden unless favorited / hovered now), and use the event position
-            -- rather than the mouse: a finger does not move the cursor.
-            if starBtn and starBtn.Parent and starBtn.Visible then
-                local mp = inp.Position
-                local sp = starBtn.AbsolutePosition
-                local ss = starBtn.AbsoluteSize
-                if mp.X >= sp.X and mp.X <= sp.X + ss.X and mp.Y >= sp.Y and mp.Y <= sp.Y + ss.Y then
-                    return
-                end
+        if inp.UserInputType ~= Enum.UserInputType.MouseButton1
+            and inp.UserInputType ~= Enum.UserInputType.Touch then return end
+        local starBtn = holder:FindFirstChild("FavoriteStar")
+        if starBtn and starBtn.Parent and starBtn.Visible then
+            local mp = inp.Position
+            local sp = starBtn.AbsolutePosition
+            local ss = starBtn.AbsoluteSize
+            if mp.X >= sp.X and mp.X <= sp.X + ss.X and mp.Y >= sp.Y and mp.Y <= sp.Y + ss.Y then
+                return
             end
-            local now = os.clock()
-            if now - lastToggle < 0.15 then return end
-            lastToggle = now
-            state = not state
-            self:PlaySound(state and "ToggleOn" or "ToggleOff")
-            updateVisual(true)
-            callback(state)
-            self:_triggerAutoSave()
         end
+        -- MOBILE: only toggle when the tap lands on the switch itself (plus
+        -- ~10px slop for finger imprecision). Tapping the label row no longer
+        -- flips the state -- that matches the request to stop accidental
+        -- toggles when scrolling or aiming at the row by mistake.
+        if self._isMobile then
+            local mp = inp.Position
+            local swp, sws = switchBg.AbsolutePosition, switchBg.AbsoluteSize
+            local slop = 10
+            if mp.X < swp.X - slop or mp.X > swp.X + sws.X + slop
+                or mp.Y < swp.Y - slop or mp.Y > swp.Y + sws.Y + slop then
+                return
+            end
+        end
+        _doToggle()
     end)
 
     local _favId = self:_getConfigId("toggle", text)
@@ -9104,7 +9144,10 @@ function Library:AddSlider(page, text, minVal, maxVal, default, decimals, callba
 
     local function moveSliderDrag(inp)
         if not drag then return end
-        if dragInput and inp ~= dragInput then return end
+        -- Removed: dragInput identity check. dragInput holds the original
+        -- InputBegan event; inp here is always InputChanged. They are never
+        -- the same object, so the old check made every drag a no-op. The
+        -- UserInputType filter below is enough device-mismatch protection.
         if inp.UserInputType ~= Enum.UserInputType.MouseMovement
             and inp.UserInputType ~= Enum.UserInputType.Touch then return end
         setFromPosition(inp.Position)
@@ -10870,29 +10913,35 @@ function Library:AddButton(page, text, callback)
         error("[DoD UI] AddButton callback must be a function.")
     end
     callback = callback or function() end
+    local _isMobBtn = self._isMobile
+    local _btnRowH = _isMobBtn and 56 or 42
+    local _btnH = _isMobBtn and 44 or 32
+    local _btnY = _isMobBtn and 6 or 5
+    local _btnTxtMin = _isMobBtn and 12 or 9
+    local _btnTxtMax = _isMobBtn and 15 or 12
     local holder = Instance.new("Frame", page)
-    holder.Size = UDim2.new(1, 0, 0, 42)
+    holder.Size = UDim2.new(1, 0, 0, _btnRowH)
     holder.BackgroundColor3 = self._Colors.Card
     holder.BackgroundTransparency = 0.3
     holder.BorderSizePixel = 0
     Instance.new("UICorner", holder).CornerRadius = UDim.new(0, 8)
 
     local btn = Instance.new("TextButton", holder)
-    btn.Size = UDim2.new(1, -24, 0, 32)
-    btn.Position = UDim2.new(0, 12, 0, 5)
+    btn.Size = UDim2.new(1, -24, 0, _btnH)
+    btn.Position = UDim2.new(0, 12, 0, _btnY)
     btn.Text = text
     btn.BackgroundColor3 = self._Colors.Accent
     btn.BackgroundTransparency = 0.15
     btn.TextColor3 = Fn.accentTextColor(self._Colors.Accent)
     btn.Font = Enum.Font.GothamBold
-    btn.TextSize = 12
+    btn.TextSize = _btnTxtMax
     btn.TextScaled = true
     btn.TextTruncate = Enum.TextTruncate.AtEnd
     btn.BorderSizePixel = 0
     btn.AutoButtonColor = false
     local btnTextConstraint = Instance.new("UITextSizeConstraint", btn)
-    btnTextConstraint.MinTextSize = 9
-    btnTextConstraint.MaxTextSize = 12
+    btnTextConstraint.MinTextSize = _btnTxtMin
+    btnTextConstraint.MaxTextSize = _btnTxtMax
     Fn.bindPressAnimation(btn)
     Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 8)
 
@@ -11508,7 +11557,8 @@ function Library:AddColorPicker(page, text, defaultColor3, callback)
     end
     local function moveColorDrag(input)
         if not dragMode then return end
-        if dragInput and input ~= dragInput then return end
+        -- Same identity-check bug as the slider; input events are always new
+        -- objects so comparing them to the InputBegan reference is useless.
         if input.UserInputType ~= Enum.UserInputType.MouseMovement
             and input.UserInputType ~= Enum.UserInputType.Touch then return end
         pickFromPosition(dragMode, input.Position)
