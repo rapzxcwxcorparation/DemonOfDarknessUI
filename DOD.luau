@@ -2587,11 +2587,21 @@ function Library:_initMainGui()
             if UserInputService.MouseIconEnabled ~= (not overGui) then
                 UserInputService.MouseIconEnabled = not overGui
             end
-            if self._STATE.GuiVisible then
-                local wantBehavior = overGui and Enum.MouseBehavior.Default or self._savedMouseBehavior
-                if wantBehavior and UserInputService.MouseBehavior ~= wantBehavior then
-                    UserInputService.MouseBehavior = wantBehavior
-                end
+            -- NOTE: MouseBehaviour is intentionally NOT set here anymore. The old
+            -- code restored _savedMouseBehavior whenever the pointer left the
+            -- panel's bounds. If the game had LockCenter / LockCurrentPosition
+            -- cached at construction time, the mouse would snap back to the
+            -- center of the screen as soon as the cursor moved outside the panel,
+            -- producing the "barely can move" feel. MouseBehaviour is now managed
+            -- below (always Default while GUI is open) and restored only when the
+            -- GUI closes (Toggle close path / Minimize / Destroy).
+        end
+
+        -- FIX: while the GUI is visible, keep the mouse unlocked no matter where
+        -- the pointer is. This is the entire point of a free-mouse GUI overlay.
+        if self._STATE.GuiVisible then
+            if UserInputService.MouseBehavior ~= Enum.MouseBehavior.Default then
+                UserInputService.MouseBehavior = Enum.MouseBehavior.Default
             end
         end
 
@@ -12647,6 +12657,11 @@ function Library:Toggle()
     else
         -- OPEN ANIMATION (Smooth Slide Up + Fade In)
         self:PlaySound("ToggleOn")
+        -- Capture the current game mouse behavior right before we start
+        -- forcing Default. Doing this at open time (not at construction)
+        -- keeps the value fresh if the game locked the mouse mid-session
+        -- (combat, aiming, cutscene, etc). Close path restores this value.
+        self._savedMouseBehavior = UserInputService.MouseBehavior
         if not self._isMobile and UI.CustomCursor then 
             UI.CustomCursor.Visible = true 
         end
