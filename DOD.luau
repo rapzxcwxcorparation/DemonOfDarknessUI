@@ -2771,9 +2771,15 @@ function Library:_initMainGui()
             math.max(1, viewport.X * 0.96),
             math.max(1, viewport.Y * 0.92)
         )
+        -- FIX: original 280x240 was so small that the entire content area
+        -- collapsed to a sliver (only headers visible). 360x400 leaves enough
+        -- room for title + tabs + search + at least 1-2 full sections. Mobile
+        -- uses slightly smaller because the viewport itself is smaller.
+        local _minW = self._isMobile and 300 or 360
+        local _minH = self._isMobile and 340 or 400
         UI.MainSizeConstraint.MinSize = Vector2.new(
-            math.min(280, UI.MainSizeConstraint.MaxSize.X),
-            math.min(240, UI.MainSizeConstraint.MaxSize.Y)
+            math.min(_minW, UI.MainSizeConstraint.MaxSize.X),
+            math.min(_minH, UI.MainSizeConstraint.MaxSize.Y)
         )
     end
     updateSizeLimit()
@@ -6397,8 +6403,14 @@ function Library:_initResize()
         -- Derive the floor from the ceiling instead of clamping to the same value,
         -- which used to turn the handle into a "jump to 95%" button on small
         -- viewports (minW == maxW).
-        local minW = math.min(280, maxW * 0.6)
-        local minH = math.min(240, maxH * 0.6)
+        -- FIX: was 280x240 with 0.6 proportional fallback, which on tiny
+        -- viewports produced unusably small windows. Use the same explicit
+        -- minimum as the UISizeConstraint with a 0.9 proportional fallback
+        -- (only kicks in if the viewport itself is smaller than the min).
+        local _baseMinW = self._isMobile and 300 or 360
+        local _baseMinH = self._isMobile and 340 or 400
+        local minW = math.min(_baseMinW, maxW * 0.9)
+        local minH = math.min(_baseMinH, maxH * 0.9)
         local newX = math.clamp(startSize.X + delta.X / s, minW, maxW)
         local newY = math.clamp(startSize.Y + delta.Y / s, minH, maxH)
 
