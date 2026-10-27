@@ -12,14 +12,6 @@
 
 ]]
 
--- Usage (chainable):
--- local UI = Library.CreateWindow({ Title = "..." })
--- local Tab = UI:CreateTab("Combat")
--- local Sec = Tab:CreateSection("Aimbot", "Settings", true, "Left", "target")
--- Sec:AddToggle("Enabled", false, function(v) end)
--- Sec:AddChipBar("Mode", {"LEGIT","RAGE","BLATANT"}, 1, function(i,v) end)
--- Classic style (still works): UI:AddToggle(Sec, "Enabled", false, cb)
-
 local Library = {}
 Library.__index = Library
 
@@ -29,8 +21,7 @@ local _iconsOk, _iconsErr = pcall(function()
     IconsV2 = loadstring(game:HttpGetAsync("https://raw.githubusercontent.com/Footagesus/Icons/main/Main-v2.lua"))()
     IconsV2.SetIconsType("lucide")
 end)
--- Surface the failure instead of silently degrading every icon to the fallback
--- set with no diagnostic.
+
 if not _iconsOk or not IconsV2 then
     warn("[DoD UI] Icon pack unavailable (" .. tostring(_iconsErr) .. "), using built-in fallbacks")
     IconsV2 = nil
