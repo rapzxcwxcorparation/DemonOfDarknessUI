@@ -3118,6 +3118,11 @@ function Library:_initKeybindOverlay()
     toggle.AutoButtonColor = false
     toggle.ZIndex = 253
     toggle.Visible = false
+    -- Extra safety net: never let the pill appear on touch devices, even if a
+    -- future code path forgets the mobile guard.
+    if self._isMobile then
+        toggle.Active = false
+    end
     Instance.new("UICorner", toggle).CornerRadius = UDim.new(1, 0)
 
     local toggleStroke = Instance.new("UIStroke", toggle)
@@ -3187,6 +3192,7 @@ function Library:_initKeybindOverlay()
         end
     end
     local function toggleOverlay()
+        if self._isMobile then return end  -- desktop-only overlay
         if overlayAnimating then return end
         overlayAnimating = true
         setOverlayVisible(not overlay.Visible, true)
@@ -4219,7 +4225,11 @@ end
 function Library:CreateKeybindOverlay()
     if self:_isDead() then return end
     self:_refreshKeybindOverlay()
-    self._UI.KeybindOverlayToggle.Visible = true
+    -- Desktop-only toggle; mobile skips showing it but still returns the
+    -- overlay instance so callers that expect a return value do not crash.
+    if not self._isMobile then
+        self._UI.KeybindOverlayToggle.Visible = true
+    end
     return self._UI.KeybindOverlay
 end
 
@@ -4228,6 +4238,9 @@ function Library:SetKeybindOverlayVisible(visible)
     if type(visible) ~= "boolean" then
         error("[DoD UI] SetKeybindOverlayVisible expects a boolean value.")
     end
+    -- Keybind overlay does not exist on touch: honour the call silently instead
+    -- of flickering a panel that has no reason to be there.
+    if self._isMobile then return end
     -- Route through the animated setter so a click-tween in flight cannot hide
     -- the overlay right after the caller asked for it to be shown.
     if self._setKeybindOverlayVisible then
@@ -4622,10 +4635,12 @@ function Library:_initTrafficLights()
             UI.MobileToggle.Visible = visible and UserInputService.TouchEnabled
         end
         if UI.KeybindOverlay then
-            UI.KeybindOverlay.Visible = visible and self._keybindOverlayWasVisible == true
+            UI.KeybindOverlay.Visible = visible and not self._isMobile
+                and self._keybindOverlayWasVisible == true
         end
         if UI.KeybindOverlayToggle then
-            UI.KeybindOverlayToggle.Visible = visible and #self._STATE.activeKeybindListeners > 0
+            UI.KeybindOverlayToggle.Visible = visible and not self._isMobile
+                and #self._STATE.activeKeybindListeners > 0
         end
         if self._STATE.ContentPages then
             for name, page in pairs(self._STATE.ContentPages) do
@@ -4686,7 +4701,7 @@ function Library:_initTrafficLights()
                 if self._STATE.FocusOverlayEnabled and self._STATE.GuiVisible and UI.FocusOverlay then
                     UI.FocusOverlay.Visible = true
                 end
-                if UI.KeybindOverlay and self._keybindOverlayWasVisible then
+                if UI.KeybindOverlay and self._keybindOverlayWasVisible and not self._isMobile then
                     UI.KeybindOverlay.Visible = true
                     self._keybindOverlayWasVisible = false
                 end
@@ -10744,7 +10759,12 @@ function Library:AddKeybind(page, text, default, callback)
     self:_attachFavorite(holder, _favId)
     if not STATE._overlayAutoShown then
         STATE._overlayAutoShown = true
-        self._UI.KeybindOverlayToggle.Visible = true
+        -- MOBILE: keybind overlay toggle is a desktop-only affordance. On touch
+        -- there is no keyboard to rebind, and the pill clutters the bottom-right
+        -- of the screen. Desktop path is unchanged.
+        if not self._isMobile then
+            self._UI.KeybindOverlayToggle.Visible = true
+        end
     end
     self:_refreshKeybindOverlay()
 
