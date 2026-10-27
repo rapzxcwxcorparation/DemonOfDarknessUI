@@ -2605,6 +2605,13 @@ function Library:_initMainGui()
             end
         end
 
+        -- MOUSE FIX: force Default while GUI is visible, regardless of where
+        -- the pointer is. Without this, the game snaps the cursor back to
+        -- center the moment the pointer leaves the panel bounds.
+        if self._STATE.GuiVisible and UserInputService.MouseBehavior ~= Enum.MouseBehavior.Default then
+            UserInputService.MouseBehavior = Enum.MouseBehavior.Default
+        end
+
         if overGui and UI.CustomCursor then
             UI.CustomCursor.Position = UDim2.fromOffset(mouse.X, mouse.Y)
         end
@@ -3905,6 +3912,21 @@ function Library:SetWallpaper(assetId, transparency)
             -- multi-MB file into the executor folder on every single download.
             local baseName = self:_wallpaperCachePath(img):gsub("%.url$", "")
             local fileName = baseName .. ext
+            
+            -- 🧹 Auto-cleanup: Delete old wallpaper files so it only keeps 1.
+            if listfiles and delfile then
+                pcall(function()
+                    for _, f in ipairs(listfiles()) do
+                        local base = string.match(tostring(f), "[^\\/]+$") or tostring(f)
+                        if string.find(base, "DoD_Wallpaper_", 1, true) 
+                           and base ~= fileName 
+                           and base ~= (baseName .. ".url") then
+                            delfile(f)
+                        end
+                    end
+                end)
+            end
+
             local writeOk = pcall(function()
                 writefile(fileName, content)
             end)
@@ -7055,7 +7077,8 @@ function Library:CreateTab(categoryName, tabName)
     page.Visible = false
     page.VerticalScrollBarInset = Enum.ScrollBarInset.None
     page.HorizontalScrollBarInset = Enum.ScrollBarInset.None
-    page.ElasticBehavior = Enum.ElasticBehavior.Never
+    -- MOBILE: native bounce+inertia so finger scroll feels smooth.
+    page.ElasticBehavior = self._isMobile and Enum.ElasticBehavior.WhenScrollable or Enum.ElasticBehavior.Never
     self:_registerScrollFrame(page)
 
     local pagePad = Instance.new("UIPadding", page)
@@ -7423,7 +7446,7 @@ function Library:CreateSection(tabName, title, summary, defaultOpen, columnName,
     body.Visible = false
     body.ScrollBarThickness = 0
     body.ScrollingDirection = Enum.ScrollingDirection.Y
-    body.ElasticBehavior = Enum.ElasticBehavior.Never
+    body.ElasticBehavior = self._isMobile and Enum.ElasticBehavior.WhenScrollable or Enum.ElasticBehavior.Never
     body.AutomaticCanvasSize = Enum.AutomaticSize.Y
     body.CanvasSize = UDim2.new(0, 0, 0, 0)
     body.VerticalScrollBarInset = Enum.ScrollBarInset.None
@@ -11846,7 +11869,7 @@ function Library:AddChipBar(page, text, options, defaultIndex, callback)
     scroller.ScrollBarThickness = 0
     scroller.ScrollingDirection = Enum.ScrollingDirection.X
     scroller.CanvasSize = UDim2.new(0, 0, 0, 0)
-    scroller.ElasticBehavior = Enum.ElasticBehavior.Never
+    scroller.ElasticBehavior = self._isMobile and Enum.ElasticBehavior.WhenScrollable or Enum.ElasticBehavior.Never
     scroller.VerticalScrollBarInset = Enum.ScrollBarInset.None
     scroller.HorizontalScrollBarInset = Enum.ScrollBarInset.None
     self:_registerScrollFrame(scroller)
