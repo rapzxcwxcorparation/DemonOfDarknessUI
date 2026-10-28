@@ -8646,15 +8646,18 @@ function Library:AddToggle(page, text, default, callback)
     end
     callback = callback or function() end
     local _isMobTgl = self._isMobile
-    local _swW = _isMobTgl and 52 or 36
-    local _swH = _isMobTgl and 28 or 20
-    local _knSz = _isMobTgl and 22 or 16
+    -- FIX: 52x28 switches on mobile looked disproportionate next to the
+    -- 40px dropdowns and 42px buttons. 44x24 is the Apple/Google standard
+    -- minimum touch target while matching the visual weight of the rest.
+    local _swW = _isMobTgl and 44 or 36
+    local _swH = _isMobTgl and 24 or 20
+    local _knSz = _isMobTgl and 20 or 16
     local _knOnX = -(_knSz + 2)
     local _knOffX = 2
     local _knY = -(_knSz / 2)
     local _swRightX = -(_swW + 14)
     local _swY = -(_swH / 2)
-    local _rowH = _isMobTgl and 48 or 36
+    local _rowH = _isMobTgl and 44 or 36
     local _labPad = _swW + 68
 
     local holder = Instance.new("Frame", page)
@@ -12477,63 +12480,28 @@ function Library:Minimize()
         UserInputService.MouseBehavior = self._savedMouseBehavior
     end
     
-    local centerX = 0.5
-    local centerY = 0.5
-    local camera = getCam()
-    if UI.MainContainer and camera then
-        local pos = UI.MainContainer.AbsolutePosition
-        local size = UI.MainContainer.AbsoluteSize
-        local vp = camera.ViewportSize
-        centerX = (pos.X + size.X / 2) / vp.X
-        centerY = (pos.Y + size.Y / 2) / vp.Y
-    end
-    
-    -- The burst is decorative: skip most of it on the tier that was auto-selected
-    -- because the machine could not afford exactly this kind of work.
-    local burstCount = (self._perfTier == "Potato" and 8) or (self._perfTier == "Balanced" and 20) or 40
-    if _ReducedMotion then burstCount = 0 end
-    for i = 1, burstCount do
-        local p = Instance.new("Frame")
-        p.Parent = UI.MainGui
-        local pSize = math.random(4, 12)
-        p.Size = UDim2.fromOffset(pSize, pSize)
-        
-        local startX = centerX + (math.random() - 0.5) * 0.4
-        local startY = centerY + 0.25 + math.random() * 0.15
-        p.Position = UDim2.fromScale(startX, startY)
-        
-        p.BackgroundColor3 = self._Colors.Accent
-        p.BackgroundTransparency = math.random(20, 60) / 100
-        p.ZIndex = 999
-        Instance.new("UICorner", p).CornerRadius = UDim.new(1, 0)
-        
-        local targetX = 0.5 + (math.random() - 0.5) * 0.15
-        local targetY = 0.02 + math.random() * 0.08
-        
-        local tweenInfo = TweenInfo.new(math.random(8, 15) / 10, Enum.EasingStyle.Quart, Enum.EasingDirection.Out)
-        TweenService:Create(p, tweenInfo, {
-            Position = UDim2.fromScale(targetX, targetY),
-            Size = UDim2.fromOffset(0, 0),
-            BackgroundTransparency = 1
-        }):Play()
-        
-        task.delay(1.7, function() if p and p.Parent then p:Destroy() end end)
-    end
-    
-    local tweenInfo = TweenInfo.new(0.4, Enum.EasingStyle.Quart, Enum.EasingDirection.Out)
-    
+    -- OPTIMIZED: Removed the 40-particle burst and consolidated the
+    -- 6 separate tween calls. This slides the window up smoothly with
+    -- a subtle shrink, drastically reducing CPU overhead on mobile.
     STATE.SavedPos = UI.MainContainer.Position
-    local pillPos = UDim2.new(0.5, 0, 0, 30)
-
-    TweenService:Create(UI.GuiBlur, tweenInfo, {Size = 0}):Play()
-    TweenService:Create(UI.MainContainer, tweenInfo, {BackgroundTransparency = 1, Position = pillPos}):Play()
-    if UI.AcrylicTexture then TweenService:Create(UI.AcrylicTexture, tweenInfo, {BackgroundTransparency = 1}):Play() end
-    if UI.AcrylicSheen then TweenService:Create(UI.AcrylicSheen, tweenInfo, {BackgroundTransparency = 1}):Play() end
-    TweenService:Create(UI.FocusOverlay, tweenInfo, {BackgroundTransparency = 1}):Play()
+    local slideDist = 150
+    local targetPos = UDim2.new(STATE.SavedPos.X.Scale, STATE.SavedPos.X.Offset, STATE.SavedPos.Y.Scale, STATE.SavedPos.Y.Offset - slideDist)
+    
+    local tweenInfo = TweenInfo.new(0.3, Enum.EasingStyle.Quart, Enum.EasingDirection.Out)
+    
+    TweenService:Create(UI.GuiBlur, TweenInfo.new(0.2), {Size = 0}):Play()
     
     local _tScale = self._adaptiveScaleTarget or 1
-    local st = TweenService:Create(UI.MainScale, tweenInfo, {Scale = _tScale * 0.4})
+    local st = TweenService:Create(UI.MainScale, tweenInfo, {Scale = _tScale * 0.85})
     st:Play()
+    
+    TweenService:Create(UI.MainContainer, tweenInfo, {
+        BackgroundTransparency = 1,
+        Position = targetPos
+    }):Play()
+    if UI.AcrylicTexture then TweenService:Create(UI.AcrylicTexture, tweenInfo, {BackgroundTransparency = 1}):Play() end
+    if UI.AcrylicSheen then TweenService:Create(UI.AcrylicSheen, tweenInfo, {BackgroundTransparency = 1}):Play() end
+    if UI.FocusOverlay then TweenService:Create(UI.FocusOverlay, tweenInfo, {BackgroundTransparency = 1}):Play() end
     
     st.Completed:Connect(function(playbackState)
         if STATE.Destroyed then return end
