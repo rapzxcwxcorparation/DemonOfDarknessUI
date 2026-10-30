@@ -12476,9 +12476,10 @@ function Library:Minimize()
         UserInputService.MouseIconEnabled = true
     end
     if UI.CustomCursor then UI.CustomCursor.Visible = false end
-    if self._savedMouseBehavior then
-        UserInputService.MouseBehavior = self._savedMouseBehavior
-    end
+    -- FIX: Never restore LockCenter/LockCurrentPosition on minimize.
+    -- Set Default and let the game's camera/aim controller reclaim control
+    -- on its own next frame if it wants to.
+    UserInputService.MouseBehavior = Enum.MouseBehavior.Default
     
     -- OPTIMIZED: Removed the 40-particle burst and consolidated the
     -- 6 separate tween calls. This slides the window up smoothly with
@@ -12626,9 +12627,7 @@ function Library:Toggle()
             UserInputService.MouseIconEnabled = true
         end
         if UI.CustomCursor then UI.CustomCursor.Visible = false end
-        if self._savedMouseBehavior then
-            UserInputService.MouseBehavior = self._savedMouseBehavior
-        end
+        UserInputService.MouseBehavior = Enum.MouseBehavior.Default
         
         STATE.SavedPos = UI.MainContainer.Position
         local targetPos = UDim2.new(STATE.SavedPos.X.Scale, STATE.SavedPos.X.Offset, STATE.SavedPos.Y.Scale, STATE.SavedPos.Y.Offset + 30)
@@ -12884,9 +12883,10 @@ function Library:Destroy()
     else
         UserInputService.MouseIconEnabled = true
     end
-    if self._savedMouseBehavior then
-        UserInputService.MouseBehavior = self._savedMouseBehavior
-    end
+    -- FIX: Never restore LockCenter on destroy. Same reasoning as
+    -- Toggle/Minimize close. Red traffic light calls Destroy, so this was
+    -- the specific path that locked the mouse on the "close" click.
+    UserInputService.MouseBehavior = Enum.MouseBehavior.Default
 
     STATE.WeatherEnabled = false
     if STATE.GuiTween then
