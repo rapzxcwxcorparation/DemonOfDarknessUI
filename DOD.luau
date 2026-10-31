@@ -175,9 +175,7 @@ local GuiSound = {
     Scroll    = { id = "rbxassetid://6895079853", pitch = 1.55, vol = 0.10 }
 }
 
--- =========================================================
 -- SHARED STATE / UTILITIES
--- =========================================================
 
 local Fn = {}
 local D  = {}
@@ -301,9 +299,7 @@ Fn.visibleAccent = function(accent, bg, minRatio)
     return best
 end
 
--- =========================================================
 -- THEMES (20 presets)
--- =========================================================
 
 D.Themes = {
     Dark = {
@@ -540,9 +536,7 @@ D.WeatherTypes = {
     "Petals", "Embers", "Fireflies", "Mist", "Aurora",
 }
 
--- =========================================================
 -- WEATHER PRESETS
--- =========================================================
 
 local WEATHER_PRESETS = {
     Snow = {
@@ -639,9 +633,7 @@ local function randomFloat(minV, maxV)
     return minV + (maxV - minV) * math.random()
 end
 
--- =========================================================
 -- SUB-TAB MODULE
--- =========================================================
 
 local SubTabModule = {}
 SubTabModule.__index = SubTabModule
@@ -870,9 +862,7 @@ function SubTabModule:Destroy()
     self.CurrentMainCategory = nil
 end
 
--- =========================================================
 -- LIBRARY CONSTRUCTOR
--- =========================================================
 
 function Library.new(opts)
     if opts == nil then opts = {}
@@ -1215,9 +1205,7 @@ function Library.new(opts)
     return self
 end
 
--- =========================================================
 -- THEME APPLY
--- =========================================================
 
 function Library:_applyThemeColors(themeName)
     local theme = D.Themes[themeName] or D.Themes.Dark
@@ -1776,9 +1764,7 @@ function Library:_triggerAutoSave()
     end)
 end
 
--- =========================================================
 -- NOTIFICATIONS
--- =========================================================
 
 function Library:_initNotifications()
     local gui = Instance.new("ScreenGui")
@@ -2486,9 +2472,7 @@ function Library:HideLoading()
     self._UI.LoadingBar = nil
 end
 
--- =========================================================
 -- MAIN GUI
--- =========================================================
 
 -- Re-binds a viewport handler whenever the active camera is replaced (respawn,
 -- first-person toggle, cinematic cut). The old code captured one Camera at
@@ -4288,9 +4272,7 @@ function Library:SetKeybindOverlayVisible(visible)
     end
 end
 
--- =========================================================
 -- TITLE BAR
--- =========================================================
 
 function Library:_initTitleBar()
     local UI = self._UI
@@ -4761,9 +4743,7 @@ function Library:_initTrafficLights()
     end)
 end
 
--- =========================================================
 -- CATEGORY BAR + SUB-TAB HOST
--- =========================================================
 
 function Library:_initSidebar()
     local UI = self._UI
@@ -5117,9 +5097,7 @@ function Library:_resizeSubTabs()
     subTabBar:Resize(tabWidth, gap)
 end
 
--- =========================================================
 -- SEARCH BAR
--- =========================================================
 
 function Library:_initSearchBar()
     local UI = self._UI
@@ -5685,9 +5663,7 @@ function Library:_attachFavorite(holder, configId, starPos)
     end)
 end
 
--- =========================================================
 -- CONTENT AREA (TRUE 2-COLUMN LAYOUT)
--- =========================================================
 
 function Library:_initContentArea()
     local UI = self._UI
@@ -5699,9 +5675,7 @@ function Library:_initContentArea()
     UI.ContentArea.ZIndex = 3
 end
 
--- =========================================================
 -- FOCUS OVERLAY
--- =========================================================
 
 function Library:_initFocusOverlay()
     self:_rebuildFocusPattern()
@@ -6000,9 +5974,7 @@ function Library:_updateAcrylicBlur()
     blur.Size = blurSize
 end
 
--- =========================================================
 -- WEATHER ENGINE
--- =========================================================
 
 function Library:SetWeather(enabled, weatherType, intensity)
     if self:_isDead() then return end
@@ -6279,9 +6251,7 @@ function Library:_createWeather(weatherType)
     end, self)
 end
 
--- =========================================================
 -- MOBILE TOGGLE
--- =========================================================
 
 function Library:_initMobileToggle()
     local UI = self._UI
@@ -6351,9 +6321,7 @@ function Library:_initMobileToggle()
     end
 end
 
--- =========================================================
 -- DRAG LOGIC
--- =========================================================
 
 function Library:_initResize()
     local UI = self._UI
@@ -6502,9 +6470,7 @@ function Library:_initDrag()
     end, self)
 end
 
--- =========================================================
 -- PUBLIC API: CREATE CATEGORY / TAB / SECTION
--- =========================================================
 
 function Library:CreateCategory(categoryName, iconSpec)
     if self:_isDead() then return end
@@ -6530,7 +6496,7 @@ function Library:CreateCategory(categoryName, iconSpec)
         local group = Instance.new("Frame", UI.AccordionScroll)
         group.Name = "AccGroup_" .. categoryName
         group.LayoutOrder = #STATE.CategoryOrder
-        group.Size = UDim2.new(1, 0, 0, 34)
+        group.Size = UDim2.new(1, 0, 0, 38)
         group.BackgroundTransparency = 1
         group.ClipsDescendants = true
         group.ZIndex = 5
@@ -6543,13 +6509,13 @@ function Library:CreateCategory(categoryName, iconSpec)
         local header = Instance.new("TextButton", group)
         header.Name = "Header"
         header.LayoutOrder = 1
-        header.Size = UDim2.new(1, 0, 0, 32)
+        header.Size = UDim2.new(1, 0, 0, 36)
         header.BackgroundColor3 = self._Colors.Card
         header.BackgroundTransparency = 0.75
         header.Text = ""
         header.AutoButtonColor = false
         header.ZIndex = 6
-        Instance.new("UICorner", header).CornerRadius = UDim.new(0, 8)
+        Instance.new("UICorner", header).CornerRadius = UDim.new(0, 7)
 
         local hStroke = Instance.new("UIStroke", header)
         hStroke.Color = self._Colors.Border
@@ -6585,10 +6551,10 @@ function Library:CreateCategory(categoryName, iconSpec)
         label.Size = UDim2.new(1, -48, 1, 0)
         label.Position = UDim2.new(0, 46, 0, 0)
         label.BackgroundTransparency = 1
-        label.Text = string.upper(categoryName)
+        label.Text = categoryName
         label.TextColor3 = self._Colors.TextDim
         label.Font = Enum.Font.GothamBold
-        label.TextSize = 10
+        label.TextSize = 11
         label.TextXAlignment = Enum.TextXAlignment.Left
         label.TextTruncate = Enum.TextTruncate.AtEnd
         label.ZIndex = 7
@@ -6607,7 +6573,7 @@ function Library:CreateCategory(categoryName, iconSpec)
         tlLayout.Padding = UDim.new(0, 3)
 
         local tlPad = Instance.new("UIPadding", tabList)
-        tlPad.PaddingLeft = UDim.new(0, 20)
+        tlPad.PaddingLeft = UDim.new(0, 12)
         tlPad.PaddingRight = UDim.new(0, 4)
         tlPad.PaddingTop = UDim.new(0, 4)
         tlPad.PaddingBottom = UDim.new(0, 6)
@@ -6970,7 +6936,7 @@ function Library:SetActiveCategory(categoryName, preferredTab)
             if catData and catData.tabList then
                 for _, child in ipairs(catData.tabList:GetChildren()) do
                     if child:IsA("TextButton") and child:GetAttribute("TabName") == targetName then
-                        child.BackgroundTransparency = 0.4
+                        child.BackgroundTransparency = 0.78
                         local lbl = child:FindFirstChild("SubLabel")
                         if lbl then
                             lbl.TextColor3 = self._Colors.Text
@@ -7181,14 +7147,14 @@ function Library:CreateTab(categoryName, tabName)
             local subBtn = Instance.new("TextButton", catData.tabList)
             subBtn.Name = "SubTab_" .. tabName
             subBtn.LayoutOrder = tabCount + 1
-            subBtn.Size = UDim2.new(1, 0, 0, 26)
+            subBtn.Size = UDim2.new(1, 0, 0, 30)
             subBtn.BackgroundColor3 = self._Colors.Card
             subBtn.BackgroundTransparency = 1
             subBtn.Text = ""
             subBtn.AutoButtonColor = false
             subBtn.ZIndex = 6
             subBtn:SetAttribute("TabName", tabName)
-            Instance.new("UICorner", subBtn).CornerRadius = UDim.new(0, 6)
+            Instance.new("UICorner", subBtn).CornerRadius = UDim.new(0, 7)
 
             local accentDot = Instance.new("Frame", subBtn)
             accentDot.Name = "AccentDot"
@@ -7203,7 +7169,7 @@ function Library:CreateTab(categoryName, tabName)
             local subLabel = Instance.new("TextLabel", subBtn)
             subLabel.Name = "SubLabel"
             subLabel.Size = UDim2.new(1, -16, 1, 0)
-            subLabel.Position = UDim2.new(0, 12, 0, 0)
+            subLabel.Position = UDim2.new(0, 14, 0, 0)
             subLabel.BackgroundTransparency = 1
             subLabel.Text = tabName
             subLabel.TextColor3 = self._Colors.TextDim
@@ -8615,9 +8581,7 @@ function Library:CreatePerformanceDashboard(tabName, columnName)
     return self:_wrapSection(PerfBox)
 end
 
--- =========================================================
 -- CONTROLS
--- =========================================================
 
 -- One shared pointer pump for every draggable control. Each slider/color picker
 -- used to register its own permanent UserInputService.InputChanged listener, so
@@ -12099,9 +12063,7 @@ function Library:AddChipBar(page, text, options, defaultIndex, callback)
     return _h
 end
 
--- =========================================================
 -- WINDOW TOGGLE / DESTROY
--- =========================================================
 
 function Library:_themeSnapshot()
     local snap = {
@@ -12969,9 +12931,7 @@ function Library:Destroy()
     if not _ok then warn("[DoD UI] Destroy error: " .. tostring(_err)) end
 end
 
--- =========================================================
 -- MODULE EXPORT (UPDATED FOR MAXIMUM COMPATIBILITY)
--- =========================================================
 
 local export = {
     new = function(...) return Library.new(...) end,
