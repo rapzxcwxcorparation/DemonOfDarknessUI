@@ -5459,28 +5459,31 @@
             if c:IsA("TextButton") then count = count + 1 end
         end
 
+        -- Zythera-style: transparent by default, thin 2x16 indicator bar,
+        -- icon + bold text. No border box. Active = subtle bg + bright text.
         local card = Instance.new("TextButton", container)
         card.Name = "Pinned_" .. tabName
         card.LayoutOrder = count + 1
-        card.Size = UDim2.new(1, 0, 0, 40)
+        card.Size = UDim2.new(1, 0, 0, 34)
         card.BackgroundColor3 = self._Colors.Card
-        card.BackgroundTransparency = 0.35
+        card.BackgroundTransparency = 1
         card.AutoButtonColor = false
         card.Text = ""
         card.BorderSizePixel = 0
         card.ZIndex = 9
-        Instance.new("UICorner", card).CornerRadius = UDim.new(0, 10)
+        Instance.new("UICorner", card).CornerRadius = UDim.new(0, 8)
 
+        -- Invisible stroke kept so external refs (theme refresher) don't nil.
         local stroke = Instance.new("UIStroke", card)
         stroke.Color = self._Colors.Border
         stroke.Thickness = 1
-        stroke.Transparency = 0.6
+        stroke.Transparency = 1
         stroke.ZIndex = 9
 
         local accentBar = Instance.new("Frame", card)
         accentBar.Name = "PinnedAccentBar"
-        accentBar.Size = UDim2.new(0, 3, 1, -14)
-        accentBar.Position = UDim2.new(0, 4, 0.5, 0)
+        accentBar.Size = UDim2.new(0, 2, 0, 16)
+        accentBar.Position = UDim2.new(0, 6, 0.5, 0)
         accentBar.AnchorPoint = Vector2.new(0, 0.5)
         accentBar.BackgroundColor3 = self._Colors.Accent
         accentBar.BorderSizePixel = 0
@@ -5489,11 +5492,12 @@
         Instance.new("UICorner", accentBar).CornerRadius = UDim.new(1, 0)
 
         local icon = Instance.new("ImageLabel", card)
-        icon.Size = UDim2.fromOffset(18, 18)
-        icon.Position = UDim2.new(0, 12, 0.5, -9)
+        icon.Size = UDim2.fromOffset(16, 16)
+        icon.Position = UDim2.new(0, 14, 0.5, -8)
         icon.BackgroundTransparency = 1
         icon.ScaleType = Enum.ScaleType.Fit
         icon.ImageColor3 = self._Colors.TextDim
+        icon.ImageTransparency = 0.6
         icon.ZIndex = 10
         if iconSpec then
             if string.sub(iconSpec, 1, 6) == "asset:" then
@@ -5506,13 +5510,14 @@
         end
 
         local label = Instance.new("TextLabel", card)
-        label.Size = UDim2.new(1, -40, 1, 0)
+        label.Size = UDim2.new(1, -38, 1, 0)
         label.Position = UDim2.new(0, 36, 0, 0)
         label.BackgroundTransparency = 1
         label.Text = tabName
         label.TextColor3 = self._Colors.TextDim
+        label.TextTransparency = 0.4
         label.Font = Enum.Font.GothamBold
-        label.TextSize = 11
+        label.TextSize = 12
         label.TextXAlignment = Enum.TextXAlignment.Left
         label.TextTruncate = Enum.TextTruncate.AtEnd
         label.ZIndex = 10
@@ -5524,30 +5529,28 @@
         card.MouseEnter:Connect(function()
             if self:_isDead() then return end
             if self._STATE.ActiveCategory == tabName then return end
-            TweenService:Create(stroke, TweenInfo.new(0.15), {
-                Color = self._Colors.Accent, Transparency = 0.3,
-            }):Play()
-            TweenService:Create(card, TweenInfo.new(0.15), {BackgroundTransparency = 0.25}):Play()
+            TweenService:Create(card, TweenInfo.new(0.15), {BackgroundTransparency = 0.85}):Play()
+            TweenService:Create(label, TweenInfo.new(0.15), {TextTransparency = 0.15}):Play()
+            TweenService:Create(icon, TweenInfo.new(0.15), {ImageTransparency = 0.35}):Play()
         end)
         card.MouseLeave:Connect(function()
             if self:_isDead() then return end
             if self._STATE.ActiveCategory == tabName then return end
-            TweenService:Create(stroke, TweenInfo.new(0.15), {
-                Color = self._Colors.Border, Transparency = 0.6,
-            }):Play()
-            TweenService:Create(card, TweenInfo.new(0.15), {BackgroundTransparency = 0.35}):Play()
+            TweenService:Create(card, TweenInfo.new(0.15), {BackgroundTransparency = 1}):Play()
+            TweenService:Create(label, TweenInfo.new(0.15), {TextTransparency = 0.4}):Play()
+            TweenService:Create(icon, TweenInfo.new(0.15), {ImageTransparency = 0.6}):Play()
         end)
 
         self:_registerThemeRefresher(function()
             if not card.Parent then return end
             local isActive = (self._STATE.ActiveCategory == tabName)
             card.BackgroundColor3 = self._Colors.Card
-            card.BackgroundTransparency = isActive and 0.2 or 0.35
-            stroke.Color = isActive and self._Colors.Accent or self._Colors.Border
-            stroke.Transparency = isActive and 0.3 or 0.6
+            card.BackgroundTransparency = isActive and 0.88 or 1
             accentBar.BackgroundColor3 = self._Colors.Accent
             icon.ImageColor3 = isActive and self._Colors.Accent or self._Colors.TextDim
+            icon.ImageTransparency = isActive and 0 or 0.6
             label.TextColor3 = isActive and self._Colors.Text or self._Colors.TextDim
+            label.TextTransparency = isActive and 0 or 0.4
         end)
 
         catData.pinnedCard = card
@@ -5562,18 +5565,16 @@
         if self:_isDead() then return end
         local data = self._STATE.CategoryButtons and self._STATE.CategoryButtons[categoryName]
         if not data or not data.pinnedCard then return end
-        TweenService:Create(data.pinnedStroke, TweenInfo.new(0.2), {
-            Color = active and self._Colors.Accent or self._Colors.Border,
-            Transparency = active and 0.3 or 0.6,
-        }):Play()
         TweenService:Create(data.pinnedCard, TweenInfo.new(0.2), {
-            BackgroundTransparency = active and 0.2 or 0.35,
+            BackgroundTransparency = active and 0.88 or 1,
         }):Play()
         TweenService:Create(data.pinnedIcon, TweenInfo.new(0.2), {
             ImageColor3 = active and self._Colors.Accent or self._Colors.TextDim,
+            ImageTransparency = active and 0 or 0.6,
         }):Play()
         TweenService:Create(data.pinnedLabel, TweenInfo.new(0.2), {
             TextColor3 = active and self._Colors.Text or self._Colors.TextDim,
+            TextTransparency = active and 0 or 0.4,
         }):Play()
         if data.pinnedAccentBar then data.pinnedAccentBar.Visible = active end
     end
@@ -5618,9 +5619,9 @@
             y = y + 16
             if UI.PinnedStandaloneContainer then
                 UI.PinnedStandaloneContainer.Position = UDim2.new(0, 6, 0, y)
-                UI.PinnedStandaloneContainer.Size = UDim2.new(1, -12, 0, pinnedCount * 44)
+                UI.PinnedStandaloneContainer.Size = UDim2.new(1, -12, 0, pinnedCount * 38)
             end
-            y = y + pinnedCount * 44 + 6
+            y = y + pinnedCount * 38 + 6
             if showCategoriesLabel then y = y + 16 end
         end
         UI.AccordionScroll.Position = UDim2.new(0, 6, 0, y)
@@ -9657,15 +9658,15 @@
         callback = callback or function() end
 
         local holder = Instance.new("Frame", page)
-        holder.Size = UDim2.new(1, 0, 0, 58)
+        holder.Size = UDim2.new(1, 0, 0, 44)
         holder.BackgroundColor3 = self._Colors.Card
         holder.BackgroundTransparency = 0.3
         holder.BorderSizePixel = 0
         Instance.new("UICorner", holder).CornerRadius = UDim.new(0, 8)
 
         local lab = Instance.new("TextLabel", holder)
-        lab.Size = UDim2.new(1, -142, 0, 18)
-        lab.Position = UDim2.new(0, 14, 0, 6)
+        lab.Size = UDim2.new(1, -80, 0, 14)
+        lab.Position = UDim2.new(0, 12, 0, 5)
         lab.BackgroundTransparency = 1
         lab.Text = text
         lab.TextColor3 = self._Colors.Text
@@ -9676,8 +9677,8 @@
 
         local btnMinus = Instance.new("TextButton", holder)
         btnMinus.Name = "BtnMinus"
-        btnMinus.Size = UDim2.fromOffset(24, 24)
-        btnMinus.Position = UDim2.new(1, -114, 0, 3)
+        btnMinus.Size = UDim2.fromOffset(18, 18)
+        btnMinus.Position = UDim2.new(0, 10, 0, 24)
         btnMinus.BackgroundColor3 = self._Colors.Bg2
         btnMinus.BackgroundTransparency = 0.5
         btnMinus.TextColor3 = self._Colors.Text
@@ -9695,8 +9696,8 @@
 
         local valBox = Instance.new("TextBox", holder)
         valBox.Name = "ValueBox"
-        valBox.Size = UDim2.new(0, 56, 0, 24)
-        valBox.Position = UDim2.new(1, -84, 0, 3)
+        valBox.Size = UDim2.new(0, 56, 0, 18)
+        valBox.Position = UDim2.new(1, -68, 0, 4)
         valBox.BackgroundColor3 = self._Colors.Bg2
         valBox.BackgroundTransparency = 0.5
         valBox.TextColor3 = Color3.fromRGB(255, 255, 255)
@@ -9711,8 +9712,8 @@
 
         local btnPlus = Instance.new("TextButton", holder)
         btnPlus.Name = "BtnPlus"
-        btnPlus.Size = UDim2.fromOffset(24, 24)
-        btnPlus.Position = UDim2.new(1, -18, 0, 3)
+        btnPlus.Size = UDim2.fromOffset(18, 18)
+        btnPlus.Position = UDim2.new(1, -28, 0, 24)
         btnPlus.BackgroundColor3 = self._Colors.Bg2
         btnPlus.BackgroundTransparency = 0.5
         btnPlus.TextColor3 = self._Colors.Text
@@ -9756,8 +9757,8 @@
         end)
 
         local sliderBg = Instance.new("Frame", holder)
-        sliderBg.Size = UDim2.new(1, -28, 0, 8)
-        sliderBg.Position = UDim2.new(0, 14, 0, 36)
+        sliderBg.Size = UDim2.new(1, -68, 0, 4)
+        sliderBg.Position = UDim2.new(0, 34, 0, 31)
         sliderBg.BackgroundColor3 = Color3.fromRGB(22, 22, 30)
         sliderBg.BorderSizePixel = 0
         sliderBg.Active = true
@@ -9779,8 +9780,8 @@
         end
 
         local fillGlow = Instance.new("Frame", sliderBg)
-        fillGlow.Size = UDim2.new((default - minVal) / (maxVal - minVal), 0, 1.6, -0.3)
-        fillGlow.Position = UDim2.new(0, 0, 0.5, -6.4)
+        fillGlow.Size = UDim2.new((default - minVal) / (maxVal - minVal), 0, 1.5, 0)
+        fillGlow.Position = UDim2.new(0, 0, 0.5, -3)
         fillGlow.BackgroundColor3 = self._Colors.Accent
         fillGlow.BackgroundTransparency = 0.7
         fillGlow.BorderSizePixel = 0
@@ -9801,7 +9802,7 @@
         local knobHalo = Instance.new("Frame", sliderBg)
         knobHalo.Name = "KnobHalo"
         knobHalo.AnchorPoint = Vector2.new(0.5, 0.5)
-        knobHalo.Size = UDim2.fromOffset(24, 24)
+        knobHalo.Size = UDim2.fromOffset(14, 14)
         knobHalo.Position = UDim2.new((default - minVal) / (maxVal - minVal), 0, 0.5, 0)
         knobHalo.BackgroundColor3 = self._Colors.Accent
         knobHalo.BackgroundTransparency = 1
@@ -9810,8 +9811,8 @@
         Instance.new("UICorner", knobHalo).CornerRadius = UDim.new(1, 0)
 
         local knob = Instance.new("Frame", sliderBg)
-        knob.Size = UDim2.new(0, 16, 0, 16)
-        knob.Position = UDim2.new((default - minVal) / (maxVal - minVal), -8, 0.5, -8)
+        knob.Size = UDim2.new(0, 10, 0, 10)
+        knob.Position = UDim2.new((default - minVal) / (maxVal - minVal), -5, 0.5, -5)
         knob.BackgroundColor3 = Fn.contrastForeground(self._Colors.Accent)
         knob.BorderSizePixel = 0
         knob.ZIndex = 3
@@ -9863,13 +9864,13 @@
             local rel = math.clamp((newVal - minVal) / (maxVal - minVal), 0, 1)
             if animate then
                 TweenService:Create(fill, TweenInfo.new(0.15, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {Size = UDim2.new(rel, 0, 1, 0)}):Play()
-                TweenService:Create(fillGlow, TweenInfo.new(0.15, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {Size = UDim2.new(rel, 0, 1.6, -0.3)}):Play()
-                TweenService:Create(knob, TweenInfo.new(0.15, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {Position = UDim2.new(rel, -8, 0.5, -8)}):Play()
+                TweenService:Create(fillGlow, TweenInfo.new(0.15, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {Size = UDim2.new(rel, 0, 1.5, 0)}):Play()
+                TweenService:Create(knob, TweenInfo.new(0.15, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {Position = UDim2.new(rel, -5, 0.5, -5)}):Play()
                 TweenService:Create(knobHalo, TweenInfo.new(0.15, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {Position = UDim2.new(rel, 0, 0.5, 0)}):Play()
             else
                 fill.Size = UDim2.new(rel, 0, 1, 0)
-                fillGlow.Size = UDim2.new(rel, 0, 1.6, -0.3)
-                knob.Position = UDim2.new(rel, -8, 0.5, -8)
+                fillGlow.Size = UDim2.new(rel, 0, 1.5, 0)
+                knob.Position = UDim2.new(rel, -5, 0.5, -5)
                 knobHalo.Position = UDim2.new(rel, 0, 0.5, 0)
             end
             if not editing then
