@@ -952,6 +952,12 @@
         self.WindowSize = opts.Size or UDim2.fromOffset(750, 500)
         self.WallpaperSource = opts.Wallpaper
         self.WallpaperTransparency = opts.WallpaperTransparency or 0
+        -- Global default for CreateSection's `defaultOpen` param. When nil,
+        -- sections default to CLOSED. Per-section override still wins.
+        if opts.SectionDefaultOpen ~= nil and type(opts.SectionDefaultOpen) ~= "boolean" then
+            error("[DoD UI] SectionDefaultOpen must be a boolean.")
+        end
+        self.SectionDefaultOpen = opts.SectionDefaultOpen == true
         -- Opt-in: this "derives" a palette from the URL string (it does not analyse
         -- the image) and then overrides whatever theme the user picked, so it must
         -- not happen by surprise.
@@ -1013,6 +1019,18 @@
         -- block that used to sit here was dead work.
         self._perfTier = self._isMobile and "Balanced" or "High"
         self._perfProfile = D.PerfProfiles[self._perfTier] or D.PerfProfiles.High
+        -- Explicit PerformanceTier from opts: locks the tier and disables all
+        -- auto-detection + watchdog. Saved theme config can still override on
+        -- LoadThemeConfig() (that's the intended "user preference wins" path).
+        if opts.PerformanceTier ~= nil then
+            if type(opts.PerformanceTier) ~= "string" or not D.PerfProfiles[opts.PerformanceTier] then
+                error("[DoD UI] PerformanceTier must be 'Potato', 'Balanced', or 'High'.")
+            end
+            self._perfTier = opts.PerformanceTier
+            self._perfProfile = D.PerfProfiles[opts.PerformanceTier]
+            self._perfAuto = false
+            self._savedPerfTier = opts.PerformanceTier
+        end
         self._CustomColorOverrides = {}
         self._NotifPosition = opts.NotificationPosition or "TopRight"
         self._Colors = table.clone(D.Colors)
@@ -1339,6 +1357,22 @@
         end
     end
 
+    -- Force-disable auto-detection and the perf watchdog. When AutoPerformance
+    -- is off, SetPerformanceTier only applies the tier you pass; nothing changes
+    -- it behind your back. Pass true to re-enable Auto (which runs a fresh
+    -- _detectPerfTier and starts sampling).
+    function Library:SetPerformanceAuto(enabled)
+        if self:_isDead() then return end
+        if type(enabled) ~= "boolean" then
+            error("[DoD UI] SetPerformanceAuto expects a boolean.")
+        end
+        self._perfAuto = enabled
+        if enabled then
+            local _t = self:_detectPerfTier()
+            self:SetPerformanceTier(_t, true)
+        end
+    end
+
     function Library:SetPerformanceTier(tier, silent)
         if self:_isDead() then return end
         local p = D.PerfProfiles[tier]
@@ -1527,7 +1561,13 @@
                     })
                 end
                 if UI.TitleLogoStroke then UI.TitleLogoStroke.Color = self._Colors.Accent end
-                if UI.TitleLogoIcon then UI.TitleLogoIcon.ImageColor3 = Fn.accentTextColor(self._Colors.Accent) end
+                if UI.TitleLogoIcon then
+                    if self._TitleIconIsImage then
+                        UI.TitleLogoIcon.ImageColor3 = Color3.new(1, 1, 1)
+                    else
+                        UI.TitleLogoIcon.ImageColor3 = Fn.accentTextColor(self._Colors.Accent)
+                    end
+                end
             end
             if UI.TitleVersionBadge then
                 local badgeColor = self._VersionBadgeOverride or self._Colors.Accent
@@ -4280,19 +4320,33 @@
         
         local finalImage = iconName
         local lower = string.lower(iconName)
+        local isImage = false
         
         if tonumber(iconName) then
             finalImage = "rbxassetid://" .. iconName
+            isImage = true
         elseif string.sub(lower, 1, 4) == "http" or string.sub(lower, 1, 11) == "rbxassetid:" or string.sub(lower, 1, 11) == "rbxasset://" then
             -- 11, not 10: the literal "rbxassetid:" is 11 characters, so the old
             -- 10-char comparison could never be true and asset ids were ignored.
             finalImage = iconName
+            isImage = true
         else
             finalImage = GetIcon(iconName)
         end
         
+        self._TitleIconIsImage = isImage
+        
         if self._UI.TitleLogoIcon then
             self._UI.TitleLogoIcon.Image = finalImage
+            if isImage then
+                self._UI.TitleLogoIcon.ImageColor3 = Color3.new(1, 1, 1)
+                self._UI.TitleLogoIcon.Size = UDim2.fromOffset(20, 20)
+                self._UI.TitleLogoIcon.Position = UDim2.new(0.5, -10, 0.5, -10)
+            else
+                self._UI.TitleLogoIcon.ImageColor3 = Fn.accentTextColor(self._Colors.Accent)
+                self._UI.TitleLogoIcon.Size = UDim2.fromOffset(14, 14)
+                self._UI.TitleLogoIcon.Position = UDim2.new(0.5, -7, 0.5, -7)
+            end
         end
     end
 
@@ -4366,14 +4420,30 @@
         logoIcon.BackgroundTransparency = 1
         local iconName = self._TitleIconName
         local lowerIcon = string.lower(iconName)
+        local isImageIcon = false
         if tonumber(iconName) then
             logoIcon.Image = "rbxassetid://" .. iconName
+            isImageIcon = true
         elseif string.sub(lowerIcon, 1, 4) == "http" or string.sub(lowerIcon, 1, 11) == "rbxassetid:" or string.sub(lowerIcon, 1, 11) == "rbxasset://" then
             logoIcon.Image = iconName
+            isImageIcon = true
         else
             logoIcon.Image = GetIcon(iconName)
         end
-        logoIcon.ImageColor3 = self._Colors.Accent
+        -- FEATURE: photos are NOT tinted. Only lucide vector icons follow the
+        -- accent theme. Before this, an http/rbxassetid icon was painted solid
+        -- accent, flattening every photo into a monochrome silhouette.
+        -- Photos also fill more of the badge (lucide has built-in padding).
+        self._TitleIconIsImage = isImageIcon
+        if isImageIcon then
+            logoIcon.ImageColor3 = Color3.new(1, 1, 1)
+            logoIcon.Size = UDim2.fromOffset(20, 20)
+            logoIcon.Position = UDim2.new(0.5, -10, 0.5, -10)
+        else
+            logoIcon.ImageColor3 = self._Colors.Accent
+            logoIcon.Size = UDim2.fromOffset(14, 14)
+            logoIcon.Position = UDim2.new(0.5, -7, 0.5, -7)
+        end
         logoIcon.ScaleType = Enum.ScaleType.Fit
 
         local logoScale = Instance.new("UIScale", logoBadge)
@@ -4620,7 +4690,11 @@
                 UI.TitleSubtitle.TextColor3 = self._Colors.TextDim
             end
             if logoIcon then
-                logoIcon.ImageColor3 = self._Colors.Accent
+                if self._TitleIconIsImage then
+                    logoIcon.ImageColor3 = Color3.new(1, 1, 1)
+                else
+                    logoIcon.ImageColor3 = self._Colors.Accent
+                end
             end
         end)
 
@@ -5009,7 +5083,23 @@
                 UI.BottomPill.BackgroundColor3 = self._Colors.Card
                 if UI.BottomPillStroke then UI.BottomPillStroke.Color = self._Colors.Accent end
             end
+            if UI.CategoryIndicator and UI.CategoryIndicator.Parent then
+                UI.CategoryIndicator.BackgroundColor3 = self._Colors.Accent
+            end
         end)
+
+        -- FEATURE: sliding accent pill for the category bar (Top/Bottom mode).
+        -- ZIndex 0 so it sits behind the buttons; buttons stay transparent so
+        -- this pill is what the user sees move. Hidden in Side mode.
+        local catIndicator = Instance.new("Frame", UI.CategoryBar)
+        catIndicator.Name = "CategoryIndicator"
+        catIndicator.BackgroundColor3 = self._Colors.Accent
+        catIndicator.BackgroundTransparency = 0.6
+        catIndicator.BorderSizePixel = 0
+        catIndicator.ZIndex = 0
+        catIndicator.Visible = false
+        Instance.new("UICorner", catIndicator).CornerRadius = UDim.new(1, 0)
+        UI.CategoryIndicator = catIndicator
     end
 
     function Library:_applyNavigationLayout()
@@ -6904,6 +6994,38 @@
                 UI.BottomPill.Position = UDim2.new(0, activeData.button.Position.X.Offset, 0.5, -18)
             end
         end
+
+        self:_updateCategoryIndicator(false)
+    end
+
+    -- Positions/tweens the sliding highlight pill. Snap mode on layout pass,
+    -- animated mode on category switch. No-op in Side mode.
+    function Library:_updateCategoryIndicator(animate)
+        if self:_isDead() then return end
+        local STATE = self._STATE
+        local UI = self._UI
+        if not (UI and UI.CategoryIndicator) then return end
+        if self.TabPosition == "Side" then
+            UI.CategoryIndicator.Visible = false
+            return
+        end
+        local activeData = STATE.CategoryButtons and STATE.CategoryButtons[STATE.ActiveCategory]
+        if not (activeData and activeData.button) then
+            UI.CategoryIndicator.Visible = false
+            return
+        end
+        local targetPos  = activeData.button.Position
+        local targetSize = activeData.button.Size
+        local wasVisible = UI.CategoryIndicator.Visible
+        UI.CategoryIndicator.Visible = true
+        if not wasVisible or not animate then
+            UI.CategoryIndicator.Position = targetPos
+            UI.CategoryIndicator.Size = targetSize
+        else
+            TweenService:Create(UI.CategoryIndicator,
+                TweenInfo.new(0.3, Enum.EasingStyle.Quart, Enum.EasingDirection.Out),
+                {Position = targetPos, Size = targetSize}):Play()
+        end
     end
 
     function Library:SetActiveCategory(categoryName, preferredTab)
@@ -6973,6 +7095,7 @@
                 STATE.ActiveTab = nil
                 self:SwitchTab(tabs[1])
             end
+            self:_updateCategoryIndicator(true)
             self:_applyNavigationLayout()
             return
         end
@@ -7021,17 +7144,22 @@
         if self.TabPosition ~= "Side" then
             for name, data in pairs(STATE.CategoryButtons or {}) do
                 local active = (name == categoryName)
+                -- Sliding CategoryIndicator owns the active-pill visual now;
+                -- buttons stay transparent so the pill is what the user sees
+                -- move between tabs. Label color uses contrastForeground
+                -- (matches the theme refresher) instead of hardcoded white.
                 TweenService:Create(data.button, TweenInfo.new(0.22, Enum.EasingStyle.Quart), {
-                    BackgroundTransparency = active and 0.55 or 1,
+                    BackgroundTransparency = 1,
                 }):Play()
                 TweenService:Create(data.label, TweenInfo.new(0.22), {
-                    TextColor3 = active and Color3.fromRGB(255, 255, 255) or self._Colors.TextDim,
+                    TextColor3 = active and Fn.contrastForeground(self._Colors.Sidebar) or self._Colors.TextDim,
                 }):Play()
                 data.label.Font = active and Enum.Font.GothamBold or Enum.Font.GothamMedium
                 TweenService:Create(data.icon, TweenInfo.new(0.22), {
                     ImageTransparency = active and 0 or 0.45,
                 }):Play()
             end
+            self:_updateCategoryIndicator(true)
         end
 
         local tabs = STATE.CategoryTabs[categoryName]
@@ -7639,6 +7767,9 @@
         scrollThumbGlow.ZIndex = 6
         Instance.new("UICorner", scrollThumbGlow).CornerRadius = UDim.new(1, 0)
 
+        -- Global default kicks in only when caller omitted defaultOpen.
+        -- (Passing false explicitly still means closed, true still means open.)
+        if defaultOpen == nil then defaultOpen = self.SectionDefaultOpen end
         local expanded = defaultOpen == true
         local currentTween
         local sectionData = {
