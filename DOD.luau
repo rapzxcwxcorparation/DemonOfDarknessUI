@@ -916,6 +916,16 @@
         --                      fallback to 3.0 (typical banner shape).
         self.TitleImage       = opts.TitleImage
         self.TitleImageAspect = opts.TitleImageAspect
+        -- Vertical size of the title image inside the 42px title bar.
+        -- 22 is the sweet spot (traffic lights are also ~14-18px).
+        if opts.TitleImageHeight ~= nil then
+            if type(opts.TitleImageHeight) ~= "number" or opts.TitleImageHeight <= 0 then
+                error("[DoD UI] TitleImageHeight must be a positive number.")
+            end
+            self.TitleImageHeight = opts.TitleImageHeight
+        else
+            self.TitleImageHeight = 22
+        end
         -- Auto-tint the title bar to the image's dominant color so a logo
         -- with a baked-in background blends seamlessly. Manual override via
         -- TitleBarColor (Color3), or disable with TitleBarAutoColor = false.
@@ -4522,6 +4532,7 @@
                 editable = AssetService:CreateEditableImageAsync(assetUrl)
             end)
             if not ok or not editable then
+                warn("[DoD UI] TitleBar auto-tint: EditableImage unavailable. Set TitleBarColor manually for a perfect match.")
                 local hasContent = false
                 pcall(function() hasContent = (Content ~= nil and Content.fromUri ~= nil) end)
                 if hasContent then
@@ -4696,7 +4707,9 @@
             local imgContainer = Instance.new("Frame", UI.TitleBar)
             imgContainer.Name = "TitleImageContainer"
             imgContainer.BackgroundTransparency = 1
-            imgContainer.Position = UDim2.new(0, 46, 0.5, 0)
+            -- FIX: was x=46, leaving a dead 34px gap where the hidden badge
+            -- used to sit. x=12 fills that spot — no more empty space.
+            imgContainer.Position = UDim2.new(0, 12, 0.5, 0)
             imgContainer.AnchorPoint = Vector2.new(0, 0.5)
             imgContainer.ClipsDescendants = true
 
@@ -4710,14 +4723,16 @@
             -- Auto-size: fill 34px of the 42px title bar (4px padding each side).
             -- Width follows detected aspect, capped at 220px so the pipe+subtitle
             -- and traffic lights stay visible.
+            -- FIX: 34px was almost the full 42px title bar. 22px matches
+            -- the traffic-light dot height. Override with TitleImageHeight.
             local function applyAspect(aspect)
                 aspect = math.clamp(tonumber(aspect) or 3.0, 0.4, 8.0)
-                local h = 34
+                local h = self.TitleImageHeight or 22
                 local w = math.max(1, math.floor(h * aspect))
-                local maxW = 220
+                local maxW = 180
                 if w > maxW then
                     w = maxW
-                    h = math.max(20, math.floor(w / aspect))
+                    h = math.max(14, math.floor(w / aspect))
                 end
                 imgContainer.Size = UDim2.fromOffset(w, h)
             end
@@ -5011,8 +5026,10 @@
                 local maxSubWidth = math.max(10, maxTitleWidth - mainTextW - 8)
                 subTextW = math.min(subTextW, maxSubWidth)
                 local gap = self.TitleImage and 6 or 8
+                -- FIX: image sits at x=12 now. Subtitle base must match.
+                local baseX = self.TitleImage and 12 or 46
                 UI.TitleSubtitle.Size = UDim2.new(0, subTextW, 1, 0)
-                UI.TitleSubtitle.Position = UDim2.new(0, 46 + mainTextW + gap, 0, 0)
+                UI.TitleSubtitle.Position = UDim2.new(0, baseX + mainTextW + gap, 0, 0)
                 UI.TitleSubtitle.Visible = true
             else
                 UI.TitleSubtitle.Visible = false
