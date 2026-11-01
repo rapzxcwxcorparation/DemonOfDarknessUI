@@ -2994,10 +2994,26 @@
         
         minIcon.Parent = minBtn
         minText.Parent = minBtn
-        
+
+        -- Hidden by default; only populated when TitleImage loads. When shown,
+        -- minIcon and minText hide and this label becomes the pill's face.
+        local minImg = Instance.new("ImageLabel")
+        minImg.Name = "MinimizeButtonImage"
+        minImg.Size = UDim2.new(1, -8, 1, -8)
+        minImg.Position = UDim2.new(0.5, 0, 0.5, 0)
+        minImg.AnchorPoint = Vector2.new(0.5, 0.5)
+        minImg.BackgroundTransparency = 1
+        minImg.ScaleType = Enum.ScaleType.Fit
+        minImg.ImageColor3 = Color3.new(1, 1, 1)
+        minImg.Visible = false
+        minImg.ZIndex = 501
+        minImg.Parent = minBtn
+
         UI.MinimizeButton = minBtn
         UI.MinimizeButtonStroke = minStroke
         UI.MinimizeButtonIcon = minIcon
+        UI.MinimizeButtonText = minText
+        UI.MinimizeButtonImage = minImg
         
         Fn.bindPressAnimation(minBtn)
         
@@ -4382,6 +4398,106 @@
 
     -- TITLE BAR
 
+    -- Detects PNG/GIF/JPEG dimensions from raw bytes. Used to auto-size the
+    -- TitleImage so users don't need to measure their logo manually.
+    -- PNG: IHDR at bytes 17-24. GIF: LSD at bytes 7-10. JPEG: SOF marker scan.
+    function Library:_detectImageDimensions(data)
+        if type(data) ~= "string" or #data < 24 then return nil, nil end
+        local b1, b2, b3, b4 = string.byte(data, 1, 4)
+        if b1 == 0x89 and b2 == 0x50 and b3 == 0x4E and b4 == 0x47 then
+            local w = string.byte(data, 17) * 0x1000000
+                    + string.byte(data, 18) * 0x10000
+                    + string.byte(data, 19) * 0x100
+                    + string.byte(data, 20)
+            local h = string.byte(data, 21) * 0x1000000
+                    + string.byte(data, 22) * 0x10000
+                    + string.byte(data, 23) * 0x100
+                    + string.byte(data, 24)
+            if w > 0 and h > 0 then return w, h end
+        end
+        if b1 == 0x47 and b2 == 0x49 and b3 == 0x46 then
+            local w = string.byte(data, 7) + string.byte(data, 8) * 256
+            local h = string.byte(data, 9) + string.byte(data, 10) * 256
+            if w > 0 and h > 0 then return w, h end
+        end
+        if b1 == 0xFF and b2 == 0xD8 then
+            local i = 3
+            while i < #data - 9 do
+                if string.byte(data, i) == 0xFF then
+                    local marker = string.byte(data, i + 1)
+                    if marker >= 0xC0 and marker <= 0xC3 then
+                        local h = string.byte(data, i + 5) * 256 + string.byte(data, i + 6)
+                        local w = string.byte(data, i + 7) * 256 + string.byte(data, i + 8)
+                        if w > 0 and h > 0 then return w, h end
+                        break
+                    end
+                    local len = string.byte(data, i + 2) * 256 + string.byte(data, i + 3)
+                    if len < 2 then break end
+                    i = i + 2 + len
+                else
+                    i = i + 1
+                end
+            end
+        end
+        return nil, nil
+    end
+
+    -- Loads an image asset. rbxassetid:// passed through; http(s):// downloaded
+    -- via HttpGet + writefile + getcustomasset (Roblox ImageLabel rejects raw
+    -- http URLs — this is why catbox.moe images were invisible before).
+    -- Callback signature: callback(assetUrl, widthOrNil, heightOrNil)
+    function Library:_loadImageAsset(source, callback)
+        source = tostring(source or "")
+        if source:match("^%d+$") then source = "rbxassetid://" .. source end
+        if source == "" then
+            pcall(callback, "", nil, nil)
+            return
+        end
+        if source:sub(1, 4) ~= "http" then
+            pcall(callback, source, nil, nil)
+            return
+        end
+        if not (getcustomasset and writefile) then
+            warn("[DoD UI] TitleImage: executor missing getcustomasset/writefile")
+            pcall(callback, "", nil, nil)
+            return
+        end
+        task.spawn(function()
+            local ok, content = pcall(function()
+                return game:HttpGet(source, true)
+            end)
+            if not ok or type(content) ~= "string" or #content == 0 then
+                warn("[DoD UI] TitleImage download failed: " .. source)
+                pcall(callback, "", nil, nil)
+                return
+            end
+            local ext = ".png"
+            local b1 = string.byte(content, 1)
+            if b1 == 0xFF then ext = ".jpg"
+            elseif b1 == 0x47 then ext = ".gif"
+            end
+            local hash = 0
+            for i = 1, math.min(#source, 200) do
+                hash = (hash * 31 + string.byte(source, i)) % 2147483647
+            end
+            local fileName = "DoD_TitleImg_" .. hash .. ext
+            local writeOk = pcall(writefile, fileName, content)
+            if not writeOk then
+                warn("[DoD UI] TitleImage write failed")
+                pcall(callback, "", nil, nil)
+                return
+            end
+            local assetOk, assetUrl = pcall(getcustomasset, fileName)
+            if not assetOk or type(assetUrl) ~= "string" then
+                warn("[DoD UI] TitleCustomAsset failed")
+                pcall(callback, "", nil, nil)
+                return
+            end
+            local w, h = self:_detectImageDimensions(content)
+            pcall(callback, assetUrl, w, h)
+        end)
+    end
+
     function Library:_initTitleBar()
         local UI = self._UI
         UI.TitleBar = Instance.new("Frame", UI.MainContainer)
@@ -4517,37 +4633,77 @@
             img.Name = "TitleImage"
             img.Size = UDim2.fromScale(1, 1)
             img.BackgroundTransparency = 1
-            local rawSrc = self.TitleImage
-            if rawSrc == nil then rawSrc = "" end
-            rawSrc = tostring(rawSrc)
-            if rawSrc:match("^%d+$") then rawSrc = "rbxassetid://" .. rawSrc end
-            img.Image = rawSrc
             img.ScaleType = Enum.ScaleType.Fit
             img.ImageColor3 = self._Colors.Text
 
+            -- Auto-size: fill 34px of the 42px title bar (4px padding each side).
+            -- Width follows detected aspect, capped at 220px so the pipe+subtitle
+            -- and traffic lights stay visible.
             local function applyAspect(aspect)
-                aspect = math.clamp(tonumber(aspect) or 3.0, 0.5, 8.0)
-                local h = 26
+                aspect = math.clamp(tonumber(aspect) or 3.0, 0.4, 8.0)
+                local h = 34
                 local w = math.max(1, math.floor(h * aspect))
+                local maxW = 220
+                if w > maxW then
+                    w = maxW
+                    h = math.max(20, math.floor(w / aspect))
+                end
                 imgContainer.Size = UDim2.fromOffset(w, h)
             end
 
-            if type(self.TitleImageAspect) == "number" and self.TitleImageAspect > 0 then
-                applyAspect(self.TitleImageAspect)
+            -- Provisional size so layout has something until download finishes.
+            local requestedAspect = self.TitleImageAspect
+            if type(requestedAspect) == "number" and requestedAspect > 0 then
+                applyAspect(requestedAspect)
             else
-                local detected = false
-                if getassetdimensions then
-                    local ok, w, h = pcall(getassetdimensions, rawSrc)
-                    if ok and type(w) == "number" and type(h) == "number" and h > 0 then
-                        applyAspect(w / h)
-                        detected = true
+                applyAspect(3.0)
+            end
+
+            -- Async load: rbxassetid resolves sync, HTTP downloads + parses
+            -- dimensions. This is what makes catbox.moe images actually load.
+            self:_loadImageAsset(self.TitleImage, function(assetUrl, w, h)
+                if not img.Parent then return end
+                if assetUrl == "" then
+                    warn("[DoD UI] TitleImage failed to load: " .. tostring(self.TitleImage))
+                    return
+                end
+                img.Image = assetUrl
+                local finalAspect = self.TitleImageAspect
+                if not (type(finalAspect) == "number" and finalAspect > 0) then
+                    if w and h and h > 0 then
+                        finalAspect = w / h
+                    else
+                        finalAspect = 3.0
                     end
                 end
-                if not detected then applyAspect(3.0) end
-            end
+                applyAspect(finalAspect)
+                -- Mirror into the minimized pill
+                if self._UI.MinimizeButtonImage then
+                    self._UI.MinimizeButtonImage.Image = assetUrl
+                    self._UI.MinimizeButtonImage.Visible = true
+                end
+                if self._UI.MinimizeButtonIcon then
+                    self._UI.MinimizeButtonIcon.Visible = false
+                end
+                if self._UI.MinimizeButtonText then
+                    self._UI.MinimizeButtonText.Visible = false
+                end
+                if self._UI.MinimizeButton then
+                    local pillH = self._minBtnBaseH or 28
+                    local pillW = math.clamp(math.floor(pillH * finalAspect), 80, 220)
+                    self._minBtnBaseW = pillW
+                    self._UI.MinimizeButton.Size = UDim2.fromOffset(pillW, pillH)
+                end
+            end)
 
             UI.TitleImageLabel = img
             UI.TitleImageContainer = imgContainer
+
+            -- With a photo branding the title bar, the small badge icon beside
+            -- it is redundant and looks cluttered.
+            if UI.TitleLogoBadge then
+                UI.TitleLogoBadge.Visible = false
+            end
 
             self:_registerThemeRefresher(function()
                 if img.Parent then
