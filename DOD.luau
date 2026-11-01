@@ -2075,16 +2075,16 @@
     function Library:_updateNotifPositions()
         local pos = self._NotifPosition or "TopRight"
         for index, frame in ipairs(self._STATE.activeNotifs) do
-            -- New card height = 68 (was 56). Spacing = 77 (68 + 9 gap).
-            local targetY = 15 + ((index - 1) * 77)
+            -- Card height 56, gap 9. Spacing = 65.
+            local targetY = 15 + ((index - 1) * 65)
             local targetX = UDim2.new(1, -282, 0, targetY)
             
             if pos == "TopLeft" then
                 targetX = UDim2.new(0, 15, 0, targetY)
             elseif pos == "BottomLeft" then
-                targetX = UDim2.new(0, 15, 1, -targetY - 68)
+                targetX = UDim2.new(0, 15, 1, -targetY - 56)
             elseif pos == "BottomRight" then
-                targetX = UDim2.new(1, -282, 1, -targetY - 68)
+                targetX = UDim2.new(1, -282, 1, -targetY - 56)
             end
             
             TweenService:Create(
@@ -2341,78 +2341,66 @@
             local nPos = self._NotifPosition or "TopRight"
             local spawnPos = UDim2.new(1, -295, 0, -70)
             if nPos == "TopLeft" then spawnPos = UDim2.new(0, -295, 0, 15)
-            elseif nPos == "BottomLeft" then spawnPos = UDim2.new(0, -295, 1, -83)
-            elseif nPos == "BottomRight" then spawnPos = UDim2.new(1, -295, 1, -83)
+            elseif nPos == "BottomLeft" then spawnPos = UDim2.new(0, -295, 1, -71)
+            elseif nPos == "BottomRight" then spawnPos = UDim2.new(1, -295, 1, -71)
             end
 
-            -- Design A: 280x68 card, icon in 32x32 accent-tinted box,
-            -- uppercase title, body text, 2px progress bar at bottom edge.
+            -- Clean flat design (280x56). No icon box, no gradients, no
+            -- uppercase. Status color drives icon + border + progress bar.
+            -- Title and body use theme text colors so they stay readable
+            -- regardless of what's behind the window.
             local frame = Instance.new("Frame", self._UI.NotifGui)
-            frame.Size = UDim2.new(0, 280, 0, 68)
+            frame.Size = UDim2.new(0, 280, 0, 56)
             frame.Position = spawnPos
             frame.BackgroundColor3 = palette.Bg2 or Color3.fromRGB(14, 14, 20)
             frame.BackgroundTransparency = 1
             frame.BorderSizePixel = 0
             frame.ClipsDescendants = true
-            Instance.new("UICorner", frame).CornerRadius = UDim.new(0, 12)
+            Instance.new("UICorner", frame).CornerRadius = UDim.new(0, 8)
 
             local frameStroke = Instance.new("UIStroke", frame)
             frameStroke.Color = color
             frameStroke.Thickness = 1
-            frameStroke.Transparency = 0.55
+            frameStroke.Transparency = 0.7
 
-            -- Icon box: 32x32, status color bg at 82% transparency for a soft tint
-            local iconBox = Instance.new("Frame", frame)
-            iconBox.Name = "IconBox"
-            iconBox.Size = UDim2.fromOffset(32, 32)
-            iconBox.Position = UDim2.new(0, 12, 0, 12)
-            iconBox.BackgroundColor3 = color
-            iconBox.BackgroundTransparency = 0.82
-            iconBox.BorderSizePixel = 0
-            Instance.new("UICorner", iconBox).CornerRadius = UDim.new(0, 8)
-
-            local icon = Instance.new("ImageLabel", iconBox)
-            icon.Size = UDim2.fromOffset(18, 18)
-            icon.Position = UDim2.new(0.5, -9, 0.5, -9)
+            local icon = Instance.new("ImageLabel", frame)
+            icon.Size = UDim2.fromOffset(14, 14)
+            icon.Position = UDim2.new(0, 12, 0, 10)
             icon.BackgroundTransparency = 1
             icon.Image = iconId
             icon.ImageColor3 = color
 
-            -- Title: uppercase small caps
             local titleLabel = Instance.new("TextLabel", frame)
-            titleLabel.Size = UDim2.new(1, -60, 0, 14)
-            titleLabel.Position = UDim2.new(0, 52, 0, 14)
+            titleLabel.Size = UDim2.new(1, -36, 0, 14)
+            titleLabel.Position = UDim2.new(0, 32, 0, 9)
             titleLabel.BackgroundTransparency = 1
-            titleLabel.Text = string.upper(tostring(title))
+            titleLabel.Text = tostring(title)
             titleLabel.TextColor3 = palette.Text or Color3.fromRGB(220, 220, 230)
             titleLabel.Font = Enum.Font.GothamBold
-            titleLabel.TextSize = 11
+            titleLabel.TextSize = 12
             titleLabel.TextXAlignment = Enum.TextXAlignment.Left
             titleLabel.TextTruncate = Enum.TextTruncate.AtEnd
 
-            -- Body text
             local textLabel = Instance.new("TextLabel", frame)
-            textLabel.Size = UDim2.new(1, -60, 0, 20)
-            textLabel.Position = UDim2.new(0, 52, 0, 32)
+            textLabel.Size = UDim2.new(1, -36, 0, 16)
+            textLabel.Position = UDim2.new(0, 32, 0, 25)
             textLabel.BackgroundTransparency = 1
             textLabel.Text = tostring(text)
             textLabel.TextColor3 = palette.TextDim or Color3.fromRGB(140, 140, 155)
-            textLabel.Font = Enum.Font.Gotham
-            textLabel.TextSize = 12
+            textLabel.Font = Enum.Font.GothamMedium
+            textLabel.TextSize = 11
             textLabel.TextXAlignment = Enum.TextXAlignment.Left
             textLabel.TextTruncate = Enum.TextTruncate.AtEnd
 
-            -- Progress bar at bottom, 2px, inset 12px each side
             local progressBar = Instance.new("Frame", frame)
-            progressBar.Size = UDim2.new(1, -24, 0, 2)
-            progressBar.Position = UDim2.new(0, 12, 1, -8)
+            progressBar.Size = UDim2.new(1, -16, 0, 2)
+            progressBar.Position = UDim2.new(0, 8, 1, -6)
             progressBar.BackgroundColor3 = color
             progressBar.BorderSizePixel = 0
             Instance.new("UICorner", progressBar).CornerRadius = UDim.new(1, 0)
 
-            -- Legacy: accentBar no longer a left strip; kept as alias to iconBox
-            -- so downstream code that reads parts.accentBar doesn't nil-error.
-            local accentBar = iconBox
+            -- Legacy alias: parts.accentBar keeps working
+            local accentBar = icon
 
             STATE.notifParts[frame] = {
                 stroke = frameStroke,
@@ -4500,38 +4488,57 @@
             return
         end
         task.spawn(function()
-            local ok, content = pcall(function()
-                return game:HttpGet(source, true)
-            end)
-            if not ok or type(content) ~= "string" or #content == 0 then
-                warn("[DoD UI] TitleImage download failed: " .. source)
-                pcall(callback, "", nil, nil)
-                return
+            -- Retry wrapper: getcustomasset can race with wallpaper loading
+            -- (both write + register assets concurrently). A single retry
+            -- after a short delay fixes the intermittent "logo not showing"
+            -- issue without spamming if the URL is genuinely broken.
+            local function attempt(isRetry)
+                local ok, content = pcall(function()
+                    return game:HttpGet(source, true)
+                end)
+                if not ok or type(content) ~= "string" or #content == 0 then
+                    if not isRetry then
+                        task.wait(1)
+                        return attempt(true)
+                    end
+                    warn("[DoD UI] TitleImage download failed: " .. source)
+                    pcall(callback, "", nil, nil)
+                    return
+                end
+                local ext = ".png"
+                local b1 = string.byte(content, 1)
+                if b1 == 0xFF then ext = ".jpg"
+                elseif b1 == 0x47 then ext = ".gif"
+                end
+                local hash = 0
+                for i = 1, math.min(#source, 200) do
+                    hash = (hash * 31 + string.byte(source, i)) % 2147483647
+                end
+                local fileName = "DoD_TitleImg_" .. hash .. ext
+                local writeOk = pcall(writefile, fileName, content)
+                if not writeOk then
+                    if not isRetry then
+                        task.wait(0.5)
+                        return attempt(true)
+                    end
+                    warn("[DoD UI] TitleImage write failed")
+                    pcall(callback, "", nil, nil)
+                    return
+                end
+                local assetOk, assetUrl = pcall(getcustomasset, fileName)
+                if not assetOk or type(assetUrl) ~= "string" then
+                    if not isRetry then
+                        task.wait(0.5)
+                        return attempt(true)
+                    end
+                    warn("[DoD UI] TitleCustomAsset failed")
+                    pcall(callback, "", nil, nil)
+                    return
+                end
+                local w, h = self:_detectImageDimensions(content)
+                pcall(callback, assetUrl, w, h)
             end
-            local ext = ".png"
-            local b1 = string.byte(content, 1)
-            if b1 == 0xFF then ext = ".jpg"
-            elseif b1 == 0x47 then ext = ".gif"
-            end
-            local hash = 0
-            for i = 1, math.min(#source, 200) do
-                hash = (hash * 31 + string.byte(source, i)) % 2147483647
-            end
-            local fileName = "DoD_TitleImg_" .. hash .. ext
-            local writeOk = pcall(writefile, fileName, content)
-            if not writeOk then
-                warn("[DoD UI] TitleImage write failed")
-                pcall(callback, "", nil, nil)
-                return
-            end
-            local assetOk, assetUrl = pcall(getcustomasset, fileName)
-            if not assetOk or type(assetUrl) ~= "string" then
-                warn("[DoD UI] TitleCustomAsset failed")
-                pcall(callback, "", nil, nil)
-                return
-            end
-            local w, h = self:_detectImageDimensions(content)
-            pcall(callback, assetUrl, w, h)
+            attempt(false)
         end)
     end
 
@@ -4616,14 +4623,17 @@
         logoBadge.Size = UDim2.fromOffset(24, 24)
         logoBadge.Position = UDim2.new(0, 12, 0.5, -12)
         logoBadge.BackgroundColor3 = Color3.new(1, 1, 1)
-        logoBadge.BackgroundTransparency = 0.88
+        -- Was 0.88 (12% opaque = invisible against wallpapers). 0.15 gives
+        -- the lucide icon a consistent backdrop regardless of the wallpaper
+        -- behind it, which is why the icon "disappeared" on bright/dark wallpapers.
+        logoBadge.BackgroundTransparency = 0.15
         logoBadge.BorderSizePixel = 0
         Instance.new("UICorner", logoBadge).CornerRadius = UDim.new(0, 8)
 
         local logoStroke = Instance.new("UIStroke", logoBadge)
         logoStroke.Color = Color3.new(1, 1, 1)
         logoStroke.Thickness = 1
-        logoStroke.Transparency = 0.85
+        logoStroke.Transparency = 0.45
 
         local logoIcon = Instance.new("ImageLabel", logoBadge)
         logoIcon.Name = "Icon"
@@ -4764,10 +4774,20 @@
             self:_loadImageAsset(self.TitleImage, function(assetUrl, w, h)
                 if not img.Parent then return end
                 if assetUrl == "" then
-                    warn("[DoD UI] TitleImage failed to load: " .. tostring(self.TitleImage))
+                    -- Fallback: keep lucide badge visible so the title bar
+                    -- is never blank. Only hide the empty image container.
+                    warn("[DoD UI] TitleImage failed — using lucide badge fallback")
+                    imgContainer.Visible = false
+                    if UI.TitleLogoBadge then
+                        UI.TitleLogoBadge.Visible = true
+                    end
                     return
                 end
                 img.Image = assetUrl
+                -- Success: hide lucide badge, image takes over
+                if UI.TitleLogoBadge then
+                    UI.TitleLogoBadge.Visible = false
+                end
                 local finalAspect = self.TitleImageAspect
                 if not (type(finalAspect) == "number" and finalAspect > 0) then
                     if w and h and h > 0 then
@@ -4821,12 +4841,8 @@
 
             UI.TitleImageLabel = img
             UI.TitleImageContainer = imgContainer
-
-            -- With a photo branding the title bar, the small badge icon beside
-            -- it is redundant and looks cluttered.
-            if UI.TitleLogoBadge then
-                UI.TitleLogoBadge.Visible = false
-            end
+            -- NOTE: badge stays visible until image actually loads. If it
+            -- fails, the lucide badge remains so the title bar never blanks.
 
             self:_registerThemeRefresher(function()
                 if img.Parent then
@@ -5582,50 +5598,17 @@
     -- Positions pinned container + labels + accordion scroll in Side mode.
     -- No-op (and hides pinned UI) in Top/Bottom mode.
     function Library:_updateSideLayout()
+        -- PINNED DISABLED: pinned UI stays hidden; accordion full-height.
         if self:_isDead() then return end
         local UI = self._UI
         if not UI then return end
-
-        if self.TabPosition ~= "Side" then
-            if UI.PinnedSectionLabel then UI.PinnedSectionLabel.Visible = false end
-            if UI.PinnedStandaloneContainer then UI.PinnedStandaloneContainer.Visible = false end
-            if UI.CategoriesSectionLabel then UI.CategoriesSectionLabel.Visible = false end
-            return
+        if UI.PinnedSectionLabel then UI.PinnedSectionLabel.Visible = false end
+        if UI.PinnedStandaloneContainer then UI.PinnedStandaloneContainer.Visible = false end
+        if UI.CategoriesSectionLabel then UI.CategoriesSectionLabel.Visible = false end
+        if self.TabPosition == "Side" and UI.CategoryBar and UI.AccordionScroll then
+            UI.AccordionScroll.Position = UDim2.new(0, 6, 0, 54)
+            UI.AccordionScroll.Size = UDim2.new(1, -12, 1, -106)
         end
-
-        if not (UI.CategoryBar and UI.AccordionScroll) then return end
-
-        local pinnedCount = 0
-        if UI.PinnedStandaloneContainer then
-            for _, c in ipairs(UI.PinnedStandaloneContainer:GetChildren()) do
-                if c:IsA("TextButton") and c.Visible then pinnedCount = pinnedCount + 1 end
-            end
-        end
-        local accordionCount = 0
-        for _, c in ipairs(UI.AccordionScroll:GetChildren()) do
-            if c:IsA("Frame") and c.Visible then accordionCount = accordionCount + 1 end
-        end
-        local hasPinned = pinnedCount > 0
-        local hasAccordion = accordionCount > 0
-        local showPinnedLabel = hasPinned
-        local showCategoriesLabel = hasPinned and hasAccordion
-
-        if UI.PinnedSectionLabel then UI.PinnedSectionLabel.Visible = showPinnedLabel end
-        if UI.PinnedStandaloneContainer then UI.PinnedStandaloneContainer.Visible = hasPinned end
-        if UI.CategoriesSectionLabel then UI.CategoriesSectionLabel.Visible = showCategoriesLabel end
-
-        local y = 54
-        if hasPinned then
-            y = y + 16
-            if UI.PinnedStandaloneContainer then
-                UI.PinnedStandaloneContainer.Position = UDim2.new(0, 6, 0, y)
-                UI.PinnedStandaloneContainer.Size = UDim2.new(1, -12, 0, pinnedCount * 38)
-            end
-            y = y + pinnedCount * 38 + 6
-            if showCategoriesLabel then y = y + 16 end
-        end
-        UI.AccordionScroll.Position = UDim2.new(0, 6, 0, y)
-        UI.AccordionScroll.Size = UDim2.new(1, -12, 1, -(y + 52))
     end
 
     function Library:_applyNavigationLayout()
@@ -8078,17 +8061,7 @@
             end
         end
         self._STATE.StandaloneTabs[tabName] = true
-        -- Side mode: hide the auto-created accordion header and use a pinned
-        -- card instead. Top/Bottom still uses the accordion header (untouched).
-        if self.TabPosition == "Side" and catData then
-            if catData.isAccordion and catData.group then
-                catData.group.Visible = false
-            end
-            if self._UI.PinnedStandaloneContainer then
-                self:_createPinnedCard(tabName, iconSpec, catData)
-                self:_updateSideLayout()
-            end
-        end
+        -- PINNED DISABLED: standalone uses the normal accordion header again.
         self:CreateTab(tabName, tabName)
         return self:_wrapTab(self._STATE.ContentPages[tabName], tabName)
     end
