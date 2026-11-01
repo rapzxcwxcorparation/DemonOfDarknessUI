@@ -4492,7 +4492,19 @@
 
         if self.TitleImage then
             UI.TitleLabel.Visible = false
-            UI.TitleSubtitle.Visible = false
+            -- FEATURE: "image replaces title text" now KEEPS the "| Blade Ball"
+            -- suffix instead of hiding it. The pipe was consumed by Title:match
+            -- during parse, so we re-attach "| " as a prefix to the subtitle.
+            --   Title = "daemon.wtf"        -> image only, no text
+            --   Title = "daemon.wtf | Blade Ball" -> [LOGO] | Blade Ball
+            if UI.TitleSubtitle and UI.TitleSubtitle.Text ~= "" then
+                if UI.TitleSubtitle.Text:sub(1, 1) ~= "|" then
+                    UI.TitleSubtitle.Text = "| " .. UI.TitleSubtitle.Text
+                end
+                UI.TitleSubtitle.Visible = true
+            elseif UI.TitleSubtitle then
+                UI.TitleSubtitle.Visible = false
+            end
 
             local imgContainer = Instance.new("Frame", UI.TitleBar)
             imgContainer.Name = "TitleImageContainer"
@@ -4736,15 +4748,18 @@
             end
             
             local subTextW = 0
-            if self.TitleImage then
-                if UI.TitleSubtitle then UI.TitleSubtitle.Visible = false end
-            elseif UI.TitleSubtitle.Text ~= "" then
+            -- Subtitle is now shown regardless of TitleImage mode. When image
+            -- is active, mainTextW = image width, so subtitle positions right
+            -- after the logo. Gap shrinks from 8 to 6 when image is active so
+            -- the "|" doesn't float too far from the logo.
+            if UI.TitleSubtitle.Text ~= "" then
                 subTextW = UI.TitleSubtitle.TextBounds.X
                 if subTextW <= 0 then subTextW = #UI.TitleSubtitle.Text * 6 end
                 local maxSubWidth = math.max(10, maxTitleWidth - mainTextW - 8)
                 subTextW = math.min(subTextW, maxSubWidth)
+                local gap = self.TitleImage and 6 or 8
                 UI.TitleSubtitle.Size = UDim2.new(0, subTextW, 1, 0)
-                UI.TitleSubtitle.Position = UDim2.new(0, 46 + mainTextW + 8, 0, 0)
+                UI.TitleSubtitle.Position = UDim2.new(0, 46 + mainTextW + gap, 0, 0)
                 UI.TitleSubtitle.Visible = true
             else
                 UI.TitleSubtitle.Visible = false
