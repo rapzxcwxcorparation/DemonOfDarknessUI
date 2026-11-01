@@ -1645,9 +1645,10 @@
         for frame, parts in pairs(self._STATE.notifParts) do
             if frame and frame.Parent then
                 frame.BackgroundColor3 = self._Colors.Bg2
-                if parts.stroke and parts.stroke.Parent then parts.stroke.Color = self._Colors.Accent end
-                if parts.accentBar and parts.accentBar.Parent then parts.accentBar.BackgroundColor3 = self._Colors.Accent end
-                if parts.progressBar and parts.progressBar.Parent then parts.progressBar.BackgroundColor3 = self._Colors.Accent end
+                -- Status-colored elements (stroke, icon box, progress bar) keep
+                -- their per-notification color. Only text + card bg follow the
+                -- theme, otherwise success/error/warning lost their tint on
+                -- every theme change.
                 if parts.titleLabel and parts.titleLabel.Parent then parts.titleLabel.TextColor3 = self._Colors.Text end
                 if parts.textLabel and parts.textLabel.Parent then parts.textLabel.TextColor3 = self._Colors.TextDim end
             end
@@ -2074,15 +2075,16 @@
     function Library:_updateNotifPositions()
         local pos = self._NotifPosition or "TopRight"
         for index, frame in ipairs(self._STATE.activeNotifs) do
-            local targetY = 15 + ((index - 1) * 65)
+            -- New card height = 68 (was 56). Spacing = 77 (68 + 9 gap).
+            local targetY = 15 + ((index - 1) * 77)
             local targetX = UDim2.new(1, -282, 0, targetY)
             
             if pos == "TopLeft" then
                 targetX = UDim2.new(0, 15, 0, targetY)
             elseif pos == "BottomLeft" then
-                targetX = UDim2.new(0, 15, 1, -targetY - 56)
+                targetX = UDim2.new(0, 15, 1, -targetY - 68)
             elseif pos == "BottomRight" then
-                targetX = UDim2.new(1, -282, 1, -targetY - 56)
+                targetX = UDim2.new(1, -282, 1, -targetY - 68)
             end
             
             TweenService:Create(
@@ -2339,66 +2341,78 @@
             local nPos = self._NotifPosition or "TopRight"
             local spawnPos = UDim2.new(1, -295, 0, -70)
             if nPos == "TopLeft" then spawnPos = UDim2.new(0, -295, 0, 15)
-            elseif nPos == "BottomLeft" then spawnPos = UDim2.new(0, -295, 1, -71)
-            elseif nPos == "BottomRight" then spawnPos = UDim2.new(1, -295, 1, -71)
+            elseif nPos == "BottomLeft" then spawnPos = UDim2.new(0, -295, 1, -83)
+            elseif nPos == "BottomRight" then spawnPos = UDim2.new(1, -295, 1, -83)
             end
 
+            -- Design A: 280x68 card, icon in 32x32 accent-tinted box,
+            -- uppercase title, body text, 2px progress bar at bottom edge.
             local frame = Instance.new("Frame", self._UI.NotifGui)
-            frame.Size = UDim2.new(0, 280, 0, 56)
+            frame.Size = UDim2.new(0, 280, 0, 68)
             frame.Position = spawnPos
             frame.BackgroundColor3 = palette.Bg2 or Color3.fromRGB(14, 14, 20)
             frame.BackgroundTransparency = 1
             frame.BorderSizePixel = 0
             frame.ClipsDescendants = true
-            Instance.new("UICorner", frame).CornerRadius = UDim.new(0, 8)
+            Instance.new("UICorner", frame).CornerRadius = UDim.new(0, 12)
 
             local frameStroke = Instance.new("UIStroke", frame)
             frameStroke.Color = color
             frameStroke.Thickness = 1
-            frameStroke.Transparency = 0.4
+            frameStroke.Transparency = 0.55
 
-            local icon = Instance.new("ImageLabel", frame)
-            icon.Size = UDim2.fromOffset(16, 16)
-            icon.Position = UDim2.new(0, 12, 0, 10)
+            -- Icon box: 32x32, status color bg at 82% transparency for a soft tint
+            local iconBox = Instance.new("Frame", frame)
+            iconBox.Name = "IconBox"
+            iconBox.Size = UDim2.fromOffset(32, 32)
+            iconBox.Position = UDim2.new(0, 12, 0, 12)
+            iconBox.BackgroundColor3 = color
+            iconBox.BackgroundTransparency = 0.82
+            iconBox.BorderSizePixel = 0
+            Instance.new("UICorner", iconBox).CornerRadius = UDim.new(0, 8)
+
+            local icon = Instance.new("ImageLabel", iconBox)
+            icon.Size = UDim2.fromOffset(18, 18)
+            icon.Position = UDim2.new(0.5, -9, 0.5, -9)
             icon.BackgroundTransparency = 1
             icon.Image = iconId
             icon.ImageColor3 = color
 
+            -- Title: uppercase small caps
             local titleLabel = Instance.new("TextLabel", frame)
-            titleLabel.Size = UDim2.new(1, -40, 0, 20)
-            titleLabel.Position = UDim2.new(0, 36, 0, 7)
+            titleLabel.Size = UDim2.new(1, -60, 0, 14)
+            titleLabel.Position = UDim2.new(0, 52, 0, 14)
             titleLabel.BackgroundTransparency = 1
-            titleLabel.Text = title
+            titleLabel.Text = string.upper(tostring(title))
             titleLabel.TextColor3 = palette.Text or Color3.fromRGB(220, 220, 230)
             titleLabel.Font = Enum.Font.GothamBold
-            titleLabel.TextSize = 13
+            titleLabel.TextSize = 11
             titleLabel.TextXAlignment = Enum.TextXAlignment.Left
+            titleLabel.TextTruncate = Enum.TextTruncate.AtEnd
 
+            -- Body text
             local textLabel = Instance.new("TextLabel", frame)
-            textLabel.Size = UDim2.new(1, -40, 0, 18)
-            textLabel.Position = UDim2.new(0, 36, 0, 28)
+            textLabel.Size = UDim2.new(1, -60, 0, 20)
+            textLabel.Position = UDim2.new(0, 52, 0, 32)
             textLabel.BackgroundTransparency = 1
-            textLabel.Text = text
+            textLabel.Text = tostring(text)
             textLabel.TextColor3 = palette.TextDim or Color3.fromRGB(140, 140, 155)
-            textLabel.Font = Enum.Font.GothamMedium
-            textLabel.TextSize = 11
+            textLabel.Font = Enum.Font.Gotham
+            textLabel.TextSize = 12
             textLabel.TextXAlignment = Enum.TextXAlignment.Left
             textLabel.TextTruncate = Enum.TextTruncate.AtEnd
 
+            -- Progress bar at bottom, 2px, inset 12px each side
             local progressBar = Instance.new("Frame", frame)
-            progressBar.Size = UDim2.new(1, -4, 0, 2)
-            progressBar.Position = UDim2.new(0, 4, 1, -2)
+            progressBar.Size = UDim2.new(1, -24, 0, 2)
+            progressBar.Position = UDim2.new(0, 12, 1, -8)
             progressBar.BackgroundColor3 = color
             progressBar.BorderSizePixel = 0
+            Instance.new("UICorner", progressBar).CornerRadius = UDim.new(1, 0)
 
-            local accentBar = Instance.new("Frame", frame)
-            accentBar.Name = "AccentBar"
-            accentBar.Size = UDim2.new(0, 3, 1, -8)
-            accentBar.Position = UDim2.new(0, 4, 0, 4)
-            accentBar.BackgroundColor3 = color
-            accentBar.BorderSizePixel = 0
-            accentBar.ZIndex = 2
-            Instance.new("UICorner", accentBar).CornerRadius = UDim.new(1, 0)
+            -- Legacy: accentBar no longer a left strip; kept as alias to iconBox
+            -- so downstream code that reads parts.accentBar doesn't nil-error.
+            local accentBar = iconBox
 
             STATE.notifParts[frame] = {
                 stroke = frameStroke,
@@ -2410,7 +2424,7 @@
 
             table.insert(STATE.activeNotifs, frame)
             self:_updateNotifPositions()
-            TweenService:Create(frame, TweenInfo.new(0.25), {BackgroundTransparency = 0.1}):Play()
+            TweenService:Create(frame, TweenInfo.new(0.3, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {BackgroundTransparency = 0.05}):Play()
 
             TweenService:Create(
                 progressBar,
@@ -4763,29 +4777,26 @@
                     end
                 end
                 applyAspect(finalAspect)
-                -- Pill: image left, chevron-up icon right. Corner stays
-                -- UICorner (1,0) so the pill is fully rounded as requested.
+                -- Pill: image fills the whole capsule. NO chevron, NO text,
+                -- NO icon — image-only. Corner stays UICorner (1,0) so it's bulet.
                 if self._UI.MinimizeButtonImage then
                     self._UI.MinimizeButtonImage.Image = assetUrl
                     self._UI.MinimizeButtonImage.Visible = true
-                    self._UI.MinimizeButtonImage.Size = UDim2.new(1, -30, 1, -10)
-                    self._UI.MinimizeButtonImage.Position = UDim2.new(0, 8, 0.5, 0)
-                    self._UI.MinimizeButtonImage.AnchorPoint = Vector2.new(0, 0.5)
+                    self._UI.MinimizeButtonImage.Size = UDim2.new(1, -12, 1, -8)
+                    self._UI.MinimizeButtonImage.Position = UDim2.new(0.5, 0, 0.5, 0)
+                    self._UI.MinimizeButtonImage.AnchorPoint = Vector2.new(0.5, 0.5)
                 end
                 if self._UI.MinimizeButtonText then
                     self._UI.MinimizeButtonText.Visible = false
                 end
                 if self._UI.MinimizeButtonIcon then
-                    self._UI.MinimizeButtonIcon.Visible = true
-                    self._UI.MinimizeButtonIcon.Image = GetIcon("chevron-up")
-                    self._UI.MinimizeButtonIcon.ImageColor3 = self._Colors.TextDim
-                    self._UI.MinimizeButtonIcon.Size = UDim2.fromOffset(12, 12)
-                    self._UI.MinimizeButtonIcon.Position = UDim2.new(1, -20, 0.5, 0)
-                    self._UI.MinimizeButtonIcon.AnchorPoint = Vector2.new(0, 0.5)
+                    self._UI.MinimizeButtonIcon.Visible = false
                 end
                 if self._UI.MinimizeButton then
                     local pillH = self._minBtnBaseH or 28
-                    local pillW = math.clamp(math.floor(pillH * finalAspect) + 40, 120, 260)
+                    local innerH = pillH - 8
+                    local innerW = math.floor(innerH * finalAspect)
+                    local pillW = math.clamp(innerW + 16, 60, 260)
                     self._minBtnBaseW = pillW
                     self._UI.MinimizeButton.Size = UDim2.fromOffset(pillW, pillH)
                 end
@@ -5296,6 +5307,48 @@
         UI.AccordionScroll = accordionScroll
         self:_attachScrollSound(accordionScroll)
 
+        -- SIDE MODE: standalone tabs become pinned cards in the sidebar,
+        -- separated from the accordion below by PINNED / CATEGORIES micro-labels.
+        local pinnedLabel = Instance.new("TextLabel", UI.CategoryBar)
+        pinnedLabel.Name = "PinnedSectionLabel"
+        pinnedLabel.Size = UDim2.new(1, -20, 0, 14)
+        pinnedLabel.Position = UDim2.new(0, 10, 0, 90)
+        pinnedLabel.BackgroundTransparency = 1
+        pinnedLabel.Text = "PINNED"
+        pinnedLabel.TextColor3 = self._Colors.TextDim
+        pinnedLabel.Font = Enum.Font.GothamBold
+        pinnedLabel.TextSize = 9
+        pinnedLabel.TextXAlignment = Enum.TextXAlignment.Left
+        pinnedLabel.Visible = false
+        pinnedLabel.ZIndex = 5
+        UI.PinnedSectionLabel = pinnedLabel
+
+        local pinnedContainer = Instance.new("Frame", UI.CategoryBar)
+        pinnedContainer.Name = "PinnedStandaloneContainer"
+        pinnedContainer.Position = UDim2.new(0, 6, 0, 108)
+        pinnedContainer.Size = UDim2.new(1, -12, 0, 0)
+        pinnedContainer.BackgroundTransparency = 1
+        pinnedContainer.Visible = false
+        pinnedContainer.ZIndex = 9
+        local pinnedLayout = Instance.new("UIListLayout", pinnedContainer)
+        pinnedLayout.SortOrder = Enum.SortOrder.LayoutOrder
+        pinnedLayout.Padding = UDim.new(0, 4)
+        UI.PinnedStandaloneContainer = pinnedContainer
+
+        local catLabel = Instance.new("TextLabel", UI.CategoryBar)
+        catLabel.Name = "CategoriesSectionLabel"
+        catLabel.Size = UDim2.new(1, -20, 0, 14)
+        catLabel.Position = UDim2.new(0, 10, 0, 90)
+        catLabel.BackgroundTransparency = 1
+        catLabel.Text = "CATEGORIES"
+        catLabel.TextColor3 = self._Colors.TextDim
+        catLabel.Font = Enum.Font.GothamBold
+        catLabel.TextSize = 9
+        catLabel.TextXAlignment = Enum.TextXAlignment.Left
+        catLabel.Visible = false
+        catLabel.ZIndex = 5
+        UI.CategoriesSectionLabel = catLabel
+
         local miniProfile = Instance.new("Frame", UI.CategoryBar)
         miniProfile.Name = "SideProfileMini"
         miniProfile.Size = UDim2.new(1, -16, 0, 36)
@@ -5371,6 +5424,12 @@
             if UI.CategoryIndicator and UI.CategoryIndicator.Parent then
                 UI.CategoryIndicator.BackgroundColor3 = self._Colors.Accent
             end
+            if UI.PinnedSectionLabel and UI.PinnedSectionLabel.Parent then
+                UI.PinnedSectionLabel.TextColor3 = self._Colors.TextDim
+            end
+            if UI.CategoriesSectionLabel and UI.CategoriesSectionLabel.Parent then
+                UI.CategoriesSectionLabel.TextColor3 = self._Colors.TextDim
+            end
         end)
 
         -- FEATURE: sliding accent pill for the category bar (Top/Bottom mode).
@@ -5385,6 +5444,187 @@
         catIndicator.Visible = false
         Instance.new("UICorner", catIndicator).CornerRadius = UDim.new(1, 0)
         UI.CategoryIndicator = catIndicator
+    end
+
+    -- Creates a pinned standalone card in PinnedStandaloneContainer.
+    -- Called by CreateStandaloneTab when TabPosition == "Side". Stores refs on
+    -- catData so SetActiveCategory + theme refresher can update them.
+    function Library:_createPinnedCard(tabName, iconSpec, catData)
+        if self:_isDead() then return end
+        local UI = self._UI
+        local container = UI and UI.PinnedStandaloneContainer
+        if not container then return end
+        local count = 0
+        for _, c in ipairs(container:GetChildren()) do
+            if c:IsA("TextButton") then count = count + 1 end
+        end
+
+        local card = Instance.new("TextButton", container)
+        card.Name = "Pinned_" .. tabName
+        card.LayoutOrder = count + 1
+        card.Size = UDim2.new(1, 0, 0, 40)
+        card.BackgroundColor3 = self._Colors.Card
+        card.BackgroundTransparency = 0.35
+        card.AutoButtonColor = false
+        card.Text = ""
+        card.BorderSizePixel = 0
+        card.ZIndex = 9
+        Instance.new("UICorner", card).CornerRadius = UDim.new(0, 10)
+
+        local stroke = Instance.new("UIStroke", card)
+        stroke.Color = self._Colors.Border
+        stroke.Thickness = 1
+        stroke.Transparency = 0.6
+        stroke.ZIndex = 9
+
+        local accentBar = Instance.new("Frame", card)
+        accentBar.Name = "PinnedAccentBar"
+        accentBar.Size = UDim2.new(0, 3, 1, -14)
+        accentBar.Position = UDim2.new(0, 4, 0.5, 0)
+        accentBar.AnchorPoint = Vector2.new(0, 0.5)
+        accentBar.BackgroundColor3 = self._Colors.Accent
+        accentBar.BorderSizePixel = 0
+        accentBar.Visible = false
+        accentBar.ZIndex = 10
+        Instance.new("UICorner", accentBar).CornerRadius = UDim.new(1, 0)
+
+        local icon = Instance.new("ImageLabel", card)
+        icon.Size = UDim2.fromOffset(18, 18)
+        icon.Position = UDim2.new(0, 12, 0.5, -9)
+        icon.BackgroundTransparency = 1
+        icon.ScaleType = Enum.ScaleType.Fit
+        icon.ImageColor3 = self._Colors.TextDim
+        icon.ZIndex = 10
+        if iconSpec then
+            if string.sub(iconSpec, 1, 6) == "asset:" then
+                icon.Image = "rbxassetid://" .. string.sub(iconSpec, 7)
+            else
+                icon.Image = GetIcon(iconSpec)
+            end
+        else
+            icon.Image = GetIcon("star")
+        end
+
+        local label = Instance.new("TextLabel", card)
+        label.Size = UDim2.new(1, -40, 1, 0)
+        label.Position = UDim2.new(0, 36, 0, 0)
+        label.BackgroundTransparency = 1
+        label.Text = tabName
+        label.TextColor3 = self._Colors.TextDim
+        label.Font = Enum.Font.GothamBold
+        label.TextSize = 11
+        label.TextXAlignment = Enum.TextXAlignment.Left
+        label.TextTruncate = Enum.TextTruncate.AtEnd
+        label.ZIndex = 10
+
+        card.MouseButton1Click:Connect(function()
+            if self:_isDead() then return end
+            self:SetActiveCategory(tabName, tabName)
+        end)
+        card.MouseEnter:Connect(function()
+            if self:_isDead() then return end
+            if self._STATE.ActiveCategory == tabName then return end
+            TweenService:Create(stroke, TweenInfo.new(0.15), {
+                Color = self._Colors.Accent, Transparency = 0.3,
+            }):Play()
+            TweenService:Create(card, TweenInfo.new(0.15), {BackgroundTransparency = 0.25}):Play()
+        end)
+        card.MouseLeave:Connect(function()
+            if self:_isDead() then return end
+            if self._STATE.ActiveCategory == tabName then return end
+            TweenService:Create(stroke, TweenInfo.new(0.15), {
+                Color = self._Colors.Border, Transparency = 0.6,
+            }):Play()
+            TweenService:Create(card, TweenInfo.new(0.15), {BackgroundTransparency = 0.35}):Play()
+        end)
+
+        self:_registerThemeRefresher(function()
+            if not card.Parent then return end
+            local isActive = (self._STATE.ActiveCategory == tabName)
+            card.BackgroundColor3 = self._Colors.Card
+            card.BackgroundTransparency = isActive and 0.2 or 0.35
+            stroke.Color = isActive and self._Colors.Accent or self._Colors.Border
+            stroke.Transparency = isActive and 0.3 or 0.6
+            accentBar.BackgroundColor3 = self._Colors.Accent
+            icon.ImageColor3 = isActive and self._Colors.Accent or self._Colors.TextDim
+            label.TextColor3 = isActive and self._Colors.Text or self._Colors.TextDim
+        end)
+
+        catData.pinnedCard = card
+        catData.pinnedStroke = stroke
+        catData.pinnedAccentBar = accentBar
+        catData.pinnedIcon = icon
+        catData.pinnedLabel = label
+    end
+
+    -- Updates pinned card visual state. Safe no-op for non-standalone / Top/Bottom.
+    function Library:_updatePinnedCardVisuals(categoryName, active)
+        if self:_isDead() then return end
+        local data = self._STATE.CategoryButtons and self._STATE.CategoryButtons[categoryName]
+        if not data or not data.pinnedCard then return end
+        TweenService:Create(data.pinnedStroke, TweenInfo.new(0.2), {
+            Color = active and self._Colors.Accent or self._Colors.Border,
+            Transparency = active and 0.3 or 0.6,
+        }):Play()
+        TweenService:Create(data.pinnedCard, TweenInfo.new(0.2), {
+            BackgroundTransparency = active and 0.2 or 0.35,
+        }):Play()
+        TweenService:Create(data.pinnedIcon, TweenInfo.new(0.2), {
+            ImageColor3 = active and self._Colors.Accent or self._Colors.TextDim,
+        }):Play()
+        TweenService:Create(data.pinnedLabel, TweenInfo.new(0.2), {
+            TextColor3 = active and self._Colors.Text or self._Colors.TextDim,
+        }):Play()
+        if data.pinnedAccentBar then data.pinnedAccentBar.Visible = active end
+    end
+
+    -- Positions pinned container + labels + accordion scroll in Side mode.
+    -- No-op (and hides pinned UI) in Top/Bottom mode.
+    function Library:_updateSideLayout()
+        if self:_isDead() then return end
+        local UI = self._UI
+        if not UI then return end
+
+        if self.TabPosition ~= "Side" then
+            if UI.PinnedSectionLabel then UI.PinnedSectionLabel.Visible = false end
+            if UI.PinnedStandaloneContainer then UI.PinnedStandaloneContainer.Visible = false end
+            if UI.CategoriesSectionLabel then UI.CategoriesSectionLabel.Visible = false end
+            return
+        end
+
+        if not (UI.CategoryBar and UI.AccordionScroll) then return end
+
+        local pinnedCount = 0
+        if UI.PinnedStandaloneContainer then
+            for _, c in ipairs(UI.PinnedStandaloneContainer:GetChildren()) do
+                if c:IsA("TextButton") and c.Visible then pinnedCount = pinnedCount + 1 end
+            end
+        end
+        local accordionCount = 0
+        for _, c in ipairs(UI.AccordionScroll:GetChildren()) do
+            if c:IsA("Frame") and c.Visible then accordionCount = accordionCount + 1 end
+        end
+        local hasPinned = pinnedCount > 0
+        local hasAccordion = accordionCount > 0
+        local showPinnedLabel = hasPinned
+        local showCategoriesLabel = hasPinned and hasAccordion
+
+        if UI.PinnedSectionLabel then UI.PinnedSectionLabel.Visible = showPinnedLabel end
+        if UI.PinnedStandaloneContainer then UI.PinnedStandaloneContainer.Visible = hasPinned end
+        if UI.CategoriesSectionLabel then UI.CategoriesSectionLabel.Visible = showCategoriesLabel end
+
+        local y = 54
+        if hasPinned then
+            y = y + 16
+            if UI.PinnedStandaloneContainer then
+                UI.PinnedStandaloneContainer.Position = UDim2.new(0, 6, 0, y)
+                UI.PinnedStandaloneContainer.Size = UDim2.new(1, -12, 0, pinnedCount * 44)
+            end
+            y = y + pinnedCount * 44 + 6
+            if showCategoriesLabel then y = y + 16 end
+        end
+        UI.AccordionScroll.Position = UDim2.new(0, 6, 0, y)
+        UI.AccordionScroll.Size = UDim2.new(1, -12, 1, -(y + 52))
     end
 
     function Library:_applyNavigationLayout()
@@ -5508,6 +5748,7 @@
             if UI.BottomPill then UI.BottomPill.Visible = false end
         end
 
+        self:_updateSideLayout()
         self:_layoutCategoryButtons()
         self:_resizeSubTabs()
 
@@ -7156,6 +7397,9 @@
                 chevron.ImageColor3 = isActive and self._Colors.Accent or self._Colors.TextDim
             end)
 
+            if self.TabPosition == "Side" then
+                self:_updateSideLayout()
+            end
             return header
         end
 
@@ -7324,6 +7568,11 @@
             end
             for name, data in pairs(STATE.CategoryButtons or {}) do
                 local active = (name == categoryName)
+                -- Pinned card (Side mode) update happens before the accordion
+                -- fallback so Side-only installs still flip the active accent.
+                if data.pinnedCard then
+                    self:_updatePinnedCardVisuals(name, active)
+                end
                 if data.isStandalone then
                     if data.standaloneIndicator then
                         data.standaloneIndicator.Visible = active
@@ -7388,6 +7637,9 @@
         if prevActive and prevActive ~= categoryName then
             local prevData = STATE.CategoryButtons[prevActive]
             if prevData and prevData.isStandalone then
+                if prevData.pinnedCard then
+                    self:_updatePinnedCardVisuals(prevActive, false)
+                end
                 if prevData.standaloneIndicator then prevData.standaloneIndicator.Visible = false end
                 if prevData.isAccordion then
                     if prevData.stroke then
@@ -7825,6 +8077,17 @@
             end
         end
         self._STATE.StandaloneTabs[tabName] = true
+        -- Side mode: hide the auto-created accordion header and use a pinned
+        -- card instead. Top/Bottom still uses the accordion header (untouched).
+        if self.TabPosition == "Side" and catData then
+            if catData.isAccordion and catData.group then
+                catData.group.Visible = false
+            end
+            if self._UI.PinnedStandaloneContainer then
+                self:_createPinnedCard(tabName, iconSpec, catData)
+                self:_updateSideLayout()
+            end
+        end
         self:CreateTab(tabName, tabName)
         return self:_wrapTab(self._STATE.ContentPages[tabName], tabName)
     end
