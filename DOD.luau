@@ -916,6 +916,15 @@
         --                      fallback to 3.0 (typical banner shape).
         self.TitleImage       = opts.TitleImage
         self.TitleImageAspect = opts.TitleImageAspect
+        -- Auto-tint the title bar to the image's dominant color so a logo
+        -- with a baked-in background blends seamlessly. Manual override via
+        -- TitleBarColor (Color3), or disable with TitleBarAutoColor = false.
+        if opts.TitleBarColor ~= nil and typeof(opts.TitleBarColor) ~= "Color3" then
+            error("[DoD UI] TitleBarColor must be a Color3.")
+        end
+        self.TitleBarColor     = opts.TitleBarColor
+        self.TitleBarAutoColor = opts.TitleBarAutoColor ~= false
+        self._TitleBarAutoTint = nil
         self.ToggleKey   = opts.ToggleKey or Enum.KeyCode.RightShift
         self._TitleIconName = (type(opts.TitleIcon) == "string" and opts.TitleIcon ~= "")
             and opts.TitleIcon or "hexagon"
@@ -1540,7 +1549,11 @@
                     ColorSequenceKeypoint.new(1, Color3.fromRGB(255, 255, 255)),
                 })
             end
-            if UI.TitleBar then UI.TitleBar.BackgroundColor3 = self._Colors.Bg2 end
+            if UI.TitleBar then
+                -- Auto/manual tint wins over Bg2 so the image blends after
+                -- any theme change. _TitleBarAutoTint is nil when no tint yet.
+                UI.TitleBar.BackgroundColor3 = self._TitleBarAutoTint or self._Colors.Bg2
+            end
             if UI.CategoryBar then
                 UI.CategoryBar.BackgroundColor3 = self.TabPosition == "Bottom" and self._Colors.Card or self._Colors.Sidebar
             end
@@ -4498,6 +4511,64 @@
         end)
     end
 
+    function Library:_sampleImageColor(assetUrl, callback)
+        task.spawn(function()
+            local AssetService = game:GetService("AssetService")
+            if not AssetService or not AssetService.CreateEditableImageAsync then
+                pcall(callback, nil); return
+            end
+            local editable
+            local ok = pcall(function()
+                editable = AssetService:CreateEditableImageAsync(assetUrl)
+            end)
+            if not ok or not editable then
+                local hasContent = false
+                pcall(function() hasContent = (Content ~= nil and Content.fromUri ~= nil) end)
+                if hasContent then
+                    local ok2 = pcall(function()
+                        editable = AssetService:CreateEditableImageAsync(Content.fromUri(assetUrl))
+                    end)
+                    if not ok2 or not editable then
+                        pcall(callback, nil); return
+                    end
+                else
+                    pcall(callback, nil); return
+                end
+            end
+            local size = editable.Size
+            local sw = math.min(size.X, 32)
+            local sh = math.min(size.Y, 32)
+            local pixelsOk, pixels = pcall(function()
+                return editable:ReadPixels(Vector2.new(0, 0), Vector2.new(sw, sh))
+            end)
+            pcall(function() editable:Destroy() end)
+            if not pixelsOk or type(pixels) ~= "table" or #pixels < 4 then
+                pcall(callback, nil); return
+            end
+            local r, g, b, n = 0, 0, 0, 0
+            for i = 1, #pixels - 3, 4 do
+                local a = pixels[i + 3] or 0
+                if a > 0.5 then
+                    r = r + (pixels[i] or 0)
+                    g = g + (pixels[i + 1] or 0)
+                    b = b + (pixels[i + 2] or 0)
+                    n = n + 1
+                end
+            end
+            if n == 0 then
+                pcall(callback, nil); return
+            end
+            pcall(callback, Color3.new(r / n, g / n, b / n))
+        end)
+    end
+
+    function Library:_applyTitleBarTint(color)
+        if self:_isDead() then return end
+        local UI = self._UI
+        if not (UI and UI.TitleBar) then return end
+        UI.TitleBar.BackgroundColor3 = color
+    end
+
     function Library:_initTitleBar()
         local UI = self._UI
         UI.TitleBar = Instance.new("Frame", UI.MainContainer)
@@ -4677,24 +4748,50 @@
                     end
                 end
                 applyAspect(finalAspect)
-                -- Mirror into the minimized pill
+                -- Pill: image left, chevron-up icon right. Corner stays
+                -- UICorner (1,0) so the pill is fully rounded as requested.
                 if self._UI.MinimizeButtonImage then
                     self._UI.MinimizeButtonImage.Image = assetUrl
                     self._UI.MinimizeButtonImage.Visible = true
-                end
-                if self._UI.MinimizeButtonIcon then
-                    self._UI.MinimizeButtonIcon.Visible = false
+                    self._UI.MinimizeButtonImage.Size = UDim2.new(1, -30, 1, -10)
+                    self._UI.MinimizeButtonImage.Position = UDim2.new(0, 8, 0.5, 0)
+                    self._UI.MinimizeButtonImage.AnchorPoint = Vector2.new(0, 0.5)
                 end
                 if self._UI.MinimizeButtonText then
                     self._UI.MinimizeButtonText.Visible = false
                 end
+                if self._UI.MinimizeButtonIcon then
+                    self._UI.MinimizeButtonIcon.Visible = true
+                    self._UI.MinimizeButtonIcon.Image = GetIcon("chevron-up")
+                    self._UI.MinimizeButtonIcon.ImageColor3 = self._Colors.TextDim
+                    self._UI.MinimizeButtonIcon.Size = UDim2.fromOffset(12, 12)
+                    self._UI.MinimizeButtonIcon.Position = UDim2.new(1, -20, 0.5, 0)
+                    self._UI.MinimizeButtonIcon.AnchorPoint = Vector2.new(0, 0.5)
+                end
                 if self._UI.MinimizeButton then
                     local pillH = self._minBtnBaseH or 28
-                    local pillW = math.clamp(math.floor(pillH * finalAspect), 80, 220)
+                    local pillW = math.clamp(math.floor(pillH * finalAspect) + 40, 120, 260)
                     self._minBtnBaseW = pillW
                     self._UI.MinimizeButton.Size = UDim2.fromOffset(pillW, pillH)
                 end
+                -- Auto-tint: sample the image, darken 50%, apply to title bar
+                -- so a logo with a baked-in background blends seamlessly.
+                if self.TitleBarAutoColor and not self.TitleBarColor then
+                    self:_sampleImageColor(assetUrl, function(tint)
+                        if self:_isDead() then return end
+                        if tint then
+                            local darkened = tint:Lerp(Color3.new(0, 0, 0), 0.5)
+                            self._TitleBarAutoTint = darkened
+                            self:_applyTitleBarTint(darkened)
+                        end
+                    end)
+                end
             end)
+            -- Manual override applies immediately, no sampling needed
+            if self.TitleBarColor then
+                self._TitleBarAutoTint = self.TitleBarColor
+                self:_applyTitleBarTint(self.TitleBarColor)
+            end
 
             UI.TitleImageLabel = img
             UI.TitleImageContainer = imgContainer
