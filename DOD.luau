@@ -908,6 +908,8 @@
         end
         self.TabPosition = opts.TabPosition or "Top"
         self.TabWidth    = opts.TabWidth or 130
+        self.WindowStyle = (opts.WindowStyle == "Windows11") and "Windows11" or "macOS"
+        self.TabStyle = (opts.TabStyle == "FlatList") and "FlatList" or "Accordion"
         -- FEATURE (P2): optional image logo instead of text title.
         --   TitleImage       : rbxassetid ("12345", "rbxassetid://12345"),
         --                      full rbxasset, or http(s) URL (executor-dependent)
@@ -5098,6 +5100,9 @@
 
     function Library:_initTrafficLights()
         local UI = self._UI
+        if self.WindowStyle == "Windows11" then
+            return self:_initWindows11Controls()
+        end
         local container = Instance.new("Frame", UI.TitleBar)
         container.Name = "TrafficLights"
         local _isMobTL = self._isMobile
@@ -5264,6 +5269,108 @@
     end
 
     -- CATEGORY BAR + SUB-TAB HOST
+
+    function Library:_initWindows11Controls()
+        local UI = self._UI
+        self._hudState = "NORMAL"
+        self._hudNormalSize = self.WindowSize
+        self._hudNormalPos = UDim2.new(0.5, 0, 0.5, 0)
+
+        local container = Instance.new("Frame", UI.TitleBar)
+        container.Name = "Windows11Controls"
+        local btnW = self._isMobile and 44 or 32
+        local btnH = self._isMobile and 32 or 28
+        local gap = 4
+        local totalW = btnW * 3 + gap * 2
+        container.Size = UDim2.fromOffset(totalW, btnH)
+        container.Position = UDim2.new(1, -(totalW + 12), 0.5, -(btnH / 2))
+        container.BackgroundTransparency = 1
+
+        UI.TrafficDots = {}
+        local isMobile = self._isMobile
+        local iconSize = isMobile and 16 or 14
+
+        local function makeBtn(order, iconName, onClick, isClose)
+            local btn = Instance.new("TextButton", container)
+            btn.Size = UDim2.fromOffset(btnW, btnH)
+            btn.Position = UDim2.new(0, (order - 1) * (btnW + gap), 0, 0)
+            btn.BackgroundColor3 = self._Colors.Bg
+            btn.BackgroundTransparency = 1
+            btn.Text = ""
+            btn.AutoButtonColor = false
+            btn.BorderSizePixel = 0
+            Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 6)
+
+            local icon = Instance.new("ImageLabel", btn)
+            icon.Size = UDim2.fromOffset(iconSize, iconSize)
+            icon.Position = UDim2.new(0.5, -iconSize / 2, 0.5, -iconSize / 2)
+            icon.BackgroundTransparency = 1
+            icon.Image = GetIcon(iconName)
+            icon.ImageColor3 = self._Colors.TextDim
+            icon.ScaleType = Enum.ScaleType.Fit
+
+            btn.MouseEnter:Connect(function()
+                TweenService:Create(btn, TweenInfo.new(0.12), {BackgroundTransparency = 0.3}):Play()
+                local targetColor = isClose and Color3.fromRGB(248, 113, 113) or self._Colors.Text
+                TweenService:Create(icon, TweenInfo.new(0.12), {ImageColor3 = targetColor}):Play()
+            end)
+            btn.MouseLeave:Connect(function()
+                TweenService:Create(btn, TweenInfo.new(0.12), {BackgroundTransparency = 1}):Play()
+                TweenService:Create(icon, TweenInfo.new(0.12), {ImageColor3 = self._Colors.TextDim}):Play()
+            end)
+            btn.MouseButton1Click:Connect(function()
+                if self:_isDead() then return end
+                onClick()
+            end)
+
+            table.insert(UI.TrafficDots, btn)
+            return { btn = btn, icon = icon }
+        end
+
+        local function doMinimize()
+            self:Minimize()
+        end
+
+        local function doMaximize()
+            local mc = UI.MainContainer
+            local cam = getCam()
+            if not mc or not cam then return end
+            if self._hudState == "MAXIMIZED" then
+                TweenService:Create(mc, TweenInfo.new(0.3, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {
+                    Size = self._hudNormalSize or self.WindowSize,
+                    Position = self._hudNormalPos or UDim2.new(0.5, 0, 0.5, 0)
+                }):Play()
+                self._hudState = "NORMAL"
+            else
+                self._hudNormalSize = mc.Size
+                self._hudNormalPos = mc.Position
+                local vp = cam.ViewportSize
+                TweenService:Create(mc, TweenInfo.new(0.3, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {
+                    Size = UDim2.new(0, math.max(1, vp.X - 40), 0, math.max(1, vp.Y - 40)),
+                    Position = UDim2.new(0.5, 0, 0.5, 0)
+                }):Play()
+                self._hudState = "MAXIMIZED"
+            end
+        end
+
+        local function doClose()
+            self:Destroy()
+        end
+
+        local minCtl = makeBtn(1, "minus", doMinimize, false)
+        local maxCtl = makeBtn(2, "expand", doMaximize, false)
+        local closeCtl = makeBtn(3, "letter-x", doClose, true)
+
+        self:_registerThemeRefresher(function()
+            if not container.Parent then return end
+            for _, ctl in ipairs({ minCtl, maxCtl, closeCtl }) do
+                if ctl.btn.Parent then
+                    ctl.btn.BackgroundColor3 = self._Colors.Bg
+                    ctl.icon.ImageColor3 = self._Colors.TextDim
+                end
+            end
+        end)
+    end
 
     function Library:_initSidebar()
         local UI = self._UI
@@ -5764,6 +5871,7 @@
         local STATE = self._STATE
         local data = STATE.CategoryButtons and STATE.CategoryButtons[categoryName]
         if not data or not data.isAccordion then return end
+        if data.isFlatList then return end
         local wasExpanded = STATE.AccordionExpanded[categoryName] == true
         STATE.AccordionExpanded[categoryName] = expanded
         if expanded then
@@ -7234,6 +7342,71 @@
             table.insert(STATE.CategoryOrder, categoryName)
         end
 
+        if self.TabPosition == "Side" and self.TabStyle == "FlatList" and UI.AccordionScroll then
+            local group = Instance.new("Frame", UI.AccordionScroll)
+            group.Name = "FlatGroup_" .. categoryName
+            group.LayoutOrder = #STATE.CategoryOrder
+            group.Size = UDim2.new(1, 0, 0, 0)
+            group.BackgroundTransparency = 1
+            group.AutomaticSize = Enum.AutomaticSize.Y
+            group.ZIndex = 5
+
+            local groupLayout = Instance.new("UIListLayout", group)
+            groupLayout.SortOrder = Enum.SortOrder.LayoutOrder
+            groupLayout.Padding = UDim.new(0, 2)
+
+            local catLabel = Instance.new("TextLabel", group)
+            catLabel.Name = "CatLabel"
+            catLabel.LayoutOrder = 1
+            catLabel.Size = UDim2.new(1, 0, 0, 22)
+            catLabel.BackgroundTransparency = 1
+            catLabel.Text = string.upper(categoryName)
+            catLabel.TextColor3 = self._Colors.TextDim
+            catLabel.Font = Enum.Font.GothamBold
+            catLabel.TextSize = 9
+            catLabel.TextXAlignment = Enum.TextXAlignment.Left
+            catLabel.TextTruncate = Enum.TextTruncate.AtEnd
+            catLabel.ZIndex = 5
+
+            local catPad = Instance.new("UIPadding", catLabel)
+            catPad.PaddingLeft = UDim.new(0, 8)
+            catPad.PaddingTop = UDim.new(0, 8)
+
+            local tabList = Instance.new("Frame", group)
+            tabList.Name = "TabList"
+            tabList.LayoutOrder = 2
+            tabList.Size = UDim2.new(1, 0, 0, 0)
+            tabList.AutomaticSize = Enum.AutomaticSize.Y
+            tabList.BackgroundTransparency = 1
+            tabList.ZIndex = 5
+
+            local tlLayout = Instance.new("UIListLayout", tabList)
+            tlLayout.SortOrder = Enum.SortOrder.LayoutOrder
+            tlLayout.Padding = UDim.new(0, 2)
+
+            local tlPad = Instance.new("UIPadding", tabList)
+            tlPad.PaddingLeft = UDim.new(0, 4)
+            tlPad.PaddingRight = UDim.new(0, 4)
+            tlPad.PaddingBottom = UDim.new(0, 6)
+
+            STATE.CategoryButtons[categoryName] = {
+                button = catLabel,
+                label = catLabel,
+                group = group,
+                tabList = tabList,
+                layout = tlLayout,
+                isAccordion = true,
+                isFlatList = true,
+            }
+
+            self:_registerThemeRefresher(function()
+                if catLabel.Parent then
+                    catLabel.TextColor3 = self._Colors.TextDim
+                end
+            end)
+            return catLabel
+        end
+
         if self.TabPosition == "Side" and UI.AccordionScroll then
             local group = Instance.new("Frame", UI.AccordionScroll)
             group.Name = "AccGroup_" .. categoryName
@@ -7933,6 +8106,95 @@
             end
         end)
 
+        if self.TabPosition == "Side" and self.TabStyle == "FlatList" then
+            local catData = STATE.CategoryButtons[categoryName]
+            if catData and catData.tabList then
+                local tabCount = 0
+                for _, c in ipairs(catData.tabList:GetChildren()) do
+                    if c:IsA("TextButton") then tabCount = tabCount + 1 end
+                end
+                local subBtn = Instance.new("TextButton", catData.tabList)
+                subBtn.Name = "SubTab_" .. tabName
+                subBtn.LayoutOrder = tabCount + 1
+                subBtn.Size = UDim2.new(1, 0, 0, 28)
+                subBtn.BackgroundColor3 = self._Colors.Card
+                subBtn.BackgroundTransparency = 1
+                subBtn.Text = ""
+                subBtn.AutoButtonColor = false
+                subBtn.BorderSizePixel = 0
+                subBtn.ZIndex = 6
+                subBtn:SetAttribute("TabName", tabName)
+                Instance.new("UICorner", subBtn).CornerRadius = UDim.new(0, 6)
+
+                local accentDot = Instance.new("Frame", subBtn)
+                accentDot.Name = "AccentDot"
+                accentDot.Size = UDim2.fromOffset(2, 14)
+                accentDot.Position = UDim2.new(0, 6, 0.5, -7)
+                accentDot.BackgroundColor3 = self._Colors.Accent
+                accentDot.BorderSizePixel = 0
+                accentDot.Visible = false
+                accentDot.ZIndex = 7
+                Instance.new("UICorner", accentDot).CornerRadius = UDim.new(1, 0)
+
+                local subLabel = Instance.new("TextLabel", subBtn)
+                subLabel.Name = "SubLabel"
+                subLabel.Size = UDim2.new(1, -26, 1, 0)
+                subLabel.Position = UDim2.new(0, 18, 0, 0)
+                subLabel.BackgroundTransparency = 1
+                subLabel.Text = tabName
+                subLabel.TextColor3 = self._Colors.TextDim
+                subLabel.Font = Enum.Font.GothamMedium
+                subLabel.TextSize = 11
+                subLabel.TextXAlignment = Enum.TextXAlignment.Left
+                subLabel.TextTruncate = Enum.TextTruncate.AtEnd
+                subLabel.ZIndex = 7
+
+                if catData.isStandalone and catData.icon and catData.icon.Image then
+                    local tabIcon = Instance.new("ImageLabel", subBtn)
+                    tabIcon.Name = "TabIcon"
+                    tabIcon.Size = UDim2.fromOffset(14, 14)
+                    tabIcon.Position = UDim2.new(0, 10, 0.5, -7)
+                    tabIcon.BackgroundTransparency = 1
+                    tabIcon.Image = catData.icon.Image
+                    tabIcon.ImageColor3 = self._Colors.Accent
+                    tabIcon.ZIndex = 7
+                    subLabel.Position = UDim2.new(0, 32, 0, 0)
+                    subLabel.Size = UDim2.new(1, -40, 1, 0)
+                    if catData.label then catData.label.Visible = false end
+                    self:_registerThemeRefresher(function()
+                        if tabIcon.Parent then tabIcon.ImageColor3 = self._Colors.Accent end
+                    end)
+                end
+
+                subBtn.MouseEnter:Connect(function()
+                    self:PlaySound("Hover")
+                    if STATE.ActiveTab ~= tabName then
+                        TweenService:Create(subBtn, TweenInfo.new(0.15), {BackgroundTransparency = 0.85}):Play()
+                        TweenService:Create(subLabel, TweenInfo.new(0.15), {TextColor3 = self._Colors.Text}):Play()
+                    end
+                end)
+                subBtn.MouseLeave:Connect(function()
+                    if STATE.ActiveTab ~= tabName then
+                        TweenService:Create(subBtn, TweenInfo.new(0.15), {BackgroundTransparency = 1}):Play()
+                        TweenService:Create(subLabel, TweenInfo.new(0.15), {TextColor3 = self._Colors.TextDim}):Play()
+                    end
+                end)
+                subBtn.MouseButton1Click:Connect(function()
+                    self:SetActiveCategory(categoryName, tabName)
+                end)
+
+                self:_registerThemeRefresher(function()
+                    if not subBtn.Parent then return end
+                    subBtn.BackgroundColor3 = self._Colors.Card
+                    local isActive = STATE.ActiveTab == tabName
+                    subLabel.TextColor3 = isActive and self._Colors.Text or self._Colors.TextDim
+                    subLabel.Font = isActive and Enum.Font.GothamBold or Enum.Font.GothamMedium
+                    accentDot.BackgroundColor3 = self._Colors.Accent
+                    accentDot.Visible = isActive
+                end)
+            end
+        end
+
         if self.TabPosition == "Side" then
             local catData = STATE.CategoryButtons[categoryName]
             if catData and catData.tabList and not catData.isStandalone then
@@ -8303,10 +8565,102 @@
             controls = {},
             expanded = expanded,
             searching = false,
+            locked = false,
         }
         self._STATE.SearchSections[tabName] = self._STATE.SearchSections[tabName] or {}
         table.insert(self._STATE.SearchSections[tabName], sectionData)
         self._STATE.SearchBodies[body] = sectionData
+
+        indicator.Position = UDim2.new(1, -46, 0.5, 0)
+
+        local lockBtn = Instance.new("TextButton", header)
+        lockBtn.Name = "LockBtn"
+        lockBtn.Size = UDim2.fromOffset(16, 16)
+        lockBtn.Position = UDim2.new(1, -22, 0.5, -8)
+        lockBtn.BackgroundTransparency = 1
+        lockBtn.Text = ""
+        lockBtn.AutoButtonColor = false
+        lockBtn.BorderSizePixel = 0
+        lockBtn.ZIndex = 8
+
+        local lockIcon = Instance.new("ImageLabel", lockBtn)
+        lockIcon.Size = UDim2.fromScale(1, 1)
+        lockIcon.BackgroundTransparency = 1
+        lockIcon.Image = GetIcon("lock-keyhole-open")
+        lockIcon.ImageColor3 = self._Colors.TextDim
+        lockIcon.ImageTransparency = 0.45
+        lockIcon.ScaleType = Enum.ScaleType.Fit
+
+        local lockScale = Instance.new("UIScale", lockBtn)
+        lockScale.Scale = 1
+
+        local pulseTween
+        local function pulseLock()
+            if pulseTween then pcall(function() pulseTween:Cancel() end) end
+            lockScale.Scale = 1
+            local up = TweenService:Create(lockScale,
+                TweenInfo.new(0.15, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+                {Scale = 1.18})
+            up:Play()
+            pulseTween = up
+            up.Completed:Connect(function()
+                if not lockBtn.Parent then return end
+                TweenService:Create(lockScale,
+                    TweenInfo.new(0.15, Enum.EasingStyle.Quad, Enum.EasingDirection.In),
+                    {Scale = 1}):Play()
+            end)
+        end
+
+        local function applyLockVisual()
+            if sectionData.locked then
+                lockIcon.Image = GetIcon("lock-keyhole")
+                lockIcon.ImageColor3 = self._Colors.Accent
+                lockIcon.ImageTransparency = 0
+            else
+                lockIcon.Image = GetIcon("lock-keyhole-open")
+                lockIcon.ImageColor3 = self._Colors.TextDim
+                lockIcon.ImageTransparency = 0.45
+            end
+        end
+
+        local function setLocked(v, silent)
+            v = v and true or false
+            if sectionData.locked == v then return end
+            sectionData.locked = v
+            applyLockVisual()
+            if not silent then self:_triggerAutoSave() end
+        end
+
+        lockBtn.MouseEnter:Connect(function()
+            self:PlaySound("Hover")
+            if not sectionData.locked then
+                TweenService:Create(lockIcon, TweenInfo.new(0.15),
+                    {ImageColor3 = self._Colors.Text, ImageTransparency = 0}):Play()
+            end
+        end)
+        lockBtn.MouseLeave:Connect(function()
+            if not sectionData.locked then
+                TweenService:Create(lockIcon, TweenInfo.new(0.15),
+                    {ImageColor3 = self._Colors.TextDim, ImageTransparency = 0.45}):Play()
+            end
+        end)
+        lockBtn.MouseButton1Click:Connect(function()
+            if self:_isDead() then return end
+            self:PlaySound("Click")
+            setLocked(not sectionData.locked, false)
+        end)
+
+        self:_bindTooltip(lockBtn, "Click to lock / unlock this section")
+
+        self:_registerThemeRefresher(function()
+            applyLockVisual()
+        end)
+
+        local _lockId = self:_getConfigId("section_lock", tabName .. "/" .. title)
+        self:_registerConfigState(_lockId,
+            function() return sectionData.locked end,
+            function(v, silent) setLocked(v, silent) end
+        )
 
         local function updateScrollIndicator()
             if not body or not body.Parent then return end
@@ -8441,6 +8795,7 @@
         header.MouseButton1Up:Connect(function()
             local now = os.clock()
             if now - lastToggleTime < 0.18 then return end
+            if sectionData.locked then pulseLock() return end
             lastToggleTime = now
             toggle()
         end)
@@ -13662,6 +14017,41 @@
         
         self._activeContextMenu = menu
         return menu
+    end
+
+    function Library:CloseAllSections(includeLocked)
+        if self:_isDead() then return 0 end
+        if includeLocked == nil then includeLocked = true end
+        local count = 0
+        for _, sections in pairs(self._STATE.SearchSections or {}) do
+            for _, sec in ipairs(sections) do
+                if sec and sec.setExpanded and sec.expanded then
+                    if includeLocked or not sec.locked then
+                        pcall(sec.setExpanded, false, false)
+                        count = count + 1
+                    end
+                end
+            end
+        end
+        return count
+    end
+
+    function Library:CloseSectionsIn(tabName, includeLocked)
+        if self:_isDead() then return 0 end
+        if type(tabName) ~= "string" then return 0 end
+        if includeLocked == nil then includeLocked = true end
+        local sections = self._STATE.SearchSections and self._STATE.SearchSections[tabName]
+        if not sections then return 0 end
+        local count = 0
+        for _, sec in ipairs(sections) do
+            if sec and sec.setExpanded and sec.expanded then
+                if includeLocked or not sec.locked then
+                    pcall(sec.setExpanded, false, false)
+                    count = count + 1
+                end
+            end
+        end
+        return count
     end
 
     function Library:Destroy()
