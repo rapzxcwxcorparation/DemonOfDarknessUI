@@ -11,13 +11,13 @@
 
 
     ]]
-
+	
     local Library = {}
     Library.__index = Library
 
     local IconsV2
     local _iconsOk, _iconsErr = pcall(function()
-        IconsV2 = loadstring(game:HttpGetAsync("https://raw.githubusercontent.com/Footagesus/Icons/main/Main-v2.lua"))()
+        IconsV2 = loadstring(game:HttpGet("https://raw.githubusercontent.com/Footagesus/Icons/main/Main-v2.lua"))()
         IconsV2.SetIconsType("lucide")
     end)
 
@@ -1782,6 +1782,7 @@
         h.AddConfigList = function(_, ...) return lib:AddConfigList(rawBody, ...) end
         h.AddSeparator = function(_, ...) return lib:AddSeparator(rawBody, ...) end
         h.AddChipBar = function(_, ...) return lib:AddChipBar(rawBody, ...) end
+        h.AddGroupbox = function(_, ...) return lib:AddGroupbox(rawBody, ...) end
         return h
     end
 
@@ -12339,8 +12340,17 @@
         preview.Text = ""
         preview.AutoButtonColor = false
         preview.BorderSizePixel = 0
+        preview.ClipsDescendants = true
         Fn.bindPressAnimation(preview)
         Instance.new("UICorner", preview).CornerRadius = UDim.new(0, 6)
+
+        local previewBg = Instance.new("ImageLabel", preview)
+        previewBg.Size = UDim2.fromScale(1, 1)
+        previewBg.BackgroundTransparency = 1
+        previewBg.Image = "rbxassetid://13383943046"
+        previewBg.ScaleType = Enum.ScaleType.Tile
+        previewBg.TileSize = UDim2.fromOffset(6, 6)
+        previewBg.ZIndex = 0
 
         local previewStroke = Instance.new("UIStroke", preview)
         previewStroke.Color = self._Colors.Border
@@ -12445,8 +12455,17 @@
         alphaBar.Text = ""
         alphaBar.AutoButtonColor = false
         alphaBar.Active = true
+        alphaBar.ClipsDescendants = true
         alphaBar.ZIndex = 211
         Instance.new("UICorner", alphaBar).CornerRadius = UDim.new(0, 3)
+
+        local alphaBg = Instance.new("ImageLabel", alphaBar)
+        alphaBg.Size = UDim2.fromScale(1, 1)
+        alphaBg.BackgroundTransparency = 1
+        alphaBg.Image = "rbxassetid://13383943046"
+        alphaBg.ScaleType = Enum.ScaleType.Tile
+        alphaBg.TileSize = UDim2.fromOffset(6, 6)
+        alphaBg.ZIndex = 0
 
         local alphaGradient = Instance.new("UIGradient", alphaBar)
         alphaGradient.Rotation = 0
@@ -12475,8 +12494,17 @@
         currentPreview.Size = UDim2.new(0.55, -12, 0, 18)
         currentPreview.BackgroundColor3 = currentColor
         currentPreview.BorderSizePixel = 0
+        currentPreview.ClipsDescendants = true
         currentPreview.ZIndex = 211
         Instance.new("UICorner", currentPreview).CornerRadius = UDim.new(0, 5)
+
+        local currentPreviewBg = Instance.new("ImageLabel", currentPreview)
+        currentPreviewBg.Size = UDim2.fromScale(1, 1)
+        currentPreviewBg.BackgroundTransparency = 1
+        currentPreviewBg.Image = "rbxassetid://13383943046"
+        currentPreviewBg.ScaleType = Enum.ScaleType.Tile
+        currentPreviewBg.TileSize = UDim2.fromOffset(6, 6)
+        currentPreviewBg.ZIndex = 0
 
         local hexBox = Instance.new("TextBox", popup)
         hexBox.Name = "HexInput"
@@ -12756,6 +12784,80 @@
         local _h = { __isHandle = true, __tag = "Separator", Raw = container }
         _h.SetVisible = function(_, visible) container.Visible = visible and true or false end
         return _h
+    end
+
+    function Library:AddGroupbox(page, title)
+        if self:_isDead() then return end
+        page = self:_unwrap(page)
+        local holder = Instance.new("Frame", page)
+        holder.Name = "Groupbox"
+        holder.Size = UDim2.new(1, 0, 0, 0)
+        holder.AutomaticSize = Enum.AutomaticSize.Y
+        holder.BackgroundColor3 = self._Colors.Bg2
+        holder.BackgroundTransparency = 0.3
+        holder.BorderSizePixel = 0
+        Instance.new("UICorner", holder).CornerRadius = UDim.new(0, 8)
+
+        local stroke = Instance.new("UIStroke", holder)
+        stroke.Color = self._Colors.Border
+        stroke.Thickness = 1
+        stroke.Transparency = 0.6
+
+        local layout = Instance.new("UIListLayout", holder)
+        layout.SortOrder = Enum.SortOrder.LayoutOrder
+        layout.Padding = UDim.new(0, 6)
+
+        local pad = Instance.new("UIPadding", holder)
+        pad.PaddingLeft = UDim.new(0, 10)
+        pad.PaddingRight = UDim.new(0, 10)
+        pad.PaddingTop = UDim.new(0, 8)
+        pad.PaddingBottom = UDim.new(0, 10)
+
+        local header = Instance.new("Frame", holder)
+        header.Size = UDim2.new(1, 0, 0, 20)
+        header.BackgroundTransparency = 1
+        header.LayoutOrder = 1
+
+        local titleLbl = Instance.new("TextLabel", header)
+        titleLbl.Size = UDim2.new(1, -20, 1, 0)
+        titleLbl.Position = UDim2.new(0, 0, 0, 0)
+        titleLbl.BackgroundTransparency = 1
+        titleLbl.Text = string.upper(tostring(title))
+        titleLbl.TextColor3 = self._Colors.TextDim
+        titleLbl.Font = Enum.Font.GothamBold
+        titleLbl.TextSize = 10
+        titleLbl.TextXAlignment = Enum.TextXAlignment.Left
+
+        local content = Instance.new("Frame", holder)
+        content.Name = "Content"
+        content.LayoutOrder = 2
+        content.Size = UDim2.new(1, 0, 0, 0)
+        content.AutomaticSize = Enum.AutomaticSize.Y
+        content.BackgroundTransparency = 1
+
+        local contentLayout = Instance.new("UIListLayout", content)
+        contentLayout.SortOrder = Enum.SortOrder.LayoutOrder
+        contentLayout.Padding = UDim.new(0, 6)
+
+        local sectionData
+        local parent = page
+        while parent do
+            sectionData = self._STATE.SearchBodies[parent]
+            if sectionData then break end
+            parent = parent.Parent
+        end
+        if sectionData then
+            self._STATE.SearchBodies[content] = sectionData
+        end
+
+        self:_registerThemeRefresher(function()
+            holder.BackgroundColor3 = self._Colors.Bg2
+            stroke.Color = self._Colors.Border
+            titleLbl.TextColor3 = self._Colors.TextDim
+        end)
+
+        self:_registerSearchControl(holder, tostring(title), "groupbox")
+        return self:_wrapSection(content)
     end
 
     function Library:AddChipBar(page, text, options, defaultIndex, callback)
