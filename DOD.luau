@@ -193,6 +193,14 @@
         connection:Disconnect()
     end
 
+    Fn.safeCall = function(label, fn, ...)
+        local ok, err = pcall(fn, ...)
+        if not ok then
+            warn("[DoD UI] " .. tostring(label or "unknown") .. " failed: " .. tostring(err))
+        end
+        return ok, err
+    end
+
     Fn.bindPressAnimation = function(guiObject)
         local scale = guiObject:FindFirstChildOfClass("UIScale")
         if not scale then
@@ -206,7 +214,7 @@
             if activeTween then activeTween:Cancel() end
             activeTween = TweenService:Create(
                 scale,
-                TweenInfo.new(0.09, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+                TweenInfo.new(0.11, Enum.EasingStyle.Quart, Enum.EasingDirection.Out),
                 {Scale = baseScale * factor}
             )
             activeTween:Play()
@@ -235,7 +243,7 @@
                 local ripple = Instance.new("Frame")
                 ripple.Name = "DoD_Ripple"
                 ripple.BackgroundColor3 = Color3.new(1, 1, 1)
-                ripple.BackgroundTransparency = 0.7
+                ripple.BackgroundTransparency = 0.82
                 ripple.Size = UDim2.fromOffset(0, 0)
                 ripple.Position = UDim2.fromOffset(clickX, clickY)
                 ripple.AnchorPoint = Vector2.new(0.5, 0.5)
@@ -243,8 +251,8 @@
                 Instance.new("UICorner", ripple).CornerRadius = UDim.new(1, 0)
                 ripple.Parent = clip
 
-                local maxDim = math.max(guiObject.AbsoluteSize.X, guiObject.AbsoluteSize.Y) * 2.5
-                local tw = TweenService:Create(ripple, TweenInfo.new(0.5, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+                local maxDim = math.max(guiObject.AbsoluteSize.X, guiObject.AbsoluteSize.Y) * 2.2
+                local tw = TweenService:Create(ripple, TweenInfo.new(0.42, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {
                     Size = UDim2.fromOffset(maxDim, maxDim),
                     BackgroundTransparency = 1
                 })
@@ -316,6 +324,49 @@
             if r > bestRatio then bestRatio = r; best = c end
         end
         return best
+    end
+
+    Fn.isModifierKey = function(keyCode)
+        return keyCode == Enum.KeyCode.LeftControl
+            or keyCode == Enum.KeyCode.RightControl
+            or keyCode == Enum.KeyCode.LeftShift
+            or keyCode == Enum.KeyCode.RightShift
+            or keyCode == Enum.KeyCode.LeftAlt
+            or keyCode == Enum.KeyCode.RightAlt
+    end
+
+    Fn.getHeldModifiers = function(excludeKey)
+        local m = {}
+        if (UserInputService:IsKeyDown(Enum.KeyCode.LeftControl) or UserInputService:IsKeyDown(Enum.KeyCode.RightControl))
+           and excludeKey ~= Enum.KeyCode.LeftControl and excludeKey ~= Enum.KeyCode.RightControl then
+            table.insert(m, "Ctrl")
+        end
+        if (UserInputService:IsKeyDown(Enum.KeyCode.LeftShift) or UserInputService:IsKeyDown(Enum.KeyCode.RightShift))
+           and excludeKey ~= Enum.KeyCode.LeftShift and excludeKey ~= Enum.KeyCode.RightShift then
+            table.insert(m, "Shift")
+        end
+        if (UserInputService:IsKeyDown(Enum.KeyCode.LeftAlt) or UserInputService:IsKeyDown(Enum.KeyCode.RightAlt))
+           and excludeKey ~= Enum.KeyCode.LeftAlt and excludeKey ~= Enum.KeyCode.RightAlt then
+            table.insert(m, "Alt")
+        end
+        return m
+    end
+
+    Fn.modsMatch = function(stored, current)
+        stored = stored or {}
+        current = current or {}
+        if #stored ~= #current then return false end
+        for _, v in ipairs(stored) do
+            if not table.find(current, v) then return false end
+        end
+        return true
+    end
+
+    Fn.formatToggleKey = function(key, mods)
+        local name = (typeof(key) == "EnumItem") and key.Name or tostring(key or "")
+        mods = mods or {}
+        if #mods == 0 then return name end
+        return table.concat(mods, "+") .. "+" .. name
     end
 
     D.Themes = {
@@ -961,6 +1012,27 @@
         if typeof(self.ToggleKey) ~= "EnumItem" or self.ToggleKey.EnumType ~= Enum.KeyCode then
             error("[DoD UI] ToggleKey must be an Enum.KeyCode.")
         end
+        if opts.ToggleMods ~= nil then
+            if type(opts.ToggleMods) ~= "table" then
+                error("[DoD UI] ToggleMods must be a table or nil.")
+            end
+            local validMods = {}
+            for _, m in ipairs(opts.ToggleMods) do
+                local lower = tostring(m):lower()
+                if lower == "ctrl" then
+                    table.insert(validMods, "Ctrl")
+                elseif lower == "shift" then
+                    table.insert(validMods, "Shift")
+                elseif lower == "alt" then
+                    table.insert(validMods, "Alt")
+                else
+                    error("[DoD UI] ToggleMods entries must be 'Ctrl', 'Shift', or 'Alt'.")
+                end
+            end
+            self.ToggleMods = validMods
+        else
+            self.ToggleMods = {}
+        end
         if type(self.TabWidth) ~= "number" or self.TabWidth <= 0
             or self.TabWidth ~= self.TabWidth or self.TabWidth == math.huge then
             error("[DoD UI] TabWidth must be a positive number.")
@@ -1520,10 +1592,20 @@
         self.ThemeName = actualName
 
         local UI = self._UI
+        local tTween = TweenInfo.new(0.4, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+        local function _t(inst, prop, val)
+            if not inst then return end
+            if silent or not self._initialized then
+                inst[prop] = val
+            else
+                TweenService:Create(inst, tTween, {[prop] = val}):Play()
+            end
+        end
+
         local ok, err = pcall(function()
             if UI.MainContainer then
-                UI.MainContainer.BackgroundColor3 = self._Colors.Bg
-                UI.MainContainer.BackgroundTransparency = self.Acrylic and 0.32 or 0.1
+                _t(UI.MainContainer, "BackgroundColor3", self._Colors.Bg)
+                _t(UI.MainContainer, "BackgroundTransparency", self.Acrylic and 0.32 or 0.1)
             end
             if UI.AcrylicTexture then UI.AcrylicTexture.BackgroundColor3 = self._Colors.Accent2 end
             if UI.AcrylicGradient then
@@ -1534,16 +1616,15 @@
                 })
             end
             if UI.TitleBar then
-
-                UI.TitleBar.BackgroundColor3 = self._TitleBarAutoTint or self._Colors.Bg2
+                _t(UI.TitleBar, "BackgroundColor3", self._TitleBarAutoTint or self._Colors.Bg2)
             end
             if UI.CategoryBar then
-                UI.CategoryBar.BackgroundColor3 = self.TabPosition == "Bottom" and self._Colors.Card or self._Colors.Sidebar
+                _t(UI.CategoryBar, "BackgroundColor3", self.TabPosition == "Bottom" and self._Colors.Card or self._Colors.Sidebar)
             end
-            if UI.CategoryBarStroke then UI.CategoryBarStroke.Color = self._Colors.Border end
-            if UI.Sidebar then UI.Sidebar.BackgroundColor3 = self._Colors.Sidebar end
-            if UI.TabBarDivider then UI.TabBarDivider.BackgroundColor3 = self._Colors.Border end
-            if UI.TitleLabel then UI.TitleLabel.TextColor3 = self._Colors.Text end
+            if UI.CategoryBarStroke then _t(UI.CategoryBarStroke, "Color", self._Colors.Border) end
+            if UI.Sidebar then _t(UI.Sidebar, "BackgroundColor3", self._Colors.Sidebar) end
+            if UI.TabBarDivider then _t(UI.TabBarDivider, "BackgroundColor3", self._Colors.Border) end
+            if UI.TitleLabel then _t(UI.TitleLabel, "TextColor3", self._Colors.Text) end
             if UI.TitleDiscord then UI.TitleDiscord.TextColor3 = self._Colors.TextDim end
             if UI.ResizeHandle then
                 UI.ResizeHandle.ImageColor3 = self._Colors.TextDim
@@ -1790,8 +1871,8 @@
         if not rawPage then return nil end
         local lib = self
         local h = { __isHandle = true, Raw = rawPage, __tag = "Tab", Name = tabName }
-        h.CreateSection = function(_, title, summary, defaultOpen, columnName, iconName)
-            return lib:CreateSection(tabName, title, summary, defaultOpen, columnName, iconName)
+        h.CreateSection = function(_, title, summary, defaultOpen, columnName, iconName, defaultLocked)
+            return lib:CreateSection(tabName, title, summary, defaultOpen, columnName, iconName, defaultLocked)
         end
         h.CreateDashboardBanner = function(_, ...) return lib:CreateDashboardBanner(tabName, ...) end
         h.CreateThemeCustomizer = function(_, ...) return lib:CreateThemeCustomizer(tabName, ...) end
@@ -1837,6 +1918,8 @@
         gui.ResetOnSpawn = false
         gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
         gui.DisplayOrder = 2000
+        gui.IgnoreGuiInset = not self._isMobile
+        if self._isMobile then gui.ScreenInsets = Enum.ScreenInsets.DeviceSafeInsets end
         self._UI.NotifGui = gui
     end
 
@@ -2551,9 +2634,10 @@
         UI.MainGui.Name = "DoD_UI_Main"
         UI.MainGui.Parent = GuiParent
         UI.MainGui.ResetOnSpawn = false
-        UI.MainGui.IgnoreGuiInset = true
+        UI.MainGui.IgnoreGuiInset = not self._isMobile
         UI.MainGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
         UI.MainGui.DisplayOrder = 1000
+        if self._isMobile then UI.MainGui.ScreenInsets = Enum.ScreenInsets.DeviceSafeInsets end
 
         UI.CustomCursor = Instance.new("ImageLabel", UI.MainGui)
         UI.CustomCursor.Name = "CustomCursor"
@@ -2663,10 +2747,14 @@
             p.BackgroundTransparency = math.random(30, 80) / 100
             p.BorderSizePixel = 0
             Instance.new("UICorner", p).CornerRadius = UDim.new(1, 0)
+            local baseSX = (math.random() - 0.5) * 0.005
+            local baseSY = -math.random(1, 3) / 1000
             table.insert(particles, {
                 obj = p,
-                speedX = (math.random() - 0.5) * 0.005,
-                speedY = -math.random(1, 3) / 1000
+                speedX = baseSX,
+                speedY = baseSY,
+                baseSpeedX = baseSX,
+                baseSpeedY = baseSY
             })
         end
 
@@ -2708,12 +2796,11 @@
                         end
                     end
                     local scrollAmount = 50
-                    local targetY = target.CanvasPosition.Y - (input.Position.Z * scrollAmount)
+                    local currTarget = target:GetAttribute("TargetScrollY") or target.CanvasPosition.Y
+                    local targetY = currTarget - (input.Position.Z * scrollAmount)
                     local maxScroll = math.max(0, target.AbsoluteCanvasSize.Y - target.AbsoluteSize.Y)
                     targetY = math.clamp(targetY, 0, maxScroll)
-                    TweenService:Create(target, TweenInfo.new(0.15, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {
-                        CanvasPosition = Vector2.new(target.CanvasPosition.X, targetY)
-                    }):Play()
+                    target:SetAttribute("TargetScrollY", targetY)
                 end
             end
         end, self)
@@ -2727,8 +2814,27 @@
             if _particleAccum < 1 / 30 then return end
             local step = _particleAccum
             _particleAccum = 0
+            local mouse = UserInputService:GetMouseLocation()
             for _, data in ipairs(particles) do
                 local pos = data.obj.Position
+                local absX = UI.ParticleBG.AbsolutePosition.X + data.obj.AbsolutePosition.X
+                local absY = UI.ParticleBG.AbsolutePosition.Y + data.obj.AbsolutePosition.Y
+                local dx = absX - mouse.X
+                local dy = absY - mouse.Y
+                local dist = math.sqrt(dx*dx + dy*dy)
+
+                if dist < 150 and dist > 0 then
+                    local force = (150 - dist) / 150 * 0.08
+                    data.speedX = data.speedX + (dx / dist) * force * step * 10
+                    data.speedY = data.speedY + (dy / dist) * force * step * 10
+                else
+                    data.speedX = data.speedX + (data.baseSpeedX - data.speedX) * math.min(1, step * 5)
+                    data.speedY = data.speedY + (data.baseSpeedY - data.speedY) * math.min(1, step * 5)
+                end
+
+                data.speedX = math.clamp(data.speedX, -0.05, 0.05)
+                data.speedY = math.clamp(data.speedY, -0.05, 0.05)
+
                 local nx = pos.X.Scale + data.speedX * step * 10
                 local ny = pos.Y.Scale + data.speedY * step * 10
                 if nx < 0 then nx = 1 elseif nx > 1 then nx = 0 end
@@ -3408,7 +3514,8 @@
         gui.ResetOnSpawn = false
         gui.DisplayOrder = 9999
         gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-        gui.IgnoreGuiInset = true
+        gui.IgnoreGuiInset = not self._isMobile
+        if self._isMobile then gui.ScreenInsets = Enum.ScreenInsets.DeviceSafeInsets end
         UI.TooltipGui = gui
 
         local frame = Instance.new("Frame", gui)
@@ -3646,7 +3753,15 @@
             if input.UserInputType ~= Enum.UserInputType.Keyboard then return end
             if self._keybindCapturing then return end
             if input.KeyCode == self.ToggleKey then
-                self:Toggle()
+                local requiredMods = self.ToggleMods or {}
+                if #requiredMods == 0 then
+                    self:Toggle()
+                else
+                    local currentHeld = Fn.getHeldModifiers(input.KeyCode)
+                    if Fn.modsMatch(requiredMods, currentHeld) then
+                        self:Toggle()
+                    end
+                end
             end
         end, self)
         Fn.track(UserInputService.InputBegan, function(input, gameProcessed)
@@ -3753,16 +3868,36 @@
         end
     end
 
-    function Library:SetToggleKey(key)
+    function Library:SetToggleKey(key, mods)
         if self:_isDead() then return end
         if typeof(key) ~= "EnumItem" or key.EnumType ~= Enum.KeyCode then
             error("[DoD UI] SetToggleKey expects an Enum.KeyCode.")
         end
-        self.ToggleKey = key
-        if self._UI.TitleToggleHint then
-            self._UI.TitleToggleHint.Text = key.Name
+        if mods ~= nil then
+            if type(mods) ~= "table" then
+                error("[DoD UI] SetToggleKey mods must be a table or nil.")
+            end
+            local validMods = {}
+            for _, m in ipairs(mods) do
+                local lower = tostring(m):lower()
+                if lower == "ctrl" then
+                    table.insert(validMods, "Ctrl")
+                elseif lower == "shift" then
+                    table.insert(validMods, "Shift")
+                elseif lower == "alt" then
+                    table.insert(validMods, "Alt")
+                else
+                    error("[DoD UI] SetToggleKey mods entries must be 'Ctrl', 'Shift', or 'Alt'.")
+                end
+            end
+            self.ToggleMods = validMods
         end
-        self:Notify("KEYBIND", "Toggle GUI: " .. key.Name)
+        self.ToggleKey = key
+        local display = Fn.formatToggleKey(self.ToggleKey, self.ToggleMods)
+        if self._UI.TitleToggleHint then
+            self._UI.TitleToggleHint.Text = display
+        end
+        self:Notify("KEYBIND", "Toggle GUI: " .. display)
     end
 
     function Library:_generateAutoTheme(imageStr)
@@ -3855,10 +3990,10 @@
         if assetId == nil or assetId == "" then
             UI.Wallpaper.Visible = false
 
-            pcall(function() UI.Wallpaper.Image = "" end)
+            Fn.safeCall("wallpaper-clear", function() UI.Wallpaper.Image = "" end)
             if self._autoThemeApplied then
                 self._autoThemeApplied = false
-                pcall(function() self:SetTheme("Demon of Darkness", true) end)
+                Fn.safeCall("theme-revert", function() self:SetTheme("Demon of Darkness", true) end)
             end
             self.WallpaperSource = nil
             return
@@ -4655,12 +4790,13 @@
                         finalAspect = 3.0
                     end
                 end
+                self._cachedTitleAspect = finalAspect
                 applyAspect(finalAspect)
 
                 if self._UI.MinimizeButtonImage then
                     self._UI.MinimizeButtonImage.Image = assetUrl
                     self._UI.MinimizeButtonImage.Visible = true
-                    self._UI.MinimizeButtonImage.Size = UDim2.new(1, -12, 1, -8)
+                    self._UI.MinimizeButtonImage.Size = UDim2.new(1, -8, 1, -8)
                     self._UI.MinimizeButtonImage.Position = UDim2.new(0.5, 0, 0.5, 0)
                     self._UI.MinimizeButtonImage.AnchorPoint = Vector2.new(0.5, 0.5)
                 end
@@ -4776,7 +4912,7 @@
         UI.TitleToggleHint.AutomaticSize = Enum.AutomaticSize.X
         UI.TitleToggleHint.Size = UDim2.new(0, 0, 1, 0)
         UI.TitleToggleHint.BackgroundTransparency = 1
-        UI.TitleToggleHint.Text = self.ToggleKey.Name
+        UI.TitleToggleHint.Text = Fn.formatToggleKey(self.ToggleKey, self.ToggleMods)
         UI.TitleToggleHint.TextColor3 = self._Colors.TextDim
         UI.TitleToggleHint.Font = Enum.Font.GothamMedium
         UI.TitleToggleHint.TextSize = 10
@@ -4808,7 +4944,7 @@
         hintBg.MouseButton1Click:Connect(function()
             if isListening then
                 _endHintListen()
-                UI.TitleToggleHint.Text = self.ToggleKey.Name
+                UI.TitleToggleHint.Text = Fn.formatToggleKey(self.ToggleKey, self.ToggleMods)
                 UI.TitleToggleHint.TextColor3 = self._Colors.TextDim
                 return
             end
@@ -4818,11 +4954,13 @@
             _hintConn = Fn.track(UserInputService.InputBegan, function(input, gameProcessed)
                 if gameProcessed then return end
                 if input.UserInputType == Enum.UserInputType.Keyboard then
-                    self:SetToggleKey(input.KeyCode)
+                    if Fn.isModifierKey(input.KeyCode) then return end
+                    local mods = Fn.getHeldModifiers(input.KeyCode)
+                    self:SetToggleKey(input.KeyCode, mods)
                     UI.TitleToggleHint.TextColor3 = self._Colors.TextDim
                     _endHintListen()
                 elseif input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.MouseButton2 or input.UserInputType == Enum.UserInputType.Touch then
-                    UI.TitleToggleHint.Text = self.ToggleKey.Name
+                    UI.TitleToggleHint.Text = Fn.formatToggleKey(self.ToggleKey, self.ToggleMods)
                     UI.TitleToggleHint.TextColor3 = self._Colors.TextDim
                     _endHintListen()
                 end
@@ -5114,8 +5252,8 @@
 
         local container = Instance.new("Frame", UI.TitleBar)
         container.Name = "Windows11Controls"
-        local btnW = 46
-        local btnH = 32
+        local btnW = self._isMobile and 52 or 46
+        local btnH = self._isMobile and 40 or 32
         local totalW = btnW * 3
         container.Size = UDim2.fromOffset(totalW, btnH)
         container.Position = UDim2.new(1, -totalW, 0.5, -(btnH / 2))
@@ -5920,6 +6058,166 @@
                 _searchSavedPos = nil
             end
         end)
+
+        if self._isMobile then
+            local fab = Instance.new("TextButton", UI.MainContainer)
+            fab.Name = "MobileSearchFAB"
+            fab.Size = UDim2.fromOffset(48, 48)
+            fab.Position = UDim2.new(1, -66, 1, -66)
+            fab.BackgroundColor3 = self._Colors.Accent
+            fab.BorderSizePixel = 0
+            fab.Text = ""
+            fab.AutoButtonColor = false
+            fab.ZIndex = 250
+            Instance.new("UICorner", fab).CornerRadius = UDim.new(1, 0)
+
+            local fabStroke = Instance.new("UIStroke", fab)
+            fabStroke.Color = self._Colors.Accent
+            fabStroke.Thickness = 1.5
+            fabStroke.Transparency = 0.4
+
+            local fabIcon = Instance.new("ImageLabel", fab)
+            fabIcon.Size = UDim2.fromOffset(22, 22)
+            fabIcon.Position = UDim2.new(0.5, -11, 0.5, -11)
+            fabIcon.BackgroundTransparency = 1
+            fabIcon.Image = GetIcon("search")
+            fabIcon.ImageColor3 = Fn.accentTextColor(self._Colors.Accent)
+
+            local backdrop = Instance.new("TextButton", UI.MainContainer)
+            backdrop.Name = "MobileSearchBackdrop"
+            backdrop.Size = UDim2.fromScale(1, 1)
+            backdrop.BackgroundColor3 = Color3.new(0, 0, 0)
+            backdrop.BackgroundTransparency = 1
+            backdrop.Text = ""
+            backdrop.AutoButtonColor = false
+            backdrop.Visible = false
+            backdrop.ZIndex = 249
+            Instance.new("UICorner", backdrop).CornerRadius = UDim.new(0, 14)
+
+            local overlay = Instance.new("Frame", UI.MainContainer)
+            overlay.Name = "MobileSearchOverlay"
+            overlay.Size = UDim2.new(1, -32, 0, 56)
+            overlay.Position = UDim2.new(0, 16, 1, -140)
+            overlay.BackgroundColor3 = self._Colors.Bg2
+            overlay.BackgroundTransparency = 1
+            overlay.BorderSizePixel = 0
+            overlay.Visible = false
+            overlay.ZIndex = 251
+            Instance.new("UICorner", overlay).CornerRadius = UDim.new(1, 0)
+
+            local ovStroke = Instance.new("UIStroke", overlay)
+            ovStroke.Color = self._Colors.Accent
+            ovStroke.Thickness = 1.5
+            ovStroke.Transparency = 0.3
+
+            local ovIcon = Instance.new("ImageLabel", overlay)
+            ovIcon.Size = UDim2.fromOffset(18, 18)
+            ovIcon.Position = UDim2.new(0, 18, 0.5, -9)
+            ovIcon.BackgroundTransparency = 1
+            ovIcon.Image = GetIcon("search")
+            ovIcon.ImageColor3 = self._Colors.TextDim
+            ovIcon.ZIndex = 252
+
+            local ovInput = Instance.new("TextBox", overlay)
+            ovInput.Size = UDim2.new(1, -76, 1, 0)
+            ovInput.Position = UDim2.new(0, 48, 0, 0)
+            ovInput.BackgroundTransparency = 1
+            ovInput.Text = ""
+            ovInput.PlaceholderText = "Search settings..."
+            ovInput.PlaceholderColor3 = self._Colors.TextDim
+            ovInput.TextColor3 = self._Colors.Text
+            ovInput.Font = Enum.Font.GothamMedium
+            ovInput.TextSize = 14
+            ovInput.TextXAlignment = Enum.TextXAlignment.Left
+            ovInput.ClearTextOnFocus = false
+            ovInput.ZIndex = 252
+
+            local ovClose = Instance.new("TextButton", overlay)
+            ovClose.Size = UDim2.fromOffset(32, 32)
+            ovClose.Position = UDim2.new(1, -40, 0.5, -16)
+            ovClose.BackgroundTransparency = 1
+            ovClose.Text = ""
+            ovClose.AutoButtonColor = false
+            ovClose.ZIndex = 252
+
+            local ovCloseIcon = Instance.new("ImageLabel", ovClose)
+            ovCloseIcon.Size = UDim2.fromOffset(14, 14)
+            ovCloseIcon.Position = UDim2.new(0.5, -7, 0.5, -7)
+            ovCloseIcon.BackgroundTransparency = 1
+            ovCloseIcon.Image = GetIcon("x")
+            ovCloseIcon.ImageColor3 = self._Colors.TextDim
+            ovCloseIcon.ZIndex = 253
+
+            local _syncing = false
+            ovInput:GetPropertyChangedSignal("Text"):Connect(function()
+                if _syncing then return end
+                _syncing = true
+                if UI.SearchInput.Text ~= ovInput.Text then
+                    UI.SearchInput.Text = ovInput.Text
+                end
+                _syncing = false
+            end)
+            UI.SearchInput:GetPropertyChangedSignal("Text"):Connect(function()
+                if _syncing then return end
+                _syncing = true
+                if ovInput.Text ~= UI.SearchInput.Text then
+                    ovInput.Text = UI.SearchInput.Text
+                end
+                _syncing = false
+            end)
+
+            local function showOverlay()
+                backdrop.Visible = true
+                backdrop.BackgroundTransparency = 1
+                overlay.Visible = true
+                overlay.Position = UDim2.new(0, 16, 1, -120)
+                overlay.BackgroundTransparency = 1
+                TweenService:Create(backdrop, TweenInfo.new(0.2), {BackgroundTransparency = 0.6}):Play()
+                TweenService:Create(overlay, TweenInfo.new(0.22, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {
+                    Position = UDim2.new(0, 16, 1, -140),
+                    BackgroundTransparency = 0
+                }):Play()
+                task.defer(function()
+                    if ovInput and ovInput.Parent then ovInput:CaptureFocus() end
+                end)
+            end
+
+            local function hideOverlay()
+                if ovInput then pcall(function() ovInput:ReleaseFocus() end) end
+                TweenService:Create(backdrop, TweenInfo.new(0.15), {BackgroundTransparency = 1}):Play()
+                TweenService:Create(overlay, TweenInfo.new(0.15), {BackgroundTransparency = 1}):Play()
+                task.delay(0.16, function()
+                    if backdrop.Parent then backdrop.Visible = false end
+                    if overlay.Parent then overlay.Visible = false end
+                end)
+            end
+
+            fab.MouseButton1Click:Connect(function()
+                if overlay.Visible then hideOverlay() else showOverlay() end
+            end)
+            ovClose.MouseButton1Click:Connect(hideOverlay)
+            backdrop.MouseButton1Click:Connect(hideOverlay)
+
+            self:_registerThemeRefresher(function()
+                if fab.Parent then
+                    fab.BackgroundColor3 = self._Colors.Accent
+                    fabStroke.Color = self._Colors.Accent
+                    fabIcon.ImageColor3 = Fn.accentTextColor(self._Colors.Accent)
+                end
+                if overlay.Parent then
+                    overlay.BackgroundColor3 = self._Colors.Bg2
+                    ovStroke.Color = self._Colors.Accent
+                    ovIcon.ImageColor3 = self._Colors.TextDim
+                    ovInput.TextColor3 = self._Colors.Text
+                    ovInput.PlaceholderColor3 = self._Colors.TextDim
+                    ovCloseIcon.ImageColor3 = self._Colors.TextDim
+                end
+            end)
+
+            UI.MobileSearchFAB = fab
+            UI.MobileSearchOverlay = overlay
+            UI.MobileSearchOverlayInput = ovInput
+        end
     end
 
     function Library:_queueSearchFilter(tabName)
@@ -7940,9 +8238,10 @@
         columnsContainer.BackgroundTransparency = 1
         columnsContainer.ClipsDescendants = false
 
+        local _isMobCol = self._isMobile
         local leftCol = Instance.new("Frame", columnsContainer)
         leftCol.Name = "LeftColumn"
-        leftCol.Size = UDim2.new(0.5, -5, 0, 0)
+        leftCol.Size = _isMobCol and UDim2.new(1, 0, 0, 0) or UDim2.new(0.5, -5, 0, 0)
         leftCol.Position = UDim2.new(0, 0, 0, 0)
         leftCol.AutomaticSize = Enum.AutomaticSize.Y
         leftCol.BackgroundTransparency = 1
@@ -7953,8 +8252,8 @@
 
         local rightCol = Instance.new("Frame", columnsContainer)
         rightCol.Name = "RightColumn"
-        rightCol.Size = UDim2.new(0.5, -5, 0, 0)
-        rightCol.Position = UDim2.new(0.5, 5, 0, 0)
+        rightCol.Size = _isMobCol and UDim2.new(1, 0, 0, 0) or UDim2.new(0.5, -5, 0, 0)
+        rightCol.Position = _isMobCol and UDim2.new(0, 0, 0, 0) or UDim2.new(0.5, 5, 0, 0)
         rightCol.AutomaticSize = Enum.AutomaticSize.Y
         rightCol.BackgroundTransparency = 1
         rightCol.ClipsDescendants = false
@@ -7965,8 +8264,14 @@
         local function updateColumnsSize()
             local leftSize = leftLayout.AbsoluteContentSize.Y
             local rightSize = rightLayout.AbsoluteContentSize.Y
-            local maxH = math.max(leftSize, rightSize)
-            columnsContainer.Size = UDim2.new(1, 0, 0, maxH)
+            if _isMobCol then
+                local gap = (leftSize > 0 and rightSize > 0) and 10 or 0
+                rightCol.Position = UDim2.new(0, 0, 0, leftSize + gap)
+                columnsContainer.Size = UDim2.new(1, 0, 0, leftSize + rightSize + gap)
+            else
+                local maxH = math.max(leftSize, rightSize)
+                columnsContainer.Size = UDim2.new(1, 0, 0, maxH)
+            end
         end
         leftLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(updateColumnsSize)
         rightLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(updateColumnsSize)
@@ -8254,18 +8559,21 @@
             task.defer(function()
                 for _ = 1, 3 do
                     task.wait(0.05)
-                    if page.Parent then page.CanvasPosition = saved end
+                    if page.Parent and page.Visible then
+                        local maxScroll = math.max(0, page.AbsoluteCanvasSize.Y - page.AbsoluteSize.Y)
+                        page.CanvasPosition = Vector2.new(page.CanvasPosition.X, math.clamp(saved.Y, 0, maxScroll))
+                    end
                 end
             end)
         end
 
         self:_applySearchFilter(tabName)
         if STATE.SubTabBar and ownerCat then
-            pcall(function() STATE.SubTabBar:SetActiveSub(ownerCat, tabName) end)
+            Fn.safeCall("subtab-active", function() STATE.SubTabBar:SetActiveSub(ownerCat, tabName) end)
         end
     end
 
-    function Library:CreateSection(tabName, title, summary, defaultOpen, columnName, iconName)
+    function Library:CreateSection(tabName, title, summary, defaultOpen, columnName, iconName, defaultLocked)
         if self:_isDead() then return end
         if type(title) ~= "string" or title == "" then
             error("[DoD UI] CreateSection requires a non-empty title.")
@@ -8331,7 +8639,7 @@
         titleLabel.Text = title
         titleLabel.TextColor3 = self._Colors.Text
         titleLabel.Font = Enum.Font.GothamBold
-        titleLabel.TextSize = 13
+        titleLabel.TextSize = 14
         titleLabel.TextXAlignment = Enum.TextXAlignment.Left
         titleLabel.TextTruncate = Enum.TextTruncate.AtEnd
 
@@ -8342,7 +8650,7 @@
         summaryLabel.Text = summary or ""
         summaryLabel.TextColor3 = self._Colors.TextDim
         summaryLabel.Font = Enum.Font.GothamMedium
-        summaryLabel.TextSize = 10
+        summaryLabel.TextSize = 11
         summaryLabel.TextXAlignment = Enum.TextXAlignment.Left
         summaryLabel.TextTruncate = Enum.TextTruncate.AtEnd
 
@@ -8443,7 +8751,7 @@
             controls = {},
             expanded = expanded,
             searching = false,
-            locked = false,
+            locked = defaultLocked == true,
         }
         self._STATE.SearchSections[tabName] = self._STATE.SearchSections[tabName] or {}
         table.insert(self._STATE.SearchSections[tabName], sectionData)
@@ -8508,6 +8816,8 @@
             applyLockVisual()
             if not silent then self:_triggerAutoSave() end
         end
+
+        applyLockVisual()
 
         lockBtn.MouseEnter:Connect(function()
             self:PlaySound("Hover")
@@ -8584,7 +8894,7 @@
                 section.Size = UDim2.new(1, 0, 0, targetH)
             else
                 currentTween = TweenService:Create(section,
-                    TweenInfo.new(0.22, Enum.EasingStyle.Quint, Enum.EasingDirection.Out),
+                    TweenInfo.new(0.28, Enum.EasingStyle.Quart, Enum.EasingDirection.Out),
                     {Size = UDim2.new(1, 0, 0, targetH)})
                 currentTween:Play()
                 if not expanded then
@@ -8615,6 +8925,7 @@
                 body.Visible = true
                 task.defer(function() updateHeight(true) end)
             else
+                body.CanvasPosition = Vector2.zero
                 updateHeight(true)
             end
         end
@@ -9644,16 +9955,16 @@
         callback = callback or function() end
         local _isMobTgl = self._isMobile
 
-        local _swW = _isMobTgl and 44 or 36
-        local _swH = _isMobTgl and 24 or 20
-        local _knSz = _isMobTgl and 20 or 16
+        local _swW = _isMobTgl and 48 or 36
+        local _swH = _isMobTgl and 26 or 20
+        local _knSz = _isMobTgl and 22 or 16
         local _knOnX = -(_knSz + 2)
         local _knOffX = 2
         local _knY = -(_knSz / 2)
         local _swRightX = -(_swW + 14)
         local _swY = -(_swH / 2)
-        local _rowH = _isMobTgl and 44 or 36
-        local _labPad = _swW + 68
+        local _rowH = _isMobTgl and 48 or 38
+        local _labPad = _swW + 30
 
         local holder = Instance.new("Frame", page)
         holder.Size = UDim2.new(1, 0, 0, _rowH)
@@ -9674,6 +9985,12 @@
         lab.TextSize = _isMobTgl and 13 or 12
         lab.TextXAlignment = Enum.TextXAlignment.Left
         lab.TextTruncate = Enum.TextTruncate.AtEnd
+        if _isMobTgl then
+            lab.TextScaled = true
+            local tsc = Instance.new("UITextSizeConstraint", lab)
+            tsc.MinTextSize = 10
+            tsc.MaxTextSize = 13
+        end
 
         local switchBg = Instance.new("Frame", holder)
         switchBg.Size = UDim2.fromOffset(_swW, _swH)
@@ -9696,7 +10013,7 @@
         local state = default
 
         local function updateVisual(animate)
-            local tInfo = TweenInfo.new(0.2, Enum.EasingStyle.Quart, Enum.EasingDirection.Out)
+            local tInfo = TweenInfo.new(0.22, Enum.EasingStyle.Quint, Enum.EasingDirection.Out)
             local targetBg = state and self._Colors.Accent or Color3.fromRGB(45, 45, 55)
             local targetStroke = state and self._Colors.Accent or self._Colors.Border
             local targetKnob = Fn.contrastForeground(targetBg)
@@ -9855,6 +10172,12 @@
         lab.TextSize = 12
         lab.TextXAlignment = Enum.TextXAlignment.Left
         lab.TextTruncate = Enum.TextTruncate.AtEnd
+        if self._isMobile then
+            lab.TextScaled = true
+            local tsc = Instance.new("UITextSizeConstraint", lab)
+            tsc.MinTextSize = 10
+            tsc.MaxTextSize = 12
+        end
 
         local btnMinus = Instance.new("TextButton", holder)
         btnMinus.Name = "BtnMinus"
@@ -9883,8 +10206,8 @@
         valBox.BackgroundTransparency = 0.5
         valBox.TextColor3 = Color3.fromRGB(255, 255, 255)
         valBox.TextStrokeTransparency = 1
-        valBox.Font = Enum.Font.GothamBold
-        valBox.TextSize = 12
+        valBox.Font = Enum.Font.RobotoMono
+        valBox.TextSize = 13
         valBox.Text = tostring(default)
         valBox.TextXAlignment = Enum.TextXAlignment.Center
         valBox.ClearTextOnFocus = false
@@ -9938,7 +10261,7 @@
         end)
 
         local sliderBg = Instance.new("Frame", holder)
-        sliderBg.Size = UDim2.new(1, -68, 0, 4)
+        sliderBg.Size = UDim2.new(1, -68, 0, self._isMobile and 6 or 4)
         sliderBg.Position = UDim2.new(0, 34, 0, 31)
         sliderBg.BackgroundColor3 = Color3.fromRGB(22, 22, 30)
         sliderBg.BorderSizePixel = 0
@@ -10337,6 +10660,12 @@
         label.TextSize = 12
         label.TextXAlignment = Enum.TextXAlignment.Left
         label.TextTruncate = Enum.TextTruncate.AtEnd
+        if self._isMobile then
+            label.TextScaled = true
+            local tsc = Instance.new("UITextSizeConstraint", label)
+            tsc.MinTextSize = 10
+            tsc.MaxTextSize = 12
+        end
 
         local valueChip = Instance.new("TextButton", holder)
         valueChip.Size = UDim2.new(0.58, -54, 0, 30)
@@ -10487,7 +10816,7 @@
 
         local popupSearch = Instance.new("Frame", popup)
         popupSearch.Size = UDim2.new(1, -10, 0, 24)
-        popupSearch.Position = UDim2.new(0, 5, 0, 5)
+        popupSearch.Position = UDim2.new(0, 5, 0, self._isMobile and 14 or 5)
         popupSearch.BackgroundColor3 = self._Colors.Card
         popupSearch.BackgroundTransparency = 0.5
         popupSearch.BorderSizePixel = 0
@@ -10520,8 +10849,8 @@
         searchBox.ZIndex = 203
 
         local popupScroll = Instance.new("ScrollingFrame", popup)
-        popupScroll.Size = UDim2.new(1, 0, 1, -34)
-        popupScroll.Position = UDim2.new(0, 0, 0, 34)
+        popupScroll.Size = UDim2.new(1, 0, 1, self._isMobile and -42 or -34)
+        popupScroll.Position = UDim2.new(0, 0, 0, self._isMobile and 42 or 34)
         popupScroll.BackgroundTransparency = 1
         popupScroll.BorderSizePixel = 0
         popupScroll.ScrollBarThickness = 3
@@ -10553,6 +10882,70 @@
         popupPad.PaddingBottom = UDim.new(0, 5)
         popupPad.PaddingLeft = UDim.new(0, 5)
         popupPad.PaddingRight = UDim.new(0, 5)
+
+        if self._isMobile then
+            local dragPill = Instance.new("Frame", popup)
+            dragPill.Name = "DragPill"
+            dragPill.Size = UDim2.fromOffset(40, 4)
+            dragPill.Position = UDim2.new(0.5, 0, 0, 5)
+            dragPill.AnchorPoint = Vector2.new(0.5, 0)
+            dragPill.BackgroundColor3 = self._Colors.TextDim
+            dragPill.BackgroundTransparency = 0.4
+            dragPill.BorderSizePixel = 0
+            dragPill.ZIndex = 204
+            Instance.new("UICorner", dragPill).CornerRadius = UDim.new(1, 0)
+
+            local dragZone = Instance.new("TextButton", popup)
+            dragZone.Name = "DragZone"
+            dragZone.Size = UDim2.new(1, 0, 0, 14)
+            dragZone.Position = UDim2.new(0, 0, 0, 0)
+            dragZone.BackgroundTransparency = 1
+            dragZone.Text = ""
+            dragZone.AutoButtonColor = false
+            dragZone.ZIndex = 203
+
+            local swipeStartY = 0
+            local swipeActive = false
+            local swipeRestY = 0
+
+            dragZone.InputBegan:Connect(function(input)
+                if input.UserInputType ~= Enum.UserInputType.Touch and input.UserInputType ~= Enum.UserInputType.MouseButton1 then return end
+                swipeActive = true
+                swipeStartY = input.Position.Y
+                swipeRestY = popup.Position.Y.Offset
+            end)
+
+            Fn.track(UserInputService.InputChanged, function(input)
+                if not swipeActive then return end
+                if input.UserInputType ~= Enum.UserInputType.Touch and input.UserInputType ~= Enum.UserInputType.MouseMovement then return end
+                local delta = input.Position.Y - swipeStartY
+                if delta > 0 then
+                    popup.Position = UDim2.new(0, popup.Position.X.Offset, 0, swipeRestY + delta)
+                end
+            end, self)
+
+            Fn.track(UserInputService.InputEnded, function(input)
+                if not swipeActive then return end
+                if input.UserInputType ~= Enum.UserInputType.Touch and input.UserInputType ~= Enum.UserInputType.MouseButton1 then return end
+                swipeActive = false
+                local delta = input.Position.Y - swipeStartY
+                local camera = getCam()
+                if not camera then popup.Visible = false return end
+                local vp = camera.ViewportSize
+                local restY = vp.Y - popup.AbsoluteSize.Y - 8
+                if delta > 80 then
+                    popup.Visible = false
+                    task.defer(function() popup.Position = UDim2.fromOffset(8, restY) end)
+                else
+                    TweenService:Create(popup, TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), 
+                        {Position = UDim2.fromOffset(8, restY)}):Play()
+                end
+            end, self)
+
+            self:_registerThemeRefresher(function()
+                dragPill.BackgroundColor3 = self._Colors.TextDim
+            end)
+        end
 
         local optionsBuilt = false
         local function refreshOptions()
@@ -10714,6 +11107,14 @@
         local function updatePopupPosition()
             local camera = getCam()
             if not camera then return end
+            if self._isMobile then
+                local vp = camera.ViewportSize
+                local maxH = math.floor(vp.Y * 0.6)
+                local totalHeight = math.min(#options * 32 + 44, maxH)
+                popup.Size = UDim2.fromOffset(vp.X - 16, totalHeight)
+                popup.Position = UDim2.fromOffset(8, vp.Y - totalHeight - 8)
+                return
+            end
             local chipPos = valueChip.AbsolutePosition
             local chipSize = valueChip.AbsoluteSize
             local totalHeight = math.min(#options * 32 + 44, 260)
@@ -10869,6 +11270,12 @@
         label.TextSize = 12
         label.TextXAlignment = Enum.TextXAlignment.Left
         label.TextTruncate = Enum.TextTruncate.AtEnd
+        if self._isMobile then
+            label.TextScaled = true
+            local tsc = Instance.new("UITextSizeConstraint", label)
+            tsc.MinTextSize = 10
+            tsc.MaxTextSize = 12
+        end
 
         local valueChip = Instance.new("TextButton", holder)
         valueChip.Size = UDim2.new(0.58, -14, 0, 30)
@@ -10972,7 +11379,7 @@
         local mdSearchFrame = Instance.new("Frame", popup)
         mdSearchFrame.Name = "SearchFrame"
         mdSearchFrame.Size = UDim2.new(1, -10, 0, 24)
-        mdSearchFrame.Position = UDim2.new(0, 5, 0, 5)
+        mdSearchFrame.Position = UDim2.new(0, 5, 0, self._isMobile and 14 or 5)
         mdSearchFrame.BackgroundColor3 = self._Colors.Card
         mdSearchFrame.BackgroundTransparency = 0.5
         mdSearchFrame.BorderSizePixel = 0
@@ -11034,8 +11441,8 @@
         Instance.new("UICorner", mdNoneBtn).CornerRadius = UDim.new(0, 3)
 
         local popupScroll = Instance.new("ScrollingFrame", popup)
-        popupScroll.Size = UDim2.new(1, 0, 1, -34)
-        popupScroll.Position = UDim2.new(0, 0, 0, 34)
+        popupScroll.Size = UDim2.new(1, 0, 1, self._isMobile and -42 or -34)
+        popupScroll.Position = UDim2.new(0, 0, 0, self._isMobile and 42 or 34)
         popupScroll.BackgroundTransparency = 1
         popupScroll.BorderSizePixel = 0
         popupScroll.ScrollBarThickness = 3
@@ -11054,6 +11461,70 @@
         popupPad.PaddingBottom = UDim.new(0, 5)
         popupPad.PaddingLeft = UDim.new(0, 5)
         popupPad.PaddingRight = UDim.new(0, 5)
+
+        if self._isMobile then
+            local dragPill = Instance.new("Frame", popup)
+            dragPill.Name = "DragPill"
+            dragPill.Size = UDim2.fromOffset(40, 4)
+            dragPill.Position = UDim2.new(0.5, 0, 0, 5)
+            dragPill.AnchorPoint = Vector2.new(0.5, 0)
+            dragPill.BackgroundColor3 = self._Colors.TextDim
+            dragPill.BackgroundTransparency = 0.4
+            dragPill.BorderSizePixel = 0
+            dragPill.ZIndex = 204
+            Instance.new("UICorner", dragPill).CornerRadius = UDim.new(1, 0)
+
+            local dragZone = Instance.new("TextButton", popup)
+            dragZone.Name = "DragZone"
+            dragZone.Size = UDim2.new(1, 0, 0, 14)
+            dragZone.Position = UDim2.new(0, 0, 0, 0)
+            dragZone.BackgroundTransparency = 1
+            dragZone.Text = ""
+            dragZone.AutoButtonColor = false
+            dragZone.ZIndex = 203
+
+            local swipeStartY = 0
+            local swipeActive = false
+            local swipeRestY = 0
+
+            dragZone.InputBegan:Connect(function(input)
+                if input.UserInputType ~= Enum.UserInputType.Touch and input.UserInputType ~= Enum.UserInputType.MouseButton1 then return end
+                swipeActive = true
+                swipeStartY = input.Position.Y
+                swipeRestY = popup.Position.Y.Offset
+            end)
+
+            Fn.track(UserInputService.InputChanged, function(input)
+                if not swipeActive then return end
+                if input.UserInputType ~= Enum.UserInputType.Touch and input.UserInputType ~= Enum.UserInputType.MouseMovement then return end
+                local delta = input.Position.Y - swipeStartY
+                if delta > 0 then
+                    popup.Position = UDim2.new(0, popup.Position.X.Offset, 0, swipeRestY + delta)
+                end
+            end, self)
+
+            Fn.track(UserInputService.InputEnded, function(input)
+                if not swipeActive then return end
+                if input.UserInputType ~= Enum.UserInputType.Touch and input.UserInputType ~= Enum.UserInputType.MouseButton1 then return end
+                swipeActive = false
+                local delta = input.Position.Y - swipeStartY
+                local camera = getCam()
+                if not camera then popup.Visible = false return end
+                local vp = camera.ViewportSize
+                local restY = vp.Y - popup.AbsoluteSize.Y - 8
+                if delta > 80 then
+                    popup.Visible = false
+                    task.defer(function() popup.Position = UDim2.fromOffset(8, restY) end)
+                else
+                    TweenService:Create(popup, TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), 
+                        {Position = UDim2.fromOffset(8, restY)}):Play()
+                end
+            end, self)
+
+            self:_registerThemeRefresher(function()
+                dragPill.BackgroundColor3 = self._Colors.TextDim
+            end)
+        end
 
         local optionButtons = {}
 
@@ -11196,6 +11667,14 @@
         local function updatePopupPosition()
             local camera = getCam()
             if not camera then return end
+            if self._isMobile then
+                local vp = camera.ViewportSize
+                local maxH = math.floor(vp.Y * 0.6)
+                local totalHeight = math.min(#options * 32 + 44, maxH)
+                popup.Size = UDim2.fromOffset(vp.X - 16, totalHeight)
+                popup.Position = UDim2.fromOffset(8, vp.Y - totalHeight - 8)
+                return
+            end
             local chipPos = valueChip.AbsolutePosition
             local chipSize = valueChip.AbsoluteSize
             local totalHeight = math.min(#options * 32 + 44, 260)
@@ -11686,6 +12165,13 @@
         lab.Font = Enum.Font.GothamBold
         lab.TextSize = 13
         lab.TextXAlignment = Enum.TextXAlignment.Left
+        lab.TextTruncate = Enum.TextTruncate.AtEnd
+        if self._isMobile then
+            lab.TextScaled = true
+            local tsc = Instance.new("UITextSizeConstraint", lab)
+            tsc.MinTextSize = 10
+            tsc.MaxTextSize = 13
+        end
 
         local btn = Instance.new("TextButton", holder)
         btn.Size = UDim2.new(0, 110, 0, 28)
@@ -12178,6 +12664,12 @@
         label.TextSize = 11
         label.TextXAlignment = Enum.TextXAlignment.Left
         label.TextTruncate = Enum.TextTruncate.AtEnd
+        if self._isMobile then
+            label.TextScaled = true
+            local tsc = Instance.new("UITextSizeConstraint", label)
+            tsc.MinTextSize = 10
+            tsc.MaxTextSize = 11
+        end
 
         local input = Instance.new("TextBox", holder)
         input.Name = "Input"
@@ -12230,7 +12722,7 @@
                     shift = math.min(shift, maxShift)
                     local p = self._UI.MainContainer.Position
 
-                    if self._kbTween then pcall(function() self._kbTween:Cancel() end) end
+                    if self._kbTween then Fn.safeCall("kb-tween-cancel", function() self._kbTween:Cancel() end) end
                     self._kbTween = TweenService:Create(self._UI.MainContainer,
                         TweenInfo.new(0.28, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {
                             Position = UDim2.new(p.X.Scale, p.X.Offset, p.Y.Scale, p.Y.Offset - shift),
@@ -12331,6 +12823,12 @@
         label.TextSize = 11
         label.TextXAlignment = Enum.TextXAlignment.Left
         label.TextTruncate = Enum.TextTruncate.AtEnd
+        if self._isMobile then
+            label.TextScaled = true
+            local tsc = Instance.new("UITextSizeConstraint", label)
+            tsc.MinTextSize = 10
+            tsc.MaxTextSize = 11
+        end
 
         local preview = Instance.new("TextButton", holder)
         preview.Name = "Preview"
@@ -12682,10 +13180,16 @@
             if not camera then return end
             local viewport = camera.ViewportSize
             local popupWidth, popupHeight = popup.AbsoluteSize.X, popup.AbsoluteSize.Y
-            local x = math.clamp(preview.AbsolutePosition.X, 8, math.max(8, viewport.X - popupWidth - 8))
-            local y = preview.AbsolutePosition.Y + preview.AbsoluteSize.Y + 6
-            if y + popupHeight > viewport.Y - 8 then
-                y = preview.AbsolutePosition.Y - popupHeight - 6
+            local x, y
+            if self._isMobile then
+                x = math.floor((viewport.X - popupWidth) / 2)
+                y = math.floor((viewport.Y - popupHeight) / 2)
+            else
+                x = math.clamp(preview.AbsolutePosition.X, 8, math.max(8, viewport.X - popupWidth - 8))
+                y = preview.AbsolutePosition.Y + preview.AbsoluteSize.Y + 6
+                if y + popupHeight > viewport.Y - 8 then
+                    y = preview.AbsolutePosition.Y - popupHeight - 6
+                end
             end
             popup.Position = UDim2.fromOffset(x, math.max(8, y))
             popup.Visible = true
@@ -12722,10 +13226,16 @@
                 if not camera then return end
                 local viewport = camera.ViewportSize
                 local pw, ph = popup.AbsoluteSize.X, popup.AbsoluteSize.Y
-                local x = math.clamp(preview.AbsolutePosition.X, 8, math.max(8, viewport.X - pw - 8))
-                local y = preview.AbsolutePosition.Y + preview.AbsoluteSize.Y + 6
-                if y + ph > viewport.Y - 8 then
-                    y = preview.AbsolutePosition.Y - ph - 6
+                local x, y
+                if self._isMobile then
+                    x = math.floor((viewport.X - pw) / 2)
+                    y = math.floor((viewport.Y - ph) / 2)
+                else
+                    x = math.clamp(preview.AbsolutePosition.X, 8, math.max(8, viewport.X - pw - 8))
+                    y = preview.AbsolutePosition.Y + preview.AbsoluteSize.Y + 6
+                    if y + ph > viewport.Y - 8 then
+                        y = preview.AbsolutePosition.Y - ph - 6
+                    end
                 end
                 popup.Position = UDim2.fromOffset(x, math.max(8, y))
             end)
@@ -12900,6 +13410,12 @@
             label.TextSize = 11
             label.TextXAlignment = Enum.TextXAlignment.Left
             label.TextTruncate = Enum.TextTruncate.AtEnd
+            if self._isMobile then
+                label.TextScaled = true
+                local tsc = Instance.new("UITextSizeConstraint", label)
+                tsc.MinTextSize = 9
+                tsc.MaxTextSize = 11
+            end
         end
 
         local arrowSize = self._isMobile and 40 or 20
@@ -13266,7 +13782,7 @@
                 self._VersionBadgeOverride = Color3.new(data.VersionBadgeOverride[1], data.VersionBadgeOverride[2], data.VersionBadgeOverride[3])
             end
             if type(data.ThemeName) == "string" and D.Themes[data.ThemeName] then
-                self:SetTheme(data.ThemeName, true)
+                Fn.safeCall("theme-load", function() self:SetTheme(data.ThemeName, true) end)
             end
             if type(data.Acrylic) == "boolean" then
                 self:SetAcrylic(data.Acrylic)
@@ -13549,15 +14065,15 @@
         UserInputService.MouseBehavior = Enum.MouseBehavior.Default
 
         STATE.SavedPos = UI.MainContainer.Position
-        local slideDist = 150
+        local slideDist = 40
         local targetPos = UDim2.new(STATE.SavedPos.X.Scale, STATE.SavedPos.X.Offset, STATE.SavedPos.Y.Scale, STATE.SavedPos.Y.Offset - slideDist)
 
-        local tweenInfo = TweenInfo.new(0.3, Enum.EasingStyle.Quart, Enum.EasingDirection.Out)
+        local tweenInfo = TweenInfo.new(0.35, Enum.EasingStyle.Quint, Enum.EasingDirection.Out)
 
-        TweenService:Create(UI.GuiBlur, TweenInfo.new(0.2), {Size = 0}):Play()
+        TweenService:Create(UI.GuiBlur, TweenInfo.new(0.25), {Size = 0}):Play()
 
         local _tScale = self._adaptiveScaleTarget or 1
-        local st = TweenService:Create(UI.MainScale, tweenInfo, {Scale = _tScale * 0.85})
+        local st = TweenService:Create(UI.MainScale, tweenInfo, {Scale = _tScale * 0.92})
         st:Play()
 
         TweenService:Create(UI.MainContainer, tweenInfo, {
@@ -13600,6 +14116,19 @@
         if not frame then return end
         table.insert(self._STATE.ScrollFrames, frame)
         self:_attachScrollSound(frame)
+        frame:SetAttribute("TargetScrollY", frame.CanvasPosition.Y)
+        Fn.track(RunService.RenderStepped, function(dt)
+            if not frame or not frame.Parent then return end
+            local targetY = frame:GetAttribute("TargetScrollY")
+            if targetY then
+                local currY = frame.CanvasPosition.Y
+                if math.abs(currY - targetY) > 0.5 then
+                    frame.CanvasPosition = Vector2.new(frame.CanvasPosition.X, currY + (targetY - currY) * math.min(1, dt * 15))
+                elseif currY ~= targetY then
+                    frame.CanvasPosition = Vector2.new(frame.CanvasPosition.X, targetY)
+                end
+            end
+        end, self)
         return frame
     end
 
@@ -13978,7 +14507,7 @@
 
         STATE.WeatherEnabled = false
         if STATE.GuiTween then
-            pcall(function() STATE.GuiTween:Cancel() end)
+            Fn.safeCall("gui-tween-cancel", function() STATE.GuiTween:Cancel() end)
             STATE.GuiTween = nil
         end
         STATE.AnimatingGui = false
@@ -13987,17 +14516,17 @@
             self._loadingSpinConn = nil
         end
 
-        pcall(function() self:_hideTooltip(true) end)
-        pcall(function() self:_stopWeather() end)
+        Fn.safeCall("hide-tooltip", function() self:_hideTooltip(true) end)
+        Fn.safeCall("stop-weather", function() self:_stopWeather() end)
         for _, entry in ipairs(STATE.activeDropdownPopups or {}) do
             if entry and entry.close then pcall(entry.close) end
         end
         if self._activeContextMenu then
-            pcall(function() self._activeContextMenu:Destroy() end)
+            Fn.safeCall("ctx-menu-destroy", function() self._activeContextMenu:Destroy() end)
             self._activeContextMenu = nil
         end
         if self._ActiveConfirm then
-            pcall(function() self._ActiveConfirm:Destroy() end)
+            Fn.safeCall("confirm-destroy", function() self._ActiveConfirm:Destroy() end)
             self._ActiveConfirm = nil
         end
         self._ConfirmAnimating = false
