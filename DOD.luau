@@ -5027,7 +5027,7 @@
             local width = UI.MainContainer.AbsoluteSize.X
             if width <= 0 then width = 640 end
 
-            local tlWidth = 76
+            local tlWidth = self:_titleBarReserve()
             UI.TitleDiscord.Visible = width >= 560
             local authorW = 0
             if UI.TitleDiscord.Visible then
@@ -5044,7 +5044,7 @@
             local customW = UI.TitleCustomIcons.AbsoluteSize.X
             if customW <= 0 then customW = 0 end
             local customOffset = hintOffset + hintW + (customW > 0 and 16 or 0)
-            UI.TitleCustomIcons.Position = UDim2.new(1, -customOffset - customW, 0.5, 0)
+            UI.TitleCustomIcons.Position = UDim2.new(1, -customOffset, 0.5, 0)
 
             local maxTitleWidth = math.clamp(width - 420, 80, 300)
 
