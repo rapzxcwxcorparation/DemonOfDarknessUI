@@ -8348,8 +8348,9 @@
 
                 local subLabel = Instance.new("TextLabel", subBtn)
                 subLabel.Name = "SubLabel"
-                subLabel.Size = UDim2.new(1, -26, 1, 0)
-                subLabel.Position = UDim2.new(0, 18, 0, 0)
+                subLabel.Size = UDim2.new(1, -26, 0, 14)
+                subLabel.Position = UDim2.new(0, 18, 0.5, -7)
+                subLabel.TextWrapped = false
                 subLabel.BackgroundTransparency = 1
                 subLabel.Text = tabName
                 subLabel.TextColor3 = self._Colors.TextDim
@@ -8435,8 +8436,9 @@
 
                 local subLabel = Instance.new("TextLabel", subBtn)
                 subLabel.Name = "SubLabel"
-                subLabel.Size = UDim2.new(1, -16, 1, 0)
-                subLabel.Position = UDim2.new(0, 14, 0, 0)
+                subLabel.Size = UDim2.new(1, -16, 0, 14)
+                subLabel.Position = UDim2.new(0, 14, 0.5, -7)
+                subLabel.TextWrapped = false
                 subLabel.BackgroundTransparency = 1
                 subLabel.Text = tabName
                 subLabel.TextColor3 = self._Colors.TextDim
@@ -8509,9 +8511,10 @@
                     catData.icon.Position = UDim2.new(0, 14, 0.5, -8)
                 end
                 if catData.label then
-                    catData.label.Position = UDim2.new(0, 38, 0, 0)
-                    catData.label.Size = UDim2.new(1, -48, 1, 0)
+                    catData.label.Position = UDim2.new(0, 38, 0.5, -8)
+                    catData.label.Size = UDim2.new(1, -48, 0, 16)
                     catData.label.TextSize = 12
+                    catData.label.TextWrapped = false
                 end
                 local standaloneIndicator = Instance.new("Frame", catData.button)
                 standaloneIndicator.Name = "StandaloneIndicator"
