@@ -1204,8 +1204,8 @@
         }
 
         self:_initNotifications()
-        self:_initMainGui()
         self:_initCursorTrail()
+        self:_initMainGui()
         self:_initKeybindOverlay()
         self:_initTitleBar()
         self:_initTrafficLights()
@@ -2106,6 +2106,15 @@
         overlay.MouseButton1Click:Connect(function() close(false) end)
 
         self._ActiveConfirm = overlay
+        self._ActiveConfirmClose = close
+
+        Fn.track(UserInputService.InputBegan, function(input, gp)
+            if gp then return end
+            if input.KeyCode ~= Enum.KeyCode.Escape then return end
+            if self._ActiveConfirm == overlay then
+                close(false)
+            end
+        end, self)
 
         TweenService:Create(overlay, TweenInfo.new(0.2), {BackgroundTransparency = 0.4}):Play()
         TweenService:Create(panel, TweenInfo.new(0.25, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {
@@ -2831,6 +2840,13 @@
                     local maxScroll = math.max(0, target.AbsoluteCanvasSize.Y - target.AbsoluteSize.Y)
                     targetY = math.clamp(targetY, 0, maxScroll)
                     target:SetAttribute("TargetScrollY", targetY)
+                    if self._SoundsEnabled then
+                        local _now = os.clock()
+                        if _now - (self._lastScrollSoundTime or 0) > 0.12 then
+                            self._lastScrollSoundTime = _now
+                            self:PlaySound("Scroll")
+                        end
+                    end
                 end
             end
         end, self)
@@ -7689,8 +7705,8 @@
             end
 
             local label = Instance.new("TextLabel", header)
-            label.Size = UDim2.new(1, -48, 1, 0)
-            label.Position = UDim2.new(0, 46, 0, 0)
+            label.Size = UDim2.new(1, -48, 0, 16)
+            label.Position = UDim2.new(0, 46, 0.5, -8)
             label.BackgroundTransparency = 1
             label.Text = categoryName
             label.TextColor3 = self._Colors.TextDim
@@ -7698,6 +7714,7 @@
             label.TextSize = 11
             label.TextXAlignment = Enum.TextXAlignment.Left
             label.TextTruncate = Enum.TextTruncate.AtEnd
+            label.TextWrapped = false
             label.ZIndex = 7
 
             local tabList = Instance.new("Frame", group)
@@ -8691,7 +8708,7 @@
         indicator.ImageColor3 = defaultOpen and self._Colors.Accent or self._Colors.TextDim
         indicator.ScaleType = Enum.ScaleType.Fit
 
-        local hoverBar = Instance.new("Frame", section)
+        local hoverBar = Instance.new("Frame", header)
         hoverBar.Name = "HoverBar"
         hoverBar.AnchorPoint = Vector2.new(0, 0.5)
         hoverBar.Position = UDim2.new(0, 0, 0.5, 0)
@@ -9007,7 +9024,11 @@
         header.MouseButton1Up:Connect(function()
             local now = os.clock()
             if now - lastToggleTime < 0.18 then return end
-            if sectionData.locked then pulseLock() return end
+            if sectionData.locked then
+                pulseLock()
+                self:Notify("SECTION", "Section is locked — click the lock icon to unlock", "warning")
+                return
+            end
             lastToggleTime = now
             toggle()
         end)
@@ -14075,6 +14096,7 @@
         local STATE = self._STATE
         local UI = self._UI
         if not STATE.GuiVisible or STATE.AnimatingGui then return end
+        self:_hideTooltip(true)
         STATE.AnimatingGui = true
         STATE.GuiVisible = false
         if UI.MobileToggle then UI.MobileToggle.Visible = false end
@@ -14147,44 +14169,44 @@
         table.insert(self._STATE.ScrollFrames, frame)
         self:_attachScrollSound(frame)
         frame:SetAttribute("TargetScrollY", frame.CanvasPosition.Y)
-        local _lastSet = frame.CanvasPosition.Y
-        Fn.track(RunService.RenderStepped, function(dt)
-            if not frame or not frame.Parent then return end
-            local targetY = frame:GetAttribute("TargetScrollY")
-            if targetY == nil then return end
-            local currY = frame.CanvasPosition.Y
-            if math.abs(currY - _lastSet) > 2 then
-                frame:SetAttribute("TargetScrollY", currY)
-                _lastSet = currY
-                return
-            end
-            if math.abs(currY - targetY) > 0.5 then
-                local nextY = currY + (targetY - currY) * math.min(1, dt * 15)
-                frame.CanvasPosition = Vector2.new(frame.CanvasPosition.X, nextY)
-                _lastSet = nextY
-            elseif currY ~= targetY then
-                frame.CanvasPosition = Vector2.new(frame.CanvasPosition.X, targetY)
-                _lastSet = targetY
-            end
-        end, self)
+        frame:SetAttribute("DoD_LastSet", frame.CanvasPosition.Y)
+        if not self._scrollPumpInstalled then
+            self._scrollPumpInstalled = true
+            Fn.track(RunService.RenderStepped, function(dt)
+                if self:_isDead() then return end
+                local frames = self._STATE.ScrollFrames
+                for i = #frames, 1, -1 do
+                    local f = frames[i]
+                    if not f or not f.Parent then
+                        table.remove(frames, i)
+                    else
+                        local targetY = f:GetAttribute("TargetScrollY")
+                        if targetY ~= nil then
+                            local currY = f.CanvasPosition.Y
+                            local lastSet = f:GetAttribute("DoD_LastSet") or currY
+                            if math.abs(currY - lastSet) > 2 then
+                                f:SetAttribute("TargetScrollY", currY)
+                                f:SetAttribute("DoD_LastSet", currY)
+                            elseif math.abs(currY - targetY) > 0.5 then
+                                local nextY = currY + (targetY - currY) * math.min(1, dt * 15)
+                                f.CanvasPosition = Vector2.new(f.CanvasPosition.X, nextY)
+                                f:SetAttribute("DoD_LastSet", nextY)
+                            elseif currY ~= targetY then
+                                f.CanvasPosition = Vector2.new(f.CanvasPosition.X, targetY)
+                                f:SetAttribute("DoD_LastSet", targetY)
+                            end
+                        end
+                    end
+                end
+            end, self)
+        end
         return frame
     end
 
     function Library:_attachScrollSound(frame)
         if not frame or not frame.Parent then return end
         if self._isMobile then return end
-        if frame:GetAttribute("DoD_ScrollSound") then return end
         frame:SetAttribute("DoD_ScrollSound", true)
-        local lastPlay = 0
-        Fn.track(frame:GetPropertyChangedSignal("CanvasPosition"), function()
-            if self:_isDead() then return end
-            if not self._STATE.GuiVisible then return end
-            if not self._SoundsEnabled then return end
-            local now = os.clock()
-            if now - lastPlay < 0.12 then return end
-            lastPlay = now
-            self:PlaySound("Scroll")
-        end, self)
     end
 
     function Library:PlaySound(soundName)
