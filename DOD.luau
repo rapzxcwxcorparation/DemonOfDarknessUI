@@ -2119,19 +2119,32 @@
         return overlay
     end
 
+    function Library:_getNotifMetrics()
+        local cam = getCam()
+        local vpX = (cam and cam.ViewportSize.X) or 800
+        if self._isMobile then
+            local w = math.clamp(vpX - 32, 180, 220)
+            return w, 46, 7
+        end
+        return 280, 56, 9
+    end
+
     function Library:_updateNotifPositions()
         local pos = self._NotifPosition or "TopRight"
+        local nW, nH, nGap = self:_getNotifMetrics()
+        local nXOff = -(nW + 2)
+        local spacing = nH + nGap
         for index, frame in ipairs(self._STATE.activeNotifs) do
 
-            local targetY = 15 + ((index - 1) * 65)
-            local targetX = UDim2.new(1, -282, 0, targetY)
+            local targetY = 15 + ((index - 1) * spacing)
+            local targetX = UDim2.new(1, nXOff, 0, targetY)
 
             if pos == "TopLeft" then
                 targetX = UDim2.new(0, 15, 0, targetY)
             elseif pos == "BottomLeft" then
-                targetX = UDim2.new(0, 15, 1, -targetY - 56)
+                targetX = UDim2.new(0, 15, 1, -targetY - nH)
             elseif pos == "BottomRight" then
-                targetX = UDim2.new(1, -282, 1, -targetY - 56)
+                targetX = UDim2.new(1, nXOff, 1, -targetY - nH)
             end
 
             TweenService:Create(
@@ -2382,14 +2395,16 @@
             end
 
             local nPos = self._NotifPosition or "TopRight"
-            local spawnPos = UDim2.new(1, -295, 0, -70)
-            if nPos == "TopLeft" then spawnPos = UDim2.new(0, -295, 0, 15)
-            elseif nPos == "BottomLeft" then spawnPos = UDim2.new(0, -295, 1, -71)
-            elseif nPos == "BottomRight" then spawnPos = UDim2.new(1, -295, 1, -71)
+            local nW, nH, nGap = self:_getNotifMetrics()
+            local nOffScreen = -(nW + 15)
+            local spawnPos = UDim2.new(1, nOffScreen, 0, -(nH + 14))
+            if nPos == "TopLeft" then spawnPos = UDim2.new(0, nOffScreen, 0, 15)
+            elseif nPos == "BottomLeft" then spawnPos = UDim2.new(0, nOffScreen, 1, -(nH + 15))
+            elseif nPos == "BottomRight" then spawnPos = UDim2.new(1, nOffScreen, 1, -(nH + 15))
             end
 
             local frame = Instance.new("Frame", self._UI.NotifGui)
-            frame.Size = UDim2.new(0, 280, 0, 56)
+            frame.Size = UDim2.new(0, nW, 0, nH)
             frame.Position = spawnPos
             frame.BackgroundColor3 = palette.Bg2 or Color3.fromRGB(14, 14, 20)
             frame.BackgroundTransparency = 1
@@ -2402,38 +2417,53 @@
             frameStroke.Thickness = 1
             frameStroke.Transparency = 0.7
 
+            local _nMob = self._isMobile
+            local _iconSz = _nMob and 12 or 14
+            local _iconX = _nMob and 10 or 12
+            local _iconY = _nMob and 8 or 10
+            local _labelX = _nMob and 26 or 32
+            local _labelWOff = _nMob and -34 or -36
+            local _titleY = _nMob and 6 or 9
+            local _titleH = _nMob and 13 or 14
+            local _titleSz = _nMob and 11 or 12
+            local _bodyY = _nMob and 20 or 25
+            local _bodyH = _nMob and 14 or 16
+            local _bodySz = _nMob and 10 or 11
+            local _pbInset = _nMob and 6 or 8
+            local _pbBottom = _nMob and -5 or -6
+
             local icon = Instance.new("ImageLabel", frame)
-            icon.Size = UDim2.fromOffset(14, 14)
-            icon.Position = UDim2.new(0, 12, 0, 10)
+            icon.Size = UDim2.fromOffset(_iconSz, _iconSz)
+            icon.Position = UDim2.new(0, _iconX, 0, _iconY)
             icon.BackgroundTransparency = 1
             icon.Image = iconId
             icon.ImageColor3 = color
 
             local titleLabel = Instance.new("TextLabel", frame)
-            titleLabel.Size = UDim2.new(1, -36, 0, 14)
-            titleLabel.Position = UDim2.new(0, 32, 0, 9)
+            titleLabel.Size = UDim2.new(1, _labelWOff, 0, _titleH)
+            titleLabel.Position = UDim2.new(0, _labelX, 0, _titleY)
             titleLabel.BackgroundTransparency = 1
             titleLabel.Text = tostring(title)
             titleLabel.TextColor3 = palette.Text or Color3.fromRGB(220, 220, 230)
             titleLabel.Font = Enum.Font.GothamBold
-            titleLabel.TextSize = 12
+            titleLabel.TextSize = _titleSz
             titleLabel.TextXAlignment = Enum.TextXAlignment.Left
             titleLabel.TextTruncate = Enum.TextTruncate.AtEnd
 
             local textLabel = Instance.new("TextLabel", frame)
-            textLabel.Size = UDim2.new(1, -36, 0, 16)
-            textLabel.Position = UDim2.new(0, 32, 0, 25)
+            textLabel.Size = UDim2.new(1, _labelWOff, 0, _bodyH)
+            textLabel.Position = UDim2.new(0, _labelX, 0, _bodyY)
             textLabel.BackgroundTransparency = 1
             textLabel.Text = tostring(text)
             textLabel.TextColor3 = palette.TextDim or Color3.fromRGB(140, 140, 155)
             textLabel.Font = Enum.Font.GothamMedium
-            textLabel.TextSize = 11
+            textLabel.TextSize = _bodySz
             textLabel.TextXAlignment = Enum.TextXAlignment.Left
             textLabel.TextTruncate = Enum.TextTruncate.AtEnd
 
             local progressBar = Instance.new("Frame", frame)
-            progressBar.Size = UDim2.new(1, -16, 0, 2)
-            progressBar.Position = UDim2.new(0, 8, 1, -6)
+            progressBar.Size = UDim2.new(1, -(_pbInset * 2), 0, 2)
+            progressBar.Position = UDim2.new(0, _pbInset, 1, _pbBottom)
             progressBar.BackgroundColor3 = color
             progressBar.BorderSizePixel = 0
             Instance.new("UICorner", progressBar).CornerRadius = UDim.new(1, 0)
@@ -6059,7 +6089,7 @@
             end
         end)
 
-        if self._isMobile then
+        if self._isMobile and self.TabPosition ~= "Side" then
             local fab = Instance.new("TextButton", UI.MainContainer)
             fab.Name = "MobileSearchFAB"
             fab.Size = UDim2.fromOffset(48, 48)
@@ -8238,10 +8268,9 @@
         columnsContainer.BackgroundTransparency = 1
         columnsContainer.ClipsDescendants = false
 
-        local _isMobCol = self._isMobile
         local leftCol = Instance.new("Frame", columnsContainer)
         leftCol.Name = "LeftColumn"
-        leftCol.Size = _isMobCol and UDim2.new(1, 0, 0, 0) or UDim2.new(0.5, -5, 0, 0)
+        leftCol.Size = UDim2.new(0.5, -5, 0, 0)
         leftCol.Position = UDim2.new(0, 0, 0, 0)
         leftCol.AutomaticSize = Enum.AutomaticSize.Y
         leftCol.BackgroundTransparency = 1
@@ -8252,8 +8281,8 @@
 
         local rightCol = Instance.new("Frame", columnsContainer)
         rightCol.Name = "RightColumn"
-        rightCol.Size = _isMobCol and UDim2.new(1, 0, 0, 0) or UDim2.new(0.5, -5, 0, 0)
-        rightCol.Position = _isMobCol and UDim2.new(0, 0, 0, 0) or UDim2.new(0.5, 5, 0, 0)
+        rightCol.Size = UDim2.new(0.5, -5, 0, 0)
+        rightCol.Position = UDim2.new(0.5, 5, 0, 0)
         rightCol.AutomaticSize = Enum.AutomaticSize.Y
         rightCol.BackgroundTransparency = 1
         rightCol.ClipsDescendants = false
@@ -8264,14 +8293,8 @@
         local function updateColumnsSize()
             local leftSize = leftLayout.AbsoluteContentSize.Y
             local rightSize = rightLayout.AbsoluteContentSize.Y
-            if _isMobCol then
-                local gap = (leftSize > 0 and rightSize > 0) and 10 or 0
-                rightCol.Position = UDim2.new(0, 0, 0, leftSize + gap)
-                columnsContainer.Size = UDim2.new(1, 0, 0, leftSize + rightSize + gap)
-            else
-                local maxH = math.max(leftSize, rightSize)
-                columnsContainer.Size = UDim2.new(1, 0, 0, maxH)
-            end
+            local maxH = math.max(leftSize, rightSize)
+            columnsContainer.Size = UDim2.new(1, 0, 0, maxH)
         end
         leftLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(updateColumnsSize)
         rightLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(updateColumnsSize)
