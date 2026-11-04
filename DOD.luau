@@ -6439,7 +6439,7 @@
                         ctrl._hlCache = self:_collectHighlightables(ctrl.instance)
                     end
                     for _, hlLabel in ipairs(ctrl._hlCache) do
-                        self:_applyHighlight(hlLabel, query)
+                        self:_applyHighlight(hlLabel, searchKeyword)
                     end
                     if isFiltering then totalMatches = totalMatches + 1 end
                 elseif not ctrl.hidden then
@@ -8403,7 +8403,6 @@
                     accentDot.Visible = isActive
                 end)
             end
-        end
 
         elseif self.TabPosition == "Side" then
             local catData = STATE.CategoryButtons[categoryName]
@@ -12377,7 +12376,7 @@
                     local onClickBtn = mp.X >= bp.X and mp.X <= bp.X + bs.X
                         and mp.Y >= bp.Y and mp.Y <= bp.Y + bs.Y
                     if l.active then
-                        if not onClickBtn then
+                        if inp.UserInputType == Enum.UserInputType.Keyboard or not onClickBtn then
                             l.active = false
                             self._keybindCapturing = false
                             local capturedMods = getMods()
@@ -13807,7 +13806,10 @@
                 self._VersionBadgeOverride = Color3.new(data.VersionBadgeOverride[1], data.VersionBadgeOverride[2], data.VersionBadgeOverride[3])
             end
             if type(data.ThemeName) == "string" and D.Themes[data.ThemeName] then
+                local _prevApplying = self._applyingAccent
+                self._applyingAccent = true
                 Fn.safeCall("theme-load", function() self:SetTheme(data.ThemeName, true) end)
+                self._applyingAccent = _prevApplying
             end
             if type(data.Acrylic) == "boolean" then
                 self:SetAcrylic(data.Acrylic)
@@ -14142,16 +14144,24 @@
         table.insert(self._STATE.ScrollFrames, frame)
         self:_attachScrollSound(frame)
         frame:SetAttribute("TargetScrollY", frame.CanvasPosition.Y)
+        local _lastSet = frame.CanvasPosition.Y
         Fn.track(RunService.RenderStepped, function(dt)
             if not frame or not frame.Parent then return end
             local targetY = frame:GetAttribute("TargetScrollY")
-            if targetY then
-                local currY = frame.CanvasPosition.Y
-                if math.abs(currY - targetY) > 0.5 then
-                    frame.CanvasPosition = Vector2.new(frame.CanvasPosition.X, currY + (targetY - currY) * math.min(1, dt * 15))
-                elseif currY ~= targetY then
-                    frame.CanvasPosition = Vector2.new(frame.CanvasPosition.X, targetY)
-                end
+            if targetY == nil then return end
+            local currY = frame.CanvasPosition.Y
+            if math.abs(currY - _lastSet) > 2 then
+                frame:SetAttribute("TargetScrollY", currY)
+                _lastSet = currY
+                return
+            end
+            if math.abs(currY - targetY) > 0.5 then
+                local nextY = currY + (targetY - currY) * math.min(1, dt * 15)
+                frame.CanvasPosition = Vector2.new(frame.CanvasPosition.X, nextY)
+                _lastSet = nextY
+            elseif currY ~= targetY then
+                frame.CanvasPosition = Vector2.new(frame.CanvasPosition.X, targetY)
+                _lastSet = targetY
             end
         end, self)
         return frame
