@@ -4638,7 +4638,8 @@
 
     function Library:_titleBarReserve()
         if self.WindowStyle == "Windows11" then
-            return 138
+            local btnW = self._isMobile and 52 or 46
+            return btnW * 3
         end
         local dot = self._isMobile and 20 or 14
         local space = self._isMobile and 26 or 18
@@ -5032,12 +5033,12 @@
             if UI.TitleDiscord.Visible then
                 authorW = UI.TitleDiscord.AbsoluteSize.X
                 if authorW <= 0 then authorW = 50 end
-                UI.TitleDiscord.Position = UDim2.new(1, -tlWidth - authorW - 12, 0, 0)
+                UI.TitleDiscord.Position = UDim2.new(1, -tlWidth - authorW - 16, 0, 0)
             end
 
             local hintW = UI.TitleToggleHintBg.AbsoluteSize.X
             if self._isMobile then hintW = 0 elseif hintW <= 0 then hintW = 40 end
-            local hintOffset = tlWidth + (authorW > 0 and authorW + 28 or 0)
+            local hintOffset = tlWidth + (authorW > 0 and authorW + 32 or 0)
             UI.TitleToggleHintBg.Position = UDim2.new(1, -hintOffset - hintW, 0.5, -10)
 
             local customW = UI.TitleCustomIcons.AbsoluteSize.X
@@ -5105,6 +5106,7 @@
         Fn.track(UI.MainContainer:GetPropertyChangedSignal("AbsoluteSize"), queueTitleLayout, self)
         Fn.track(UI.TitleVersionBadge:GetPropertyChangedSignal("AbsoluteSize"), queueTitleLayout, self)
         Fn.track(UI.TitleToggleHintBg:GetPropertyChangedSignal("AbsoluteSize"), queueTitleLayout, self)
+        Fn.track(UI.TitleDiscord:GetPropertyChangedSignal("AbsoluteSize"), queueTitleLayout, self)
     end
 
     function Library:_initTrafficLights()
@@ -8403,7 +8405,7 @@
             end
         end
 
-        if self.TabPosition == "Side" then
+        elseif self.TabPosition == "Side" then
             local catData = STATE.CategoryButtons[categoryName]
             if catData and catData.tabList and not catData.isStandalone then
                 local tabCount = 0
