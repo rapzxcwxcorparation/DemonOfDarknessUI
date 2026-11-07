@@ -300,7 +300,12 @@
 
     Fn.contrastForeground = function(bg)
         if typeof(bg) ~= "Color3" then return Color3.fromRGB(255, 255, 255) end
-        return Fn.luminance(bg) > 0.179 and Color3.fromRGB(20, 22, 28) or Color3.fromRGB(255, 255, 255)
+        local lum = Fn.luminance(bg)
+        local contrastWhite = 1.05 / (lum + 0.05)
+        local contrastBlack = (lum + 0.05) / 0.05
+        if contrastWhite >= 4.5 then return Color3.fromRGB(255, 255, 255) end
+        if contrastBlack >= 4.5 then return Color3.fromRGB(10, 14, 20) end
+        return contrastWhite > contrastBlack and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(10, 14, 20)
     end
 
     Fn.visibleAccent = function(accent, bg, minRatio)
@@ -1104,6 +1109,7 @@
 
         self._UI = {}
         self._isMobile = UserInputService.TouchEnabled and not UserInputService.MouseEnabled
+        if self._isMobile and opts.LayoutDensity == nil then opts.LayoutDensity = "Compact" end
         self._perfAuto = opts.AutoPerformance ~= false
 
         self._perfTier = self._isMobile and "Balanced" or "High"
@@ -2204,14 +2210,29 @@
             self:_applySearchFilter()
         end
         local applied, total = 0, 0
+        local pending = {}
+        local invalid = false
+        
         for id, val in pairs(config._controls or {}) do
             total = total + 1
             local entry = self._STATE.ConfigRegistry and self._STATE.ConfigRegistry[id]
             if entry and entry.set then
-
-                local ok = pcall(entry.set, val, silent == true)
-                if ok then applied = applied + 1 end
+                table.insert(pending, { entry = entry, val = val, id = id })
             end
+        end
+        
+        for _, item in ipairs(pending) do
+            local ok = pcall(item.entry.set, item.val, silent == true)
+            if ok then 
+                applied = applied + 1 
+            else
+                invalid = true
+                warn("[DoD UI] Failed to apply config for: " .. tostring(item.id))
+            end
+        end
+        
+        if invalid and not silent then
+            self:Notify("CONFIG", "Some settings failed to load (check console)", "warning")
         end
         if not silent then
             self:Notify("CONFIG", "Imported " .. applied .. "/" .. total .. " settings", "success")
@@ -8747,10 +8768,10 @@
         bodyLayout.Padding = UDim.new(0, self:_densityPadding(8))
 
         local bodyPad = Instance.new("UIPadding", body)
-        bodyPad.PaddingLeft = UDim.new(0, 12)
-        bodyPad.PaddingRight = UDim.new(0, 20)
-        bodyPad.PaddingTop = UDim.new(0, 10)
-        bodyPad.PaddingBottom = UDim.new(0, 14)
+        bodyPad.PaddingLeft = UDim.new(0, self._isMobile and 8 or 12)
+        bodyPad.PaddingRight = UDim.new(0, self._isMobile and 10 or 20)
+        bodyPad.PaddingTop = UDim.new(0, self._isMobile and 6 or 10)
+        bodyPad.PaddingBottom = UDim.new(0, self._isMobile and 10 or 14)
 
         local scrollTrack = Instance.new("Frame", section)
         scrollTrack.Name = "ScrollTrack"
@@ -10003,16 +10024,16 @@
         callback = callback or function() end
         local _isMobTgl = self._isMobile
 
-        local _swW = _isMobTgl and 48 or 36
-        local _swH = _isMobTgl and 26 or 20
-        local _knSz = _isMobTgl and 22 or 16
+        local _swW = _isMobTgl and 40 or 36
+        local _swH = _isMobTgl and 22 or 20
+        local _knSz = _isMobTgl and 18 or 16
         local _knOnX = -(_knSz + 2)
         local _knOffX = 2
         local _knY = -(_knSz / 2)
-        local _swRightX = -(_swW + 14)
+        local _swRightX = -(_swW + 12)
         local _swY = -(_swH / 2)
-        local _rowH = _isMobTgl and 48 or 38
-        local _labPad = _swW + 30
+        local _rowH = _isMobTgl and 44 or 38
+        local _labPad = _swW + 24
 
         local holder = Instance.new("Frame", page)
         holder.Size = UDim2.new(1, 0, 0, _rowH)
@@ -10030,14 +10051,14 @@
         lab.Text = text
         lab.TextColor3 = self._Colors.Text
         lab.Font = Enum.Font.GothamBold
-        lab.TextSize = _isMobTgl and 13 or 12
+        lab.TextSize = _isMobTgl and 12 or 12
         lab.TextXAlignment = Enum.TextXAlignment.Left
         lab.TextTruncate = Enum.TextTruncate.AtEnd
         if _isMobTgl then
             lab.TextScaled = true
             local tsc = Instance.new("UITextSizeConstraint", lab)
-            tsc.MinTextSize = 10
-            tsc.MaxTextSize = 13
+            tsc.MinTextSize = 9
+            tsc.MaxTextSize = 12
         end
 
         local switchBg = Instance.new("Frame", holder)
@@ -10046,6 +10067,11 @@
         switchBg.BackgroundColor3 = default and self._Colors.Accent or Color3.fromRGB(45, 45, 55)
         switchBg.BorderSizePixel = 0
         Instance.new("UICorner", switchBg).CornerRadius = UDim.new(1, 0)
+
+        local trackGrad = Instance.new("UIGradient", switchBg)
+        trackGrad.Rotation = 90
+        trackGrad.Color = ColorSequence.new(self._Colors.Accent, self._Colors.Accent2 or self._Colors.Accent)
+        trackGrad.Enabled = default
 
         local switchStroke = Instance.new("UIStroke", switchBg)
         switchStroke.Color = default and self._Colors.Accent or self._Colors.Border
@@ -10309,8 +10335,8 @@
         end)
 
         local sliderBg = Instance.new("Frame", holder)
-        sliderBg.Size = UDim2.new(1, -68, 0, self._isMobile and 6 or 4)
-        sliderBg.Position = UDim2.new(0, 34, 0, 31)
+        sliderBg.Size = UDim2.new(1, self._isMobile and -56 or -68, 0, self._isMobile and 6 or 4)
+        sliderBg.Position = UDim2.new(0, self._isMobile and 30 or 34, 0, 31)
         sliderBg.BackgroundColor3 = Color3.fromRGB(22, 22, 30)
         sliderBg.BorderSizePixel = 0
         sliderBg.Active = true
@@ -10699,8 +10725,8 @@
         holderStroke.Transparency = 0.5
 
         local label = Instance.new("TextLabel", holder)
-        label.Size = UDim2.new(0.42, -20, 1, 0)
-        label.Position = UDim2.new(0, 14, 0, 0)
+        label.Size = UDim2.new(self._isMobile and 0.35 or 0.42, -10, 1, 0)
+        label.Position = UDim2.new(0, 12, 0, 0)
         label.BackgroundTransparency = 1
         label.Text = text
         label.TextColor3 = self._Colors.Text
@@ -10716,8 +10742,8 @@
         end
 
         local valueChip = Instance.new("TextButton", holder)
-        valueChip.Size = UDim2.new(0.58, -54, 0, 30)
-        valueChip.Position = UDim2.new(0.42, 4, 0.5, -15)
+        valueChip.Size = UDim2.new(self._isMobile and 0.65 or 0.58, self._isMobile and -54 or -54, 0, 30)
+        valueChip.Position = UDim2.new(self._isMobile and 0.35 or 0.42, 4, 0.5, -15)
         valueChip.BackgroundColor3 = self._Colors.Bg2
         valueChip.BackgroundTransparency = 0.2
         valueChip.Text = ""
@@ -12205,7 +12231,7 @@
         Instance.new("UICorner", holder).CornerRadius = UDim.new(0, 8)
 
         local lab = Instance.new("TextLabel", holder)
-        lab.Size = UDim2.new(1, -136, 1, 0)
+        lab.Size = UDim2.new(1, self._isMobile and -116 or -136, 1, 0)
         lab.Position = UDim2.new(0, 12, 0, 0)
         lab.BackgroundTransparency = 1
         lab.Text = text
@@ -12222,8 +12248,8 @@
         end
 
         local btn = Instance.new("TextButton", holder)
-        btn.Size = UDim2.new(0, 110, 0, 28)
-        btn.Position = UDim2.new(1, -122, 0.5, -14)
+        btn.Size = UDim2.new(0, self._isMobile and 90 or 110, 0, 28)
+        btn.Position = UDim2.new(1, self._isMobile and -102 or -122, 0.5, -14)
         btn.BackgroundColor3 = self._Colors.Bg2
         btn.BackgroundTransparency = 0.2
         btn.Text = ""
@@ -12392,6 +12418,17 @@
                 end
                 return true
             end
+            Fn.track(UserInputService.WindowFocusReleased, function()
+                for _, l in ipairs(STATE.activeKeybindListeners) do
+                    if l.active then
+                        l.active = false
+                        if l.btnText then l.btnText.Text = l.keyName end
+                        if l.btnStroke then TweenService:Create(l.btnStroke, TweenInfo.new(0.15), {Color = self._Colors.Border, Transparency = 0.5}):Play() end
+                    end
+                end
+                if getgenv()._lastParryFireAt_ball then table.clear(getgenv()._lastParryFireAt_ball) end
+            end, self)
+
             Fn.track(UserInputService.InputBegan, function(inp, proc)
                 if proc then return end
                 for _, l in ipairs(STATE.activeKeybindListeners) do
