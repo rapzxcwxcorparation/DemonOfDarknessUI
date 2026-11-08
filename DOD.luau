@@ -208,6 +208,28 @@
         return ok, err
     end
 
+    Fn.httpGet = function(url, retry)
+        if type(request) == "function" then
+            local ok, res = pcall(request, {Url = url, Method = "GET"})
+            if ok and type(res) == "table" and type(res.Body) == "string" then
+                return res.Body
+            end
+        end
+        if type(syn) == "table" and type(syn.request) == "function" then
+            local ok, res = pcall(syn.request, {Url = url, Method = "GET"})
+            if ok and type(res) == "table" and type(res.Body) == "string" then
+                return res.Body
+            end
+        end
+        if type(http_request) == "function" then
+            local ok, res = pcall(http_request, {Url = url, Method = "GET"})
+            if ok and type(res) == "table" and type(res.Body) == "string" then
+                return res.Body
+            end
+        end
+        return game:HttpGet(url, retry)
+    end
+
     Fn.bindPressAnimation = function(guiObject)
         local scale = guiObject:FindFirstChildOfClass("UIScale")
         if not scale then
@@ -1058,6 +1080,9 @@
         self.WindowSize = opts.Size or UDim2.fromOffset(900, 580)
         self.WallpaperSource = opts.Wallpaper
         self.WallpaperTransparency = opts.WallpaperTransparency or 0
+        self._wallpaperInFlight = false
+        self._wallpaperQueued = nil
+        self._productInfoCache = {}
 
         if opts.SectionDefaultOpen ~= nil and type(opts.SectionDefaultOpen) ~= "boolean" then
             error("[DoD UI] SectionDefaultOpen must be a boolean.")
@@ -1121,8 +1146,8 @@
             or self.AcrylicBlurIntensity > 24 or self.AcrylicBlurIntensity ~= self.AcrylicBlurIntensity then
             error("[DoD UI] AcrylicBlur must be a number between 0 and 24.")
         end
-        if self.TabPosition ~= "Top" and self.TabPosition ~= "Side" and self.TabPosition ~= "Bottom" then
-            error('[DoD UI] TabPosition must be "Top", "Side", or "Bottom".')
+        if self.TabPosition ~= "Top" and self.TabPosition ~= "Side" and self.TabPosition ~= "Bottom" and self.TabPosition ~= "SideFloating" then
+            error('[DoD UI] TabPosition must be "Top", "Side", "Bottom", or "SideFloating".')
         end
 
         if opts.AccentColor ~= nil and typeof(opts.AccentColor) ~= "Color3" then
@@ -1276,6 +1301,9 @@
         self:_initTitleBar()
         self:_initTrafficLights()
         self:_initSidebar()
+        if self.TabPosition == "SideFloating" then
+            self:_initFloatingNav()
+        end
         self:_initSearchBar()
         self:_initContentArea()
         self:_applyNavigationLayout()
@@ -1310,7 +1338,11 @@
         end, self)
 
         if self.WallpaperSource then
-            self:SetWallpaper(self.WallpaperSource, self.WallpaperTransparency)
+            task.delay(2, function()
+                if not self:_isDead() then
+                    self:SetWallpaper(self.WallpaperSource, self.WallpaperTransparency)
+                end
+            end)
         end
 
         local g = (getgenv and getgenv()) or _G
@@ -2198,9 +2230,11 @@
     function Library:_getNotifMetrics()
         local cam = getCam()
         local vpX = (cam and cam.ViewportSize.X) or 800
-        if self._isMobile then
+        if self._isMobile or vpX < 400 then
             local w = math.clamp(vpX - 32, 180, 220)
             return w, 46, 7
+        elseif vpX < 700 then
+            return 260, 50, 8
         end
         return 280, 56, 9
     end
@@ -3147,6 +3181,12 @@
                         MC.Size.X.Scale, MC.Size.X.Offset + 90,
                         MC.Size.Y.Scale, MC.Size.Y.Offset + 90
                     )
+                end
+            end, self)
+
+            Fn.track(MC:GetPropertyChangedSignal("Visible"), function()
+                if UI.AmbientGlow and UI.AmbientGlow.Parent then
+                    UI.AmbientGlow.Visible = MC.Visible
                 end
             end, self)
 
@@ -4219,21 +4259,31 @@
                 return
             end
 
+            if self._wallpaperInFlight then
+                self._wallpaperQueued = { url = img, trans = trans }
+                self:Notify("WALLPAPER", "Download queued...", "info")
+                return
+            end
+            self._wallpaperInFlight = true
+
             self:Notify("WALLPAPER", "Downloading...", "info")
             if self.ShowLoading then self:ShowLoading("Downloading wallpaper...") end
 
             task.spawn(function()
+                local _wpOk, _wpErr = pcall(function()
                 local timedOut = false
-                local watchdog = task.delay(10, function()
+                local watchdog = task.delay(4, function()
                     if timedOut then return end
                     timedOut = true
                     if self.HideLoading then self:HideLoading() end
                     if self:_isDead() then return end
-                    self:Notify("WALLPAPER", "Download timeout (>10s) — server slow or unreachable", "error")
+                    self:Notify("WALLPAPER", "Download timeout (>4s)", "error")
                 end)
+                task.wait()
                 local success, content = pcall(function()
-                    return game:HttpGet(img, true)
+                    return Fn.httpGet(img, true)
                 end)
+                task.wait()
                 if watchdog then pcall(task.cancel, watchdog) end
                 if timedOut or self:_isDead() then return end
 
@@ -4300,6 +4350,16 @@
                     self:_generateAutoTheme(img)
                 else
                     self:Notify("WALLPAPER", "Gagal apply gambar ke UI", "error")
+                end
+                end)
+                if not _wpOk then
+                    warn("[DoD UI] Wallpaper download error: " .. tostring(_wpErr))
+                end
+                self._wallpaperInFlight = false
+                local _wpQ = self._wallpaperQueued
+                self._wallpaperQueued = nil
+                if _wpQ and not self:_isDead() then
+                    self:SetWallpaper(_wpQ.url, _wpQ.trans)
                 end
             end)
             return
@@ -4691,9 +4751,11 @@
         task.spawn(function()
 
             local function attempt(isRetry)
+                task.wait()
                 local ok, content = pcall(function()
-                    return game:HttpGet(source, true)
+                    return Fn.httpGet(source, true)
                 end)
+                task.wait()
                 if not ok or type(content) ~= "string" or #content == 0 then
                     if not isRetry then
                         task.wait(1)
@@ -5810,6 +5872,84 @@
         UI.CategoryIndicator = catIndicator
     end
 
+    function Library:_initFloatingNav()
+        local UI = self._UI
+        local nav = Instance.new("Frame", UI.MainGui)
+        nav.Name = "FloatingNav"
+        nav.Size = UDim2.fromOffset(44, 0)
+        nav.Position = UDim2.fromOffset(-200, -200)
+        nav.BackgroundTransparency = 1
+        nav.BorderSizePixel = 0
+        nav.Visible = false
+        nav.ZIndex = 11
+        UI.FloatingNav = nav
+
+        local navScale = Instance.new("UIScale", nav)
+        navScale.Scale = 1
+        UI.FloatingNavScale = navScale
+
+        local scroll = Instance.new("ScrollingFrame", nav)
+        scroll.Name = "FloatingScroll"
+        scroll.Size = UDim2.fromScale(1, 1)
+        scroll.BackgroundTransparency = 1
+        scroll.BorderSizePixel = 0
+        scroll.ScrollBarThickness = 0
+        scroll.CanvasSize = UDim2.new(0, 0, 0, 0)
+        scroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
+        scroll.ScrollingDirection = Enum.ScrollingDirection.Y
+        scroll.ZIndex = 11
+        UI.FloatingNavScroll = scroll
+
+        local navLayout = Instance.new("UIListLayout", scroll)
+        navLayout.SortOrder = Enum.SortOrder.LayoutOrder
+        navLayout.Padding = UDim.new(0, 8)
+        navLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+
+        local lastX, lastY = -10000, -10000
+        self:_registerAnimator(function()
+            if not nav or not nav.Parent then return end
+            if not self._STATE.GuiVisible then
+                if nav.Visible then nav.Visible = false end
+                return
+            end
+            if self.TabPosition ~= "SideFloating" then
+                if nav.Visible then nav.Visible = false end
+                return
+            end
+            if not nav.Visible then nav.Visible = true end
+
+            local mc = UI.MainContainer
+            if not mc then return end
+            local mcAbs = mc.AbsolutePosition
+            local s = (UI.MainScale and UI.MainScale.Scale) or 1
+            if navScale.Scale ~= s then navScale.Scale = s end
+
+            local iconCount = 0
+            for _, c in ipairs(scroll:GetChildren()) do
+                if c:IsA("TextButton") then iconCount = iconCount + 1 end
+            end
+            if iconCount > 0 then
+                local fullH = iconCount * 44 + (iconCount - 1) * 8
+                if nav.Size.Y.Offset ~= fullH then
+                    nav.Size = UDim2.fromOffset(44, fullH)
+                end
+            end
+
+            local navW = 44 * s
+            local gap = 12 * s
+            local finalX = mcAbs.X - navW - gap
+            local cam = getCam()
+            if cam then finalX = math.max(8, finalX) end
+            local finalY = mcAbs.Y
+
+            if math.abs(finalX - lastX) < 0.5 and math.abs(finalY - lastY) < 0.5 then
+                return
+            end
+            lastX, lastY = finalX, finalY
+            nav.Position = UDim2.fromOffset(finalX, finalY)
+        end, "floating-nav-position")
+    end
+
     function Library:_createPinnedCard(tabName, iconSpec, catData)
         if self:_isDead() then return end
         local UI = self._UI
@@ -6006,6 +6146,37 @@
                 UI.ContentArea.Position = UDim2.new(0, sideWidth + 20, 0, 90)
             end
             if UI.BottomPill then UI.BottomPill.Visible = false end
+
+        elseif position == "SideFloating" then
+            if hasSearch and UI.SearchBar.Parent ~= UI.MainContainer then
+                UI.SearchBar.Parent = UI.MainContainer
+            end
+            UI.CategoryBar.Size = UDim2.new(1, -20, 0, 0)
+            UI.CategoryBar.Position = UDim2.new(0, 10, 0, 42)
+            UI.CategoryBar.BackgroundTransparency = 1
+            UI.CategoryBarStroke.Transparency = 1
+            if UI.FloatingNav then UI.FloatingNav.Visible = true end
+            if UI.AccordionScroll then UI.AccordionScroll.Visible = false end
+            if UI.SideProfileMini then UI.SideProfileMini.Visible = false end
+            if UI.BottomPill then UI.BottomPill.Visible = false end
+
+            UI.Sidebar.Size = UDim2.new(1, -20, 0, 30)
+            UI.Sidebar.Position = UDim2.new(0, 10, 0, 50)
+            UI.TabBarDivider.Size = UDim2.new(1, -20, 0, 1)
+            UI.TabBarDivider.Position = UDim2.new(0, 10, 0, 82)
+
+            if hasSearch then
+                UI.SearchBar.Size = UDim2.new(1, -30, 0, 28)
+                UI.SearchBar.Position = UDim2.new(0, 15, 0, 87)
+                if UI.SearchInput then UI.SearchInput.Size = UDim2.new(1, -100, 1, 0) end
+                if UI.FavoritesToggle then UI.FavoritesToggle.Position = UDim2.new(1, -48, 0.5, -8) end
+            end
+            if hasContent then
+                local contentTop = 121
+                local contentH = math.max(150, mainH - contentTop - BOTTOM_PADDING)
+                UI.ContentArea.Size = UDim2.new(1, -30, 0, contentH)
+                UI.ContentArea.Position = UDim2.new(0, 15, 0, contentTop)
+            end
 
         elseif position == "Bottom" then
             if hasSearch and UI.SearchBar.Parent ~= UI.MainContainer then
@@ -7806,6 +7977,202 @@
             table.insert(STATE.CategoryOrder, categoryName)
         end
 
+        if self.TabPosition == "SideFloating" then
+            local nav = UI.FloatingNav
+            local scroll = UI.FloatingNavScroll
+            if not nav or not scroll then
+                error("[DoD UI] SideFloating requires _initFloatingNav, which failed.")
+            end
+
+            local order = #STATE.CategoryOrder
+            local iconBtn = Instance.new("TextButton", scroll)
+            iconBtn.Name = "Float_" .. categoryName
+            iconBtn.LayoutOrder = order
+            iconBtn.Size = UDim2.fromOffset(44, 44)
+            iconBtn.BackgroundColor3 = self._Colors.Card
+            iconBtn.BackgroundTransparency = 0.4
+            iconBtn.Text = ""
+            iconBtn.AutoButtonColor = false
+            iconBtn.BorderSizePixel = 0
+            iconBtn.ZIndex = 11
+            Instance.new("UICorner", iconBtn).CornerRadius = UDim.new(0, 12)
+
+            local iStroke = Instance.new("UIStroke", iconBtn)
+            iStroke.Color = self._Colors.Border
+            iStroke.Thickness = 1
+            iStroke.Transparency = 0.5
+
+            local iScale = Instance.new("UIScale", iconBtn)
+            iScale.Scale = 1
+
+            local iImg = Instance.new("ImageLabel", iconBtn)
+            iImg.Size = UDim2.fromOffset(20, 20)
+            iImg.Position = UDim2.new(0.5, -10, 0.5, -10)
+            iImg.BackgroundTransparency = 1
+            if iconSpec then
+                if string.sub(iconSpec, 1, 6) == "asset:" then
+                    iImg.Image = "rbxassetid://" .. string.sub(iconSpec, 7)
+                else
+                    iImg.Image = GetIcon(iconSpec)
+                end
+            else
+                iImg.Image = GetIcon("hexagon")
+            end
+            iImg.ImageColor3 = self._Colors.TextDim
+            iImg.ImageTransparency = 0.4
+            iImg.ScaleType = Enum.ScaleType.Fit
+            iImg.ZIndex = 12
+
+            local activeBar = Instance.new("Frame", iconBtn)
+            activeBar.Name = "ActiveBar"
+            activeBar.Size = UDim2.fromOffset(3, 16)
+            activeBar.AnchorPoint = Vector2.new(1, 0.5)
+            activeBar.Position = UDim2.new(0, -2, 0.5, 0)
+            activeBar.BackgroundColor3 = self._Colors.Accent
+            activeBar.BorderSizePixel = 0
+            activeBar.Visible = false
+            activeBar.ZIndex = 13
+            Instance.new("UICorner", activeBar).CornerRadius = UDim.new(1, 0)
+
+            local pill = Instance.new("Frame", scroll)
+            pill.Name = "FloatPill_" .. categoryName
+            pill.AnchorPoint = Vector2.new(1, 0.5)
+            pill.Position = UDim2.fromOffset(-6, (order - 1) * 52 + 22)
+            pill.Size = UDim2.new(0, 0, 0, 26)
+            pill.AutomaticSize = Enum.AutomaticSize.X
+            pill.BackgroundColor3 = self._Colors.Bg2
+            pill.BackgroundTransparency = 1
+            pill.BorderSizePixel = 0
+            pill.Visible = false
+            pill.ZIndex = 20
+            Instance.new("UICorner", pill).CornerRadius = UDim.new(0, 8)
+
+            local pStroke = Instance.new("UIStroke", pill)
+            pStroke.Color = self._Colors.Accent
+            pStroke.Thickness = 1
+            pStroke.Transparency = 0.2
+
+            local pPad = Instance.new("UIPadding", pill)
+            pPad.PaddingLeft = UDim.new(0, 10)
+            pPad.PaddingRight = UDim.new(0, 12)
+            pPad.PaddingTop = UDim.new(0, 4)
+            pPad.PaddingBottom = UDim.new(0, 4)
+
+            local pLabel = Instance.new("TextLabel", pill)
+            pLabel.Size = UDim2.new(0, 0, 1, 0)
+            pLabel.AutomaticSize = Enum.AutomaticSize.X
+            pLabel.BackgroundTransparency = 1
+            pLabel.Text = categoryName
+            pLabel.TextColor3 = self._Colors.Text
+            pLabel.Font = Enum.Font.GothamBold
+            pLabel.TextSize = 12
+            pLabel.TextXAlignment = Enum.TextXAlignment.Center
+            pLabel.TextTransparency = 1
+            pLabel.ZIndex = 21
+
+            local floating = {
+                btn = iconBtn,
+                img = iImg,
+                stroke = iStroke,
+                scale = iScale,
+                activeBar = activeBar,
+                pill = pill,
+                pillStroke = pStroke,
+                pillLabel = pLabel,
+                isActive = false,
+                hovered = false,
+            }
+
+            local pillBaseY = (order - 1) * 52 + 22
+
+            iconBtn.MouseEnter:Connect(function()
+                if self:_isDead() then return end
+                floating.hovered = true
+                TweenService:Create(iScale, TweenInfo.new(0.18, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {Scale = 0.92}):Play()
+                TweenService:Create(iStroke, TweenInfo.new(0.18), {
+                    Color = self._Colors.Accent,
+                    Transparency = 0.3,
+                }):Play()
+                TweenService:Create(iconBtn, TweenInfo.new(0.18), {
+                    BackgroundTransparency = 0.15,
+                }):Play()
+                if not floating.isActive then
+                    TweenService:Create(iImg, TweenInfo.new(0.18), {
+                        ImageColor3 = self._Colors.Accent,
+                        ImageTransparency = 0,
+                    }):Play()
+                end
+
+                pill.Visible = true
+                pill.Position = UDim2.fromOffset(-6, pillBaseY)
+                pill.BackgroundTransparency = 1
+                pLabel.TextTransparency = 1
+                TweenService:Create(pill, TweenInfo.new(0.22, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
+                    Position = UDim2.fromOffset(-10, pillBaseY),
+                    BackgroundTransparency = 0.05,
+                }):Play()
+                TweenService:Create(pLabel, TweenInfo.new(0.22), {
+                    TextTransparency = 0,
+                }):Play()
+            end)
+
+            iconBtn.MouseLeave:Connect(function()
+                if self:_isDead() then return end
+                floating.hovered = false
+                TweenService:Create(iScale, TweenInfo.new(0.18, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {Scale = 1}):Play()
+                TweenService:Create(iStroke, TweenInfo.new(0.18), {
+                    Color = floating.isActive and self._Colors.Accent or self._Colors.Border,
+                    Transparency = floating.isActive and 0 or 0.5,
+                }):Play()
+                TweenService:Create(iconBtn, TweenInfo.new(0.18), {
+                    BackgroundTransparency = floating.isActive and 0.8 or 0.4,
+                }):Play()
+                if not floating.isActive then
+                    TweenService:Create(iImg, TweenInfo.new(0.18), {
+                        ImageColor3 = self._Colors.TextDim,
+                        ImageTransparency = 0.4,
+                    }):Play()
+                end
+
+                TweenService:Create(pill, TweenInfo.new(0.15, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
+                    Position = UDim2.fromOffset(-6, pillBaseY),
+                    BackgroundTransparency = 1,
+                }):Play()
+                TweenService:Create(pLabel, TweenInfo.new(0.15), {
+                    TextTransparency = 1,
+                }):Play()
+                task.delay(0.16, function()
+                    if not floating.hovered then pill.Visible = false end
+                end)
+            end)
+
+            iconBtn.MouseButton1Click:Connect(function()
+                if self:_isDead() then return end
+                self:PlaySound("TabSwitch")
+                self:SetActiveCategory(categoryName)
+            end)
+
+            STATE.CategoryButtons[categoryName] = {
+                button = iconBtn,
+                icon = iImg,
+                label = nil,
+                floating = floating,
+            }
+
+            self:_registerThemeRefresher(function()
+                if not iconBtn.Parent then return end
+                iconBtn.BackgroundColor3 = floating.isActive and self._Colors.Accent or self._Colors.Card
+                iStroke.Color = floating.isActive and self._Colors.Accent or self._Colors.Border
+                iImg.ImageColor3 = floating.isActive and self._Colors.Accent or self._Colors.TextDim
+                activeBar.BackgroundColor3 = self._Colors.Accent
+                pStroke.Color = self._Colors.Accent
+                pLabel.TextColor3 = self._Colors.Text
+                pill.BackgroundColor3 = self._Colors.Bg2
+            end)
+
+            return iconBtn
+        end
+
         if self.TabPosition == "Side" and self.TabStyle == "FlatList" and UI.AccordionScroll then
             local group = Instance.new("Frame", UI.AccordionScroll)
             group.Name = "FlatGroup_" .. categoryName
@@ -8087,7 +8454,7 @@
         local STATE = self._STATE
         local UI = self._UI
         if not STATE.CategoryButtons then return end
-        if self.TabPosition == "Side" then
+        if self.TabPosition == "Side" or self.TabPosition == "SideFloating" then
             if UI.BottomPill then UI.BottomPill.Visible = false end
             return
         end
@@ -8153,7 +8520,7 @@
         local STATE = self._STATE
         local UI = self._UI
         if not (UI and UI.CategoryIndicator) then return end
-        if self.TabPosition == "Side" then
+        if self.TabPosition == "Side" or self.TabPosition == "SideFloating" then
             UI.CategoryIndicator.Visible = false
             return
         end
@@ -8296,7 +8663,30 @@
         STATE.ActiveCategory = categoryName
         STATE.ActiveSubIndices = STATE.ActiveSubIndices or {}
 
-        if self.TabPosition ~= "Side" then
+        if self.TabPosition == "SideFloating" then
+            for name, data in pairs(STATE.CategoryButtons or {}) do
+                if data.floating then
+                    local f = data.floating
+                    local active = (name == categoryName)
+                    f.isActive = active
+                    TweenService:Create(f.stroke, TweenInfo.new(0.2), {
+                        Color = active and self._Colors.Accent or self._Colors.Border,
+                        Transparency = active and 0 or 0.5,
+                    }):Play()
+                    TweenService:Create(f.btn, TweenInfo.new(0.2), {
+                        BackgroundColor3 = active and self._Colors.Accent or self._Colors.Card,
+                        BackgroundTransparency = active and 0.8 or 0.4,
+                    }):Play()
+                    TweenService:Create(f.img, TweenInfo.new(0.2), {
+                        ImageColor3 = active and self._Colors.Accent or self._Colors.TextDim,
+                        ImageTransparency = active and 0 or 0.4,
+                    }):Play()
+                    f.activeBar.Visible = active
+                end
+            end
+        end
+
+        if self.TabPosition ~= "Side" and self.TabPosition ~= "SideFloating" then
             for name, data in pairs(STATE.CategoryButtons or {}) do
                 local active = (name == categoryName)
 
@@ -8968,11 +9358,12 @@
         bodyLayout.SortOrder = Enum.SortOrder.LayoutOrder
         bodyLayout.Padding = UDim.new(0, self:_densityPadding(8))
 
+        local _compactPad = self._isMobile or self:_isNarrow()
         local bodyPad = Instance.new("UIPadding", body)
-        bodyPad.PaddingLeft = UDim.new(0, self._isMobile and 8 or 12)
-        bodyPad.PaddingRight = UDim.new(0, self._isMobile and 16 or 20)
-        bodyPad.PaddingTop = UDim.new(0, self._isMobile and 6 or 10)
-        bodyPad.PaddingBottom = UDim.new(0, self._isMobile and 10 or 14)
+        bodyPad.PaddingLeft = UDim.new(0, _compactPad and 8 or 12)
+        bodyPad.PaddingRight = UDim.new(0, _compactPad and 16 or 20)
+        bodyPad.PaddingTop = UDim.new(0, _compactPad and 6 or 10)
+        bodyPad.PaddingBottom = UDim.new(0, _compactPad and 10 or 14)
 
         local scrollTrack = Instance.new("Frame", section)
         scrollTrack.Name = "ScrollTrack"
@@ -9342,7 +9733,7 @@
         local HomeCard = Instance.new("Frame", topContainer)
         HomeCard.Name = "HomeProfileCard"
         HomeCard.LayoutOrder = #topContainer:GetChildren() + 1
-        HomeCard.Size = UDim2.new(1, 0, 0, 148)
+        HomeCard.Size = UDim2.new(1, 0, 0, 100)
         HomeCard.BackgroundColor3 = self._Colors.Card
         HomeCard.BorderSizePixel = 0
         HomeCard.ClipsDescendants = true
@@ -9355,8 +9746,8 @@
         local bust = Instance.new("ImageLabel", HomeCard)
         bust.Name = "AvatarBust"
         bust.AnchorPoint = Vector2.new(1, 1)
-        bust.Position = UDim2.new(1, -8, 1, 4)
-        bust.Size = UDim2.fromOffset(140, 140)
+        bust.Position = UDim2.new(1, -10, 1, 6)
+        bust.Size = UDim2.fromOffset(80, 80)
         bust.BackgroundTransparency = 1
         bust.Image = "rbxthumb://type=AvatarBust&id=" .. tostring(LocalPlayer.UserId) .. "&w=420&h=420"
         bust.ScaleType = Enum.ScaleType.Fit
@@ -9371,9 +9762,9 @@
 
         local statusDot = Instance.new("Frame", bust)
         statusDot.Name = "StatusDot"
-        statusDot.Size = UDim2.fromOffset(12, 12)
+        statusDot.Size = UDim2.fromOffset(10, 10)
         statusDot.AnchorPoint = Vector2.new(1, 1)
-        statusDot.Position = UDim2.new(1, -22, 1, -22)
+        statusDot.Position = UDim2.new(1, -12, 1, -12)
         statusDot.BackgroundColor3 = Color3.fromRGB(52, 211, 153)
         statusDot.BorderSizePixel = 0
         statusDot.ZIndex = 4
@@ -9386,8 +9777,8 @@
 
         local welcomeLbl = Instance.new("TextLabel", HomeCard)
         welcomeLbl.Name = "Welcome"
-        welcomeLbl.Size = UDim2.new(1, -180, 0, 14)
-        welcomeLbl.Position = UDim2.new(0, 22, 0, 20)
+        welcomeLbl.Size = UDim2.new(1, -110, 0, 11)
+        welcomeLbl.Position = UDim2.new(0, 20, 0, 10)
         welcomeLbl.BackgroundTransparency = 1
         welcomeLbl.Text = string.upper(self.WelcomeText or GetGreeting())
         welcomeLbl.TextColor3 = self._Colors.TextDim
@@ -9398,8 +9789,8 @@
 
         local displayLbl = Instance.new("TextLabel", HomeCard)
         displayLbl.Name = "DisplayName"
-        displayLbl.Size = UDim2.new(1, -180, 0, 30)
-        displayLbl.Position = UDim2.new(0, 22, 0, 36)
+        displayLbl.Size = UDim2.new(1, -110, 0, 22)
+        displayLbl.Position = UDim2.new(0, 20, 0, 22)
         displayLbl.BackgroundTransparency = 1
         displayLbl.Text = LocalPlayer.DisplayName or LocalPlayer.Name
         displayLbl.TextColor3 = self._Colors.Text
@@ -9411,8 +9802,8 @@
 
         local userLbl = Instance.new("TextLabel", HomeCard)
         userLbl.Name = "Username"
-        userLbl.Size = UDim2.new(1, -180, 0, 16)
-        userLbl.Position = UDim2.new(0, 22, 0, 68)
+        userLbl.Size = UDim2.new(1, -110, 0, 12)
+        userLbl.Position = UDim2.new(0, 20, 0, 44)
         userLbl.BackgroundTransparency = 1
         userLbl.Text = "@" .. LocalPlayer.Name
         userLbl.TextColor3 = self._Colors.TextDim
@@ -9424,8 +9815,8 @@
 
         local chipsRow = Instance.new("Frame", HomeCard)
         chipsRow.Name = "Chips"
-        chipsRow.Size = UDim2.new(1, -44, 0, 24)
-        chipsRow.Position = UDim2.new(0, 22, 1, -44)
+        chipsRow.Size = UDim2.new(1, -40, 0, 20)
+        chipsRow.Position = UDim2.new(0, 20, 1, -26)
         chipsRow.BackgroundTransparency = 1
         chipsRow.ZIndex = 3
 
@@ -9462,7 +9853,7 @@
 
             local icon = Instance.new("ImageLabel", chip)
             icon.LayoutOrder = 1
-            icon.Size = UDim2.fromOffset(12, 12)
+            icon.Size = UDim2.fromOffset(10, 10)
             icon.BackgroundTransparency = 1
             icon.Image = GetIcon(iconName)
             icon.ImageColor3 = self._Colors.Accent
@@ -9476,7 +9867,7 @@
             lbl.Text = text
             lbl.TextColor3 = self._Colors.Text
             lbl.Font = Enum.Font.GothamBold
-            lbl.TextSize = 10
+            lbl.TextSize = 9
             lbl.TextXAlignment = Enum.TextXAlignment.Left
 
             return chip, lbl, icon, chipStroke
@@ -9573,8 +9964,19 @@
         GameSubLbl.ZIndex = 3
 
         task.spawn(function()
+            task.wait()
+            self._productInfoCache = self._productInfoCache or {}
+            local _piKey = tostring(game.PlaceId)
+            local info = self._productInfoCache[_piKey]
+            if not info then
+                local fetchOk = pcall(function()
+                    info = MarketplaceService:GetProductInfo(game.PlaceId)
+                end)
+                if fetchOk and info then
+                    self._productInfoCache[_piKey] = info
+                end
+            end
             local ok = pcall(function()
-                local info = MarketplaceService:GetProductInfo(game.PlaceId)
                 if not info or self:_isDead() then return end
                 if info.Name and info.Name ~= "" then
                     placeName = info.Name
@@ -10079,7 +10481,9 @@
                     local url = string.format(
                         "https://games.roblox.com/v1/games/%d/servers/Public?sortOrder=Asc&limit=100&excludeFullGames=true",
                         game.PlaceId)
-                    local response = HttpService:JSONDecode(game:HttpGet(url))
+                    task.wait()
+                    local response = HttpService:JSONDecode(Fn.httpGet(url))
+                    task.wait()
                     local picked = nil
                     if response and type(response.data) == "table" then
 
@@ -14505,6 +14909,16 @@
         if UI.AcrylicTexture then TweenService:Create(UI.AcrylicTexture, tweenInfo, {BackgroundTransparency = 1}):Play() end
         if UI.AcrylicSheen then TweenService:Create(UI.AcrylicSheen, tweenInfo, {BackgroundTransparency = 1}):Play() end
         if UI.FocusOverlay then TweenService:Create(UI.FocusOverlay, tweenInfo, {BackgroundTransparency = 1}):Play() end
+        if UI.MainStroke then TweenService:Create(UI.MainStroke, tweenInfo, {Transparency = 1}):Play() end
+        if UI.AmbientGlow then
+            TweenService:Create(UI.AmbientGlow, tweenInfo, {ImageTransparency = 1}):Play()
+            task.delay(0.5, function()
+                if UI.AmbientGlow and not self._STATE.GuiVisible then
+                    UI.AmbientGlow.Visible = false
+                end
+            end)
+        end
+        if UI.AmbientGlow then TweenService:Create(UI.AmbientGlow, tweenInfo, {ImageTransparency = 1}):Play() end
 
         st.Completed:Connect(function(playbackState)
             if STATE.Destroyed then return end
@@ -14692,6 +15106,16 @@
             if UI.AcrylicTexture then TweenService:Create(UI.AcrylicTexture, tweenInfo, {BackgroundTransparency = 1}):Play() end
             if UI.AcrylicSheen then TweenService:Create(UI.AcrylicSheen, tweenInfo, {BackgroundTransparency = 1}):Play() end
             TweenService:Create(UI.FocusOverlay, tweenInfo, {BackgroundTransparency = 1}):Play()
+            if UI.MainStroke then TweenService:Create(UI.MainStroke, tweenInfo, {Transparency = 1}):Play() end
+            if UI.AmbientGlow then
+                TweenService:Create(UI.AmbientGlow, tweenInfo, {ImageTransparency = 1}):Play()
+                task.delay(0.4, function()
+                    if UI.AmbientGlow and not self._STATE.GuiVisible then
+                        UI.AmbientGlow.Visible = false
+                    end
+                end)
+            end
+            if UI.AmbientGlow then TweenService:Create(UI.AmbientGlow, tweenInfo, {ImageTransparency = 1}):Play() end
 
             local _tScale = self._adaptiveScaleTarget or 1
             STATE.GuiTween = TweenService:Create(UI.MainScale, tweenInfo, {Scale = _tScale * 0.96})
@@ -14767,6 +15191,16 @@
             TweenService:Create(UI.MainContainer, tweenInfo, {BackgroundTransparency = mainBgTrans, Position = basePos}):Play()
             if UI.AcrylicTexture then TweenService:Create(UI.AcrylicTexture, tweenInfo, {BackgroundTransparency = self.Acrylic and 0.94 or 1}):Play() end
             if UI.AcrylicSheen then TweenService:Create(UI.AcrylicSheen, tweenInfo, {BackgroundTransparency = self.Acrylic and 0.72 or 1}):Play() end
+            if UI.MainStroke then TweenService:Create(UI.MainStroke, tweenInfo, {Transparency = 0}):Play() end
+            if UI.AmbientGlow then
+                UI.AmbientGlow.Visible = true
+                UI.AmbientGlow.ImageTransparency = 1
+                TweenService:Create(UI.AmbientGlow, tweenInfo, {ImageTransparency = 0.83}):Play()
+            end
+            if UI.AmbientGlow then
+                UI.AmbientGlow.ImageTransparency = 1
+                TweenService:Create(UI.AmbientGlow, tweenInfo, {ImageTransparency = 0.83}):Play()
+            end
 
             STATE.GuiTween = TweenService:Create(UI.MainScale, tweenInfo, {Scale = _tScale})
             STATE.GuiTween:Play()
