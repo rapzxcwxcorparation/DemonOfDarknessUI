@@ -1638,7 +1638,10 @@
 
                 task.wait(self._perfTier == "Potato" and 12 or 4)
                 if self:_isDead() then return end
-                if self._perfAuto == true then
+                if self._STATE.AnimatingGui or not self._STATE.GuiVisible then
+                    badStreak = 0
+                    goodStreak = 0
+                elseif self._perfAuto == true then
                     local samples = {}
                     local conn
                     conn = RunService.RenderStepped:Connect(function(dt)
@@ -1866,6 +1869,7 @@
             error("[DoD UI] SetAcrylic expects a boolean enabled value.")
         end
         if blurIntensity ~= nil then self:SetAcrylicIntensity(blurIntensity) end
+        if self.Acrylic == enabled and blurIntensity == nil then return end
         self.Acrylic = enabled
 
         local UI = self._UI
@@ -1895,7 +1899,9 @@
 
     function Library:SetReducedMotion(enabled)
         if self:_isDead() then return end
-        _ReducedMotion = enabled and true or false
+        local _newVal = enabled and true or false
+        if _ReducedMotion == _newVal then return end
+        _ReducedMotion = _newVal
         self._STATE.ReducedMotion = _ReducedMotion
     end
 
@@ -1910,6 +1916,7 @@
         if self:_isDead() then return end
         local mode = tostring(density or "Normal")
         if mode ~= "Compact" and mode ~= "Spacious" then mode = "Normal" end
+        if self._STATE.LayoutDensity == mode then return end
         self._STATE.LayoutDensity = mode
         local function applyPadding(layout, base)
             if layout then
@@ -1936,6 +1943,7 @@
     function Library:SetSectionTransparency(transparency)
         if self:_isDead() then return end
         local trans = math.clamp(tonumber(transparency) or 0.15, 0, 1)
+        if self._STATE.SectionTransparency == trans then return end
         self._STATE.SectionTransparency = trans
 
         local rowTrans = math.clamp(trans + 0.1, 0, 1)
@@ -2856,7 +2864,8 @@
             end
 
             _mousePumpAccum = _mousePumpAccum + dt
-            if _mousePumpAccum < (1 / 30) then return end
+            local _mpThrottle = self._STATE.GuiVisible and (1 / 30) or (1 / 10)
+            if _mousePumpAccum < _mpThrottle then return end
             _mousePumpAccum = 0
 
             if self._isMobile then
@@ -7501,7 +7510,7 @@
         if state.GuiVisible then
             if self.Acrylic then blurSize = self.AcrylicBlurIntensity end
             if state.FocusOverlayEnabled and self._perfTier ~= "Potato" then
-                blurSize = math.max(blurSize, 12)
+                blurSize = math.max(blurSize, 4)
             end
         end
         if self._perfTier == "Potato" then
@@ -7697,6 +7706,10 @@
 
             if _ReducedMotion then return end
 
+            STATE._weatherAccum = (STATE._weatherAccum or 0) + dt
+            if STATE._weatherAccum < (1 / 30) then return end
+            dt = STATE._weatherAccum
+            STATE._weatherAccum = 0
             STATE.WeatherClock = STATE.WeatherClock + dt
             local T = STATE.WeatherClock
 
@@ -14967,7 +14980,8 @@
         TweenService:Create(UI.GuiBlur, TweenInfo.new(0.25), {Size = 0}):Play()
 
         local _tScale = self._adaptiveScaleTarget or 1
-        local st = TweenService:Create(UI.MainScale, tweenInfo, {Scale = _tScale * 0.92})
+        UI.MainScale.Scale = _tScale * 0.92
+        local st = TweenService:Create(UI.MainScale, tweenInfo, {Scale = _tScale * 0.9201})
         st:Play()
 
         TweenService:Create(UI.MainContainer, tweenInfo, {
@@ -15057,6 +15071,7 @@
             self._scrollPumpInstalled = true
             self:_registerAnimator(function(dt)
                 if self:_isDead() then return end
+                if not self._STATE.GuiVisible then return end
                 local frames = self._STATE.ScrollFrames
                 for i = #frames, 1, -1 do
                     local f = frames[i]
@@ -15171,9 +15186,9 @@
             STATE.SavedPos = UI.MainContainer.Position
             local targetPos = UDim2.new(STATE.SavedPos.X.Scale, STATE.SavedPos.X.Offset, STATE.SavedPos.Y.Scale, STATE.SavedPos.Y.Offset + 30)
 
-            local tweenInfo = TweenInfo.new(0.3, Enum.EasingStyle.Quart, Enum.EasingDirection.In)
+            local tweenInfo = TweenInfo.new(0.2, Enum.EasingStyle.Quart, Enum.EasingDirection.In)
 
-            TweenService:Create(UI.GuiBlur, tweenInfo, {Size = 0}):Play()
+            TweenService:Create(UI.GuiBlur, TweenInfo.new(0.1), {Size = 0}):Play()
             TweenService:Create(UI.MainContainer, tweenInfo, {BackgroundTransparency = 1, Position = targetPos}):Play()
             if UI.AcrylicTexture then TweenService:Create(UI.AcrylicTexture, tweenInfo, {BackgroundTransparency = 1}):Play() end
             if UI.AcrylicSheen then TweenService:Create(UI.AcrylicSheen, tweenInfo, {BackgroundTransparency = 1}):Play() end
@@ -15190,19 +15205,17 @@
             if UI.AmbientGlow then TweenService:Create(UI.AmbientGlow, tweenInfo, {ImageTransparency = 1}):Play() end
 
             local _tScale = self._adaptiveScaleTarget or 1
-            STATE.GuiTween = TweenService:Create(UI.MainScale, tweenInfo, {Scale = _tScale * 0.96})
-            STATE.GuiTween:Play()
+            UI.MainScale.Scale = _tScale * 0.96
+            STATE.GuiTween = nil
 
-            STATE.GuiTween.Completed:Connect(function(playbackState)
-                if STATE.Destroyed then return end
-                if playbackState == Enum.PlaybackState.Cancelled then
-                    settleAnimation()
-                    return
+            task.delay(tweenInfo.Time, function()
+                if STATE.Destroyed or self:_isDead() then return end
+                if self._STATE.GuiVisible then return end
+                if not STATE.ToggleQueued then
+                    UI.MainContainer.Visible = false
+                    UI.ParticleBG.Visible = false
+                    UI.FocusOverlay.Visible = false
                 end
-                UI.MainContainer.Visible = false
-                UI.ParticleBG.Visible = false
-                UI.FocusOverlay.Visible = false
-                STATE.GuiVisible = false
                 settleAnimation()
             end)
         else
@@ -15238,31 +15251,27 @@
             local _tScale = self._adaptiveScaleTarget or 1
             if fromPill then
                 UI.MainContainer.Position = UDim2.new(0.5, 0, 0, 30)
-                UI.MainScale.Scale = _tScale * 0.4
             else
                 UI.MainContainer.Position = startPos
-                UI.MainScale.Scale = _tScale * 0.96
             end
+            UI.MainScale.Scale = _tScale
             UI.MainContainer.BackgroundTransparency = 1
             if UI.AcrylicTexture then UI.AcrylicTexture.BackgroundTransparency = 1 end
             if UI.AcrylicSheen then UI.AcrylicSheen.BackgroundTransparency = 1 end
             UI.GuiBlur.Size = 0
 
-            local tweenInfo = TweenInfo.new(0.4, Enum.EasingStyle.Quart, Enum.EasingDirection.Out)
+            local tweenInfo = TweenInfo.new(0.25, Enum.EasingStyle.Quart, Enum.EasingDirection.Out)
 
             if STATE.FocusOverlayEnabled and self._perfTier ~= "Potato" then
-                task.delay(0.25, function()
+                task.delay(0.15, function()
                     if not STATE.Destroyed and STATE.GuiVisible and UI.FocusOverlay then
                         UI.FocusOverlay.Visible = true
-                        UI.FocusOverlay.BackgroundTransparency = 1
-                        TweenService:Create(UI.FocusOverlay, tweenInfo, {
-                            BackgroundTransparency = (D.Themes[self.ThemeName] or {}).OverlayTransparency or 0.45
-                        }):Play()
+                        UI.FocusOverlay.BackgroundTransparency = (D.Themes[self.ThemeName] or {}).OverlayTransparency or 0.45
                     end
                 end)
             end
 
-            TweenService:Create(UI.GuiBlur, tweenInfo, {Size = blurTarget}):Play()
+            TweenService:Create(UI.GuiBlur, TweenInfo.new(0.15), {Size = blurTarget}):Play()
             TweenService:Create(UI.MainContainer, tweenInfo, {BackgroundTransparency = mainBgTrans, Position = basePos}):Play()
             if UI.AcrylicTexture then TweenService:Create(UI.AcrylicTexture, tweenInfo, {BackgroundTransparency = self.Acrylic and 0.94 or 1}):Play() end
             if UI.AcrylicSheen then TweenService:Create(UI.AcrylicSheen, tweenInfo, {BackgroundTransparency = self.Acrylic and 0.72 or 1}):Play() end
@@ -15277,15 +15286,11 @@
                 TweenService:Create(UI.AmbientGlow, tweenInfo, {ImageTransparency = 0.83}):Play()
             end
 
-            STATE.GuiTween = TweenService:Create(UI.MainScale, tweenInfo, {Scale = _tScale})
-            STATE.GuiTween:Play()
+            STATE.GuiTween = nil
 
-            STATE.GuiTween.Completed:Connect(function(playbackState)
-                if STATE.Destroyed then return end
-                if playbackState == Enum.PlaybackState.Cancelled then
-                    settleAnimation()
-                    return
-                end
+            task.delay(tweenInfo.Time, function()
+                if STATE.Destroyed or self:_isDead() then return end
+                if not self._STATE.GuiVisible then return end
                 settleAnimation()
             end)
         end
