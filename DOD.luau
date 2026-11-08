@@ -2066,7 +2066,7 @@
         if icon then
             TweenService:Create(icon, TweenInfo.new(0.15), {
                 ImageColor3 = self._STATE.FavoritesOnly and self._Colors.Accent or self._Colors.TextDim,
-                ImageTransparency = self._STATE.FavoritesOnly and 0 or 0.4,
+                ImageTransparency = self._STATE.FavoritesOnly and 0 or 1,
             }):Play()
         end
         if self._STATE.FavoritesOnly then
@@ -5445,7 +5445,33 @@
         end
 
         UI.TrafficDots[1].MouseButton1Click:Connect(function()
-            self:Destroy()
+            if self:_isDead() then return end
+            if self._STATE.AnimatingGui then return end
+            local STATE = self._STATE
+            STATE.AnimatingGui = true
+            self:_hideTooltip(true)
+            self:PlaySound("ToggleOff")
+            if STATE.GuiVisible then
+                for _, _entry in ipairs(STATE.activeDropdownPopups) do
+                    if _entry and _entry.close then pcall(_entry.close) end
+                end
+            end
+            local info = TweenInfo.new(0.22, Enum.EasingStyle.Quint, Enum.EasingDirection.In)
+            TweenService:Create(UI.MainContainer, info, {BackgroundTransparency = 1}):Play()
+            if UI.MainStroke then TweenService:Create(UI.MainStroke, info, {Transparency = 1}):Play() end
+            if UI.AmbientGlow then TweenService:Create(UI.AmbientGlow, info, {ImageTransparency = 1}):Play() end
+            if UI.AcrylicTexture then TweenService:Create(UI.AcrylicTexture, info, {BackgroundTransparency = 1}):Play() end
+            if UI.AcrylicSheen then TweenService:Create(UI.AcrylicSheen, info, {BackgroundTransparency = 1}):Play() end
+            if UI.FocusOverlay then TweenService:Create(UI.FocusOverlay, info, {BackgroundTransparency = 1}):Play() end
+            if UI.GuiBlur then TweenService:Create(UI.GuiBlur, info, {Size = 0}):Play() end
+            local _s = (UI.MainScale and UI.MainScale.Scale) or 1
+            local _st = TweenService:Create(UI.MainScale, info, {Scale = _s * 0.92})
+            _st:Play()
+            _st.Completed:Connect(function()
+                if not self:_isDead() then
+                    self:Destroy()
+                end
+            end)
         end)
 
         self._hudState    = "NORMAL"
@@ -6164,18 +6190,18 @@
                 UI.SearchBar.Size = UDim2.new(1, -20, 0, 32)
                 UI.SearchBar.Position = UDim2.new(0, 10, 0, 10)
                 if UI.SearchInput then
-                    UI.SearchInput.Size = UDim2.new(1, -100, 1, 0)
+                    UI.SearchInput.Size = UDim2.new(1, -96, 1, 0)
                     UI.SearchInput.Position = UDim2.new(0, 36, 0, 0)
                     UI.SearchInput.PlaceholderText = "Search settings..."
                 end
                 if UI.SearchIcon then UI.SearchIcon.ZIndex = 2 end
                 if UI.FavoritesToggle then
-                    UI.FavoritesToggle.Position = UDim2.new(1, -48, 0.5, -8)
+                    UI.FavoritesToggle.Position = UDim2.new(1, -46, 0.5, -7)
                     UI.FavoritesToggle.ZIndex = 4
                 end
                 local clearBtn = UI.SearchBar:FindFirstChild("ClearBtn")
                 if clearBtn then
-                    clearBtn.Position = UDim2.new(1, -26, 0.5, -8)
+                    clearBtn.Position = UDim2.new(1, -24, 0.5, -7)
                     clearBtn.ZIndex = 4
                 end
             end
@@ -6427,8 +6453,8 @@
 
         local starBtn = Instance.new("TextButton", UI.SearchBar)
         starBtn.Name = "FavoritesToggle"
-        starBtn.Size = UDim2.fromOffset(16, 16)
-        starBtn.Position = UDim2.new(1, -48, 0.5, -8)
+        starBtn.Size = UDim2.fromOffset(14, 14)
+        starBtn.Position = UDim2.new(1, -46, 0.5, -7)
         starBtn.BackgroundTransparency = 1
         starBtn.Text = ""
         starBtn.AutoButtonColor = false
@@ -6438,17 +6464,45 @@
         starIcon.BackgroundTransparency = 1
         starIcon.Image = GetIcon("star")
         starIcon.ImageColor3 = self._Colors.TextDim
-        starIcon.ImageTransparency = 0.4
+        starIcon.ImageTransparency = 1
         starBtn.MouseButton1Click:Connect(function()
             self:SetFavoritesOnly(not self._STATE.FavoritesOnly)
         end)
         UI.FavoritesToggle = starBtn
         UI.FavoritesToggleIcon = starIcon
+        local _starBaseTrans = 1
+        UI.SearchBar.MouseEnter:Connect(function()
+            if self._STATE.FavoritesOnly then return end
+            TweenService:Create(starIcon, TweenInfo.new(0.15), {
+                ImageTransparency = 0.35,
+                ImageColor3 = self._Colors.TextDim,
+            }):Play()
+        end)
+        UI.SearchBar.MouseLeave:Connect(function()
+            if self._STATE.FavoritesOnly then return end
+            TweenService:Create(starIcon, TweenInfo.new(0.15), {
+                ImageTransparency = 1,
+            }):Play()
+        end)
+        starBtn.MouseEnter:Connect(function()
+            if self._STATE.FavoritesOnly then return end
+            TweenService:Create(starIcon, TweenInfo.new(0.15), {
+                ImageTransparency = 0,
+                ImageColor3 = self._Colors.Text,
+            }):Play()
+        end)
+        starBtn.MouseLeave:Connect(function()
+            if self._STATE.FavoritesOnly then return end
+            TweenService:Create(starIcon, TweenInfo.new(0.15), {
+                ImageTransparency = 0.35,
+                ImageColor3 = self._Colors.TextDim,
+            }):Play()
+        end)
 
         local clearBtn = Instance.new("TextButton", UI.SearchBar)
         clearBtn.Name = "ClearBtn"
-        clearBtn.Size = UDim2.fromOffset(16, 16)
-        clearBtn.Position = UDim2.new(1, -26, 0.5, -8)
+        clearBtn.Size = UDim2.fromOffset(14, 14)
+        clearBtn.Position = UDim2.new(1, -24, 0.5, -7)
         clearBtn.BackgroundTransparency = 1
         clearBtn.Text = ""
         clearBtn.AutoButtonColor = false
@@ -14972,16 +15026,16 @@
         UserInputService.MouseBehavior = Enum.MouseBehavior.Default
 
         STATE.SavedPos = UI.MainContainer.Position
-        local slideDist = 40
+        local slideDist = 12
         local targetPos = UDim2.new(STATE.SavedPos.X.Scale, STATE.SavedPos.X.Offset, STATE.SavedPos.Y.Scale, STATE.SavedPos.Y.Offset - slideDist)
 
-        local tweenInfo = TweenInfo.new(0.35, Enum.EasingStyle.Quint, Enum.EasingDirection.Out)
+        local tweenInfo = TweenInfo.new(0.28, Enum.EasingStyle.Quint, Enum.EasingDirection.In)
 
-        TweenService:Create(UI.GuiBlur, TweenInfo.new(0.25), {Size = 0}):Play()
+        TweenService:Create(UI.GuiBlur, TweenInfo.new(0.22), {Size = 0}):Play()
 
         local _tScale = self._adaptiveScaleTarget or 1
         UI.MainScale.Scale = _tScale * 0.92
-        local st = TweenService:Create(UI.MainScale, tweenInfo, {Scale = _tScale * 0.9201})
+        local st = TweenService:Create(UI.MainScale, tweenInfo, {Scale = _tScale * 0.85})
         st:Play()
 
         TweenService:Create(UI.MainContainer, tweenInfo, {
@@ -15000,7 +15054,6 @@
                 end
             end)
         end
-        if UI.AmbientGlow then TweenService:Create(UI.AmbientGlow, tweenInfo, {ImageTransparency = 1}):Play() end
 
         st.Completed:Connect(function(playbackState)
             if STATE.Destroyed then return end
@@ -15202,7 +15255,6 @@
                     end
                 end)
             end
-            if UI.AmbientGlow then TweenService:Create(UI.AmbientGlow, tweenInfo, {ImageTransparency = 1}):Play() end
 
             local _tScale = self._adaptiveScaleTarget or 1
             UI.MainScale.Scale = _tScale * 0.96
@@ -15246,21 +15298,22 @@
             end
 
             local basePos = STATE.SavedPos or UI.MainContainer.Position
-            local startPos = UDim2.new(basePos.X.Scale, basePos.X.Offset, basePos.Y.Scale, basePos.Y.Offset + 30)
+            local startPos = UDim2.new(basePos.X.Scale, basePos.X.Offset, basePos.Y.Scale, basePos.Y.Offset + 8)
 
             local _tScale = self._adaptiveScaleTarget or 1
             if fromPill then
                 UI.MainContainer.Position = UDim2.new(0.5, 0, 0, 30)
+                UI.MainScale.Scale = _tScale * 0.5
             else
                 UI.MainContainer.Position = startPos
+                UI.MainScale.Scale = _tScale * 0.92
             end
-            UI.MainScale.Scale = _tScale
             UI.MainContainer.BackgroundTransparency = 1
             if UI.AcrylicTexture then UI.AcrylicTexture.BackgroundTransparency = 1 end
             if UI.AcrylicSheen then UI.AcrylicSheen.BackgroundTransparency = 1 end
             UI.GuiBlur.Size = 0
 
-            local tweenInfo = TweenInfo.new(0.25, Enum.EasingStyle.Quart, Enum.EasingDirection.Out)
+            local tweenInfo = TweenInfo.new(0.30, Enum.EasingStyle.Quint, Enum.EasingDirection.Out)
 
             if STATE.FocusOverlayEnabled and self._perfTier ~= "Potato" then
                 task.delay(0.15, function()
@@ -15281,12 +15334,9 @@
                 UI.AmbientGlow.ImageTransparency = 1
                 TweenService:Create(UI.AmbientGlow, tweenInfo, {ImageTransparency = 0.83}):Play()
             end
-            if UI.AmbientGlow then
-                UI.AmbientGlow.ImageTransparency = 1
-                TweenService:Create(UI.AmbientGlow, tweenInfo, {ImageTransparency = 0.83}):Play()
-            end
 
-            STATE.GuiTween = nil
+            STATE.GuiTween = TweenService:Create(UI.MainScale, tweenInfo, {Scale = _tScale})
+            STATE.GuiTween:Play()
 
             task.delay(tweenInfo.Time, function()
                 if STATE.Destroyed or self:_isDead() then return end
