@@ -82,6 +82,34 @@
         ["code"] = "rbxassetid://7733991600",
         ["move"] = "rbxassetid://7734028058",
         ["cpu"] = "rbxassetid://7734005169",
+        ["minus"] = "rbxassetid://7733988022",
+        ["maximize-2"] = "rbxassetid://7734028058",
+        ["square"] = "rbxassetid://7734028058",
+        ["minus-circle"] = "rbxassetid://7733988022",
+        ["crown"] = "rbxassetid://7734060101",
+        ["clock"] = "rbxassetid://7733951517",
+        ["user-x"] = "rbxassetid://7734082053",
+        ["flame"] = "rbxassetid://7734088669",
+        ["diamond"] = "rbxassetid://7734060101",
+        ["gem"] = "rbxassetid://7734060101",
+        ["eye"] = "rbxassetid://7734057332",
+        ["wrench"] = "rbxassetid://7734065547",
+        ["cog"] = "rbxassetid://7734065547",
+        ["database"] = "rbxassetid://7733991600",
+        ["terminal"] = "rbxassetid://7734007240",
+        ["box"] = "rbxassetid://7734028058",
+        ["package"] = "rbxassetid://7734028058",
+        ["layers"] = "rbxassetid://7734028058",
+        ["gamepad-2"] = "rbxassetid://7734007240",
+        ["bot"] = "rbxassetid://7734082053",
+        ["infinity"] = "rbxassetid://7734028058",
+        ["orbit"] = "rbxassetid://7733951517",
+        ["atom"] = "rbxassetid://7734005169",
+        ["sparkles"] = "rbxassetid://7734060101",
+        ["lock-keyhole"] = "rbxassetid://7734069485",
+        ["lock-keyhole-open"] = "rbxassetid://7734069485",
+        ["ghost"] = "rbxassetid://7734082053",
+        ["skull"] = "rbxassetid://7734082053",
     }
 
     local function GetIcon(name)
@@ -199,6 +227,28 @@
             warn("[DoD UI] " .. tostring(label or "unknown") .. " failed: " .. tostring(err))
         end
         return ok, err
+    end
+
+    Fn.httpGet = function(url, retry)
+        if type(request) == "function" then
+            local ok, res = pcall(request, {Url = url, Method = "GET"})
+            if ok and type(res) == "table" and type(res.Body) == "string" then
+                return res.Body
+            end
+        end
+        if type(syn) == "table" and type(syn.request) == "function" then
+            local ok, res = pcall(syn.request, {Url = url, Method = "GET"})
+            if ok and type(res) == "table" and type(res.Body) == "string" then
+                return res.Body
+            end
+        end
+        if type(http_request) == "function" then
+            local ok, res = pcall(http_request, {Url = url, Method = "GET"})
+            if ok and type(res) == "table" and type(res.Body) == "string" then
+                return res.Body
+            end
+        end
+        return game:HttpGet(url, retry)
     end
 
     Fn.bindPressAnimation = function(guiObject)
@@ -1048,14 +1098,62 @@
         if opts.Acrylic ~= nil and type(opts.Acrylic) ~= "boolean" then
             error("[DoD UI] Acrylic must be a boolean.")
         end
-        self.WindowSize = opts.Size or UDim2.fromOffset(750, 500)
+        self.WindowSize = opts.Size or UDim2.fromOffset(900, 580)
         self.WallpaperSource = opts.Wallpaper
         self.WallpaperTransparency = opts.WallpaperTransparency or 0
+        self._wallpaperInFlight = false
+        self._wallpaperQueued = nil
+        self._productInfoCache = {}
 
         if opts.SectionDefaultOpen ~= nil and type(opts.SectionDefaultOpen) ~= "boolean" then
             error("[DoD UI] SectionDefaultOpen must be a boolean.")
         end
         self.SectionDefaultOpen = opts.SectionDefaultOpen == true
+
+        self.SearchPlaceholder = opts.SearchPlaceholder or "Search settings..."
+        if type(self.SearchPlaceholder) ~= "string" then
+            error("[DoD UI] SearchPlaceholder must be a string.")
+        end
+
+        self.Tier = opts.Tier
+        if self.Tier ~= nil and type(self.Tier) ~= "string" then
+            error("[DoD UI] Tier must be a string or nil.")
+        end
+        self.TierIcon = (type(opts.TierIcon) == "string" and opts.TierIcon ~= "") and opts.TierIcon or "star"
+        if opts.WelcomeText ~= nil and type(opts.WelcomeText) ~= "string" then
+            error("[DoD UI] WelcomeText must be a string or nil.")
+        end
+        self.WelcomeText = opts.WelcomeText
+
+        self.AmbientGlow = opts.AmbientGlow
+        if self.AmbientGlow == nil then
+            self.AmbientGlow = UserInputService.MouseEnabled
+        end
+        if type(self.AmbientGlow) ~= "boolean" then
+            error("[DoD UI] AmbientGlow must be a boolean.")
+        end
+
+        self.LogoHalo = opts.LogoHalo
+        if self.LogoHalo == nil then
+            self.LogoHalo = UserInputService.MouseEnabled
+        end
+        if type(self.LogoHalo) ~= "boolean" then
+            error("[DoD UI] LogoHalo must be a boolean.")
+        end
+
+        self.RowHeights = {
+            toggle = 44, button = 42, slider = 44, dropdown = 40,
+            keybind = 36, textbox = 40, colorpicker = 40,
+        }
+        if type(opts.RowHeights) == "table" then
+            for k, v in pairs(opts.RowHeights) do
+                if type(v) == "number" and v > 0 then
+                    self.RowHeights[k] = v
+                end
+            end
+        end
+
+        self._bp = "wide"
 
         self.AutoTheme = opts.AutoTheme == true
         self.Acrylic = opts.Acrylic ~= false
@@ -1069,8 +1167,8 @@
             or self.AcrylicBlurIntensity > 24 or self.AcrylicBlurIntensity ~= self.AcrylicBlurIntensity then
             error("[DoD UI] AcrylicBlur must be a number between 0 and 24.")
         end
-        if self.TabPosition ~= "Top" and self.TabPosition ~= "Side" and self.TabPosition ~= "Bottom" then
-            error('[DoD UI] TabPosition must be "Top", "Side", or "Bottom".')
+        if self.TabPosition ~= "Top" and self.TabPosition ~= "Side" and self.TabPosition ~= "Bottom" and self.TabPosition ~= "SideFloating" then
+            error('[DoD UI] TabPosition must be "Top", "Side", "Bottom", or "SideFloating".')
         end
 
         if opts.AccentColor ~= nil and typeof(opts.AccentColor) ~= "Color3" then
@@ -1179,6 +1277,7 @@
             AnimatingGui        = false,
             GuiTween            = nil,
             TrackedConns        = {},
+            Animators           = {},
             Destroyed           = false,
             ActiveCategory      = nil,
             ActiveTab           = nil,
@@ -1209,13 +1308,23 @@
             _closeCallbacks     = {},
         }
 
+        if opts.NotifMax ~= nil then
+            if type(opts.NotifMax) ~= "number" or opts.NotifMax < 1 or opts.NotifMax > 10 or opts.NotifMax % 1 ~= 0 then
+                error("[DoD UI] NotifMax must be an integer between 1 and 10.")
+            end
+            self._STATE.NotifMax = opts.NotifMax
+            self._NotifMaxOverride = opts.NotifMax
+        end
+
         self:_initNotifications()
-        self:_initCursorTrail()
         self:_initMainGui()
         self:_initKeybindOverlay()
         self:_initTitleBar()
         self:_initTrafficLights()
         self:_initSidebar()
+        if self.TabPosition == "SideFloating" then
+            self:_initFloatingNav()
+        end
         self:_initSearchBar()
         self:_initContentArea()
         self:_applyNavigationLayout()
@@ -1250,7 +1359,11 @@
         end, self)
 
         if self.WallpaperSource then
-            self:SetWallpaper(self.WallpaperSource, self.WallpaperTransparency)
+            task.delay(2, function()
+                if not self:_isDead() then
+                    self:SetWallpaper(self.WallpaperSource, self.WallpaperTransparency)
+                end
+            end)
         end
 
         local g = (getgenv and getgenv()) or _G
@@ -1832,7 +1945,9 @@
                     sec.section.BackgroundTransparency = trans
                     for _, control in ipairs(sec.controls or {}) do
                         local inst = control.instance
-                        if inst and inst.Parent and inst:IsA("GuiObject") then
+                        local ct = control.ctrlType
+                        if inst and inst.Parent and inst:IsA("GuiObject")
+                            and ct ~= "label" and ct ~= "paragraph" then
                             inst.BackgroundTransparency = rowTrans
                         end
                     end
@@ -1927,6 +2042,7 @@
         gui.IgnoreGuiInset = not self._isMobile
         if self._isMobile then gui.ScreenInsets = Enum.ScreenInsets.DeviceSafeInsets end
         self._UI.NotifGui = gui
+        self:_installAnimatorPump()
     end
 
     function Library:SetNotificationPosition(pos)
@@ -2078,6 +2194,10 @@
         local function close(confirmed)
             if closed then return end
             closed = true
+            if self._ActiveConfirmEscConn then
+                pcall(function() Fn.untrack(self._ActiveConfirmEscConn, self) end)
+                self._ActiveConfirmEscConn = nil
+            end
             self._ConfirmAnimating = false
             if self._ActiveConfirm == overlay then self._ActiveConfirm = nil end
             TweenService:Create(overlay, TweenInfo.new(0.15), {BackgroundTransparency = 1}):Play()
@@ -2114,7 +2234,7 @@
         self._ActiveConfirm = overlay
         self._ActiveConfirmClose = close
 
-        Fn.track(UserInputService.InputBegan, function(input, gp)
+        self._ActiveConfirmEscConn = Fn.track(UserInputService.InputBegan, function(input, gp)
             if gp then return end
             if input.KeyCode ~= Enum.KeyCode.Escape then return end
             if self._ActiveConfirm == overlay then
@@ -2137,9 +2257,11 @@
     function Library:_getNotifMetrics()
         local cam = getCam()
         local vpX = (cam and cam.ViewportSize.X) or 800
-        if self._isMobile then
+        if self._isMobile or vpX < 400 then
             local w = math.clamp(vpX - 32, 180, 220)
             return w, 46, 7
+        elseif vpX < 700 then
+            return 260, 50, 8
         end
         return 280, 56, 9
     end
@@ -2383,6 +2505,12 @@
         text = tostring(text or "")
         notifyType = tostring(notifyType or "info")
 
+        if not self._NotifMaxOverride then
+            if self._bp == "narrow" then STATE.NotifMax = 2
+            elseif self._bp == "medium" then STATE.NotifMax = 3
+            else STATE.NotifMax = 4 end
+        end
+
         if STATE.NotifActive >= STATE.NotifMax then
             local queue = STATE.NotifQueue
             table.insert(queue, { title = title, text = text, nType = notifyType })
@@ -2572,8 +2700,8 @@
             local frame = Instance.new("Frame", UI.MainContainer)
             frame.Name = "LoadingFrame"
             frame.Size = UDim2.fromOffset(220, 42)
-            frame.Position = UDim2.new(1, -16, 1, -16)
-            frame.AnchorPoint = Vector2.new(1, 1)
+            frame.Position = UDim2.new(0, 16, 1, -16)
+            frame.AnchorPoint = Vector2.new(0, 1)
             frame.BackgroundColor3 = self._Colors.Bg2
             frame.BackgroundTransparency = 0.1
             frame.BorderSizePixel = 0
@@ -2621,18 +2749,18 @@
                 pcall(function() self._loadingSpinConn:Disconnect() end)
                 self._loadingSpinConn = nil
             end
-            self._loadingSpinConn = Fn.track(RunService.RenderStepped, function(dt)
+            self._loadingSpinConn = self:_registerAnimator(function(dt)
                 if _ReducedMotion then return end
                 if not spinner or not spinner.Parent then
                     if self._loadingSpinConn then
-                        Fn.untrack(self._loadingSpinConn, self)
+                        self:_unregisterAnimator(self._loadingSpinConn)
                         self._loadingSpinConn = nil
                     end
                     return
                 end
                 angle = (angle + dt * 360) % 360
                 spinner.Rotation = angle
-            end, self)
+            end, "spinner")
         else
             UI.LoadingLabel.Text = tostring(label or "Loading...")
             if UI.LoadingBar then UI.LoadingBar.Size = UDim2.new(0, 0, 0, 2) end
@@ -2651,7 +2779,7 @@
         if self:_isDead() then return end
 
         if self._loadingSpinConn then
-            pcall(function() Fn.untrack(self._loadingSpinConn, self) end)
+            self:_unregisterAnimator(self._loadingSpinConn)
             self._loadingSpinConn = nil
         end
         local frame = self._UI.LoadingFrame
@@ -2720,7 +2848,7 @@
         end
 
         local _mousePumpAccum = 0
-        Fn.track(RunService.RenderStepped, function(dt)
+        self:_registerAnimator(function(dt)
             if self._STATE.Destroyed then return end
 
             if self._STATE.GuiVisible and UserInputService.MouseBehavior ~= Enum.MouseBehavior.Default then
@@ -2772,7 +2900,7 @@
                 UI.CustomCursor.Position = UDim2.fromOffset(mouse.X, mouse.Y)
             end
             self:_updateCursorTrail(mouse)
-        end, self)
+        end, "mouse-pump")
 
         UI.FocusOverlay = Instance.new("Frame", UI.MainGui)
         UI.FocusOverlay.Name = "FocusOverlay"
@@ -2873,7 +3001,7 @@
         end, self)
 
         local _particleAccum = 0
-        self._particleBGConn = Fn.track(RunService.RenderStepped, function(dt)
+        self:_registerAnimator(function(dt)
             if not UI.ParticleBG.Visible then return end
             if _ReducedMotion then return end
 
@@ -2908,7 +3036,7 @@
                 if ny < 0 then ny = 1 elseif ny > 1 then ny = 0 end
                 data.obj.Position = UDim2.fromScale(nx, ny)
             end
-        end, self)
+        end, "particle-bg")
 
         Fn.track(UserInputService:GetPropertyChangedSignal("MouseIconEnabled"), function()
             if not self._STATE or self._STATE.Destroyed then return end
@@ -2961,8 +3089,14 @@
                 math.min(_minH, UI.MainSizeConstraint.MaxSize.Y)
             )
         end
+        self:_updateBreakpoint()
         updateSizeLimit()
         self:_bindViewportSignal(updateSizeLimit)
+        self:_bindViewportSignal(function()
+            if not self:_isDead() then
+                self:_updateBreakpoint()
+            end
+        end)
 
         UI.Wallpaper = Instance.new("ImageLabel", MC)
         UI.Wallpaper.Name = "Wallpaper"
@@ -3037,6 +3171,59 @@
         UI.MainStroke.Color = self._Colors.Border
         UI.MainStroke.Thickness = 1.5
 
+        if self.AmbientGlow then
+            local glow = Instance.new("ImageLabel", UI.MainGui)
+            glow.Name = "AmbientGlow"
+            glow.BackgroundTransparency = 1
+            glow.AnchorPoint = MC.AnchorPoint
+            glow.Position = MC.Position
+            glow.Size = UDim2.new(MC.Size.X.Scale, MC.Size.X.Offset + 90, MC.Size.Y.Scale, MC.Size.Y.Offset + 90)
+            glow.ZIndex = 9
+            glow.Image = "rbxassetid://5028857084"
+            glow.ImageColor3 = self._Colors.AccentDark or self._Colors.Accent2 or self._Colors.Accent
+            glow.ImageTransparency = 0.83
+            glow.ScaleType = Enum.ScaleType.Slice
+            glow.SliceCenter = Rect.new(24, 24, 276, 276)
+            UI.AmbientGlow = glow
+
+            local glowScale = Instance.new("UIScale", glow)
+            glowScale.Scale = UI.MainScale and UI.MainScale.Scale or 1
+            UI.AmbientGlowScale = glowScale
+
+            Fn.track(UI.MainScale:GetPropertyChangedSignal("Scale"), function()
+                if UI.AmbientGlowScale and UI.MainScale then
+                    UI.AmbientGlowScale.Scale = UI.MainScale.Scale
+                end
+            end, self)
+
+            Fn.track(MC:GetPropertyChangedSignal("Position"), function()
+                if UI.AmbientGlow then
+                    UI.AmbientGlow.Position = MC.Position
+                end
+            end, self)
+
+            Fn.track(MC:GetPropertyChangedSignal("Size"), function()
+                if UI.AmbientGlow then
+                    UI.AmbientGlow.Size = UDim2.new(
+                        MC.Size.X.Scale, MC.Size.X.Offset + 90,
+                        MC.Size.Y.Scale, MC.Size.Y.Offset + 90
+                    )
+                end
+            end, self)
+
+            Fn.track(MC:GetPropertyChangedSignal("Visible"), function()
+                if UI.AmbientGlow and UI.AmbientGlow.Parent then
+                    UI.AmbientGlow.Visible = MC.Visible
+                end
+            end, self)
+
+            self:_registerThemeRefresher(function()
+                if UI.AmbientGlow and UI.AmbientGlow.Parent then
+                    UI.AmbientGlow.ImageColor3 = self._Colors.AccentDark or self._Colors.Accent2 or self._Colors.Accent
+                end
+            end)
+        end
+
         local resizeHandle = Instance.new("ImageLabel")
         resizeHandle.Name = "ResizeHandle"
         resizeHandle.Parent = MC
@@ -3060,7 +3247,7 @@
         local _mFontSz = _mBtnMob and math.clamp(math.floor(_mBtnH * 0.30), 12, 16) or 11
         self._minBtnBaseW = _mBtnW
         self._minBtnBaseH = _mBtnH
-        self._minBtnBaseY = _mBtnMob and 20 or 16
+        self._minBtnBaseY = _mBtnMob and 36 or 16
 
         local minBtn = Instance.new("TextButton")
         minBtn.Name = "MinimizeButton"
@@ -3161,7 +3348,7 @@
             local fontSz = mob and math.clamp(math.floor(h * 0.30), 12, 16) or 11
             self._minBtnBaseW = w
             self._minBtnBaseH = h
-            self._minBtnBaseY = mob and 20 or 16
+            self._minBtnBaseY = mob and 36 or 16
             minIcon.Size = UDim2.fromOffset(iconSz, iconSz)
             minIcon.Position = UDim2.new(0, 14, 0.5, -iconSz / 2)
             minText.Size = UDim2.new(1, -(iconSz + 26), 1, 0)
@@ -3937,6 +4124,7 @@
 
     function Library:SetToggleKey(key, mods)
         if self:_isDead() then return end
+        local _oldKey, _oldMods = self.ToggleKey, self.ToggleMods
         if typeof(key) ~= "EnumItem" or key.EnumType ~= Enum.KeyCode then
             error("[DoD UI] SetToggleKey expects an Enum.KeyCode.")
         end
@@ -3964,7 +4152,9 @@
         if self._UI.TitleToggleHint then
             self._UI.TitleToggleHint.Text = display
         end
-        self:Notify("KEYBIND", "Toggle GUI: " .. display)
+        if _oldKey ~= self.ToggleKey or not Fn.modsMatch(_oldMods, self.ToggleMods) then
+            self:Notify("KEYBIND", "Toggle GUI: " .. display)
+        end
     end
 
     function Library:_generateAutoTheme(imageStr)
@@ -4087,30 +4277,47 @@
                 return
             end
 
-            local cachedAsset = self:_getCachedWallpaper(img)
-            if type(cachedAsset) == "string" and cachedAsset ~= "" then
-                UI.Wallpaper.Image = cachedAsset
-                UI.Wallpaper.ImageTransparency = trans
-                UI.Wallpaper.Visible = true
-                self:Notify("WALLPAPER", "Wallpaper restored from cache", "info")
+            local cachedFile = self:_getCachedWallpaper(img)
+            if type(cachedFile) == "string" and cachedFile ~= "" then
+                local _fileExists = false
+                pcall(function() _fileExists = isfile and isfile(cachedFile) end)
+                if _fileExists then
+                    local _ok, _assetUrl = pcall(getcustomasset, cachedFile)
+                    if _ok and type(_assetUrl) == "string" then
+                        UI.Wallpaper.Image = _assetUrl
+                        UI.Wallpaper.ImageTransparency = trans
+                        UI.Wallpaper.Visible = true
+                        self:Notify("WALLPAPER", "Wallpaper restored from cache", "info")
+                        return
+                    end
+                end
+            end
+
+            if self._wallpaperInFlight then
+                self._wallpaperQueued = { url = img, trans = trans }
+                self:Notify("WALLPAPER", "Download queued...", "info")
                 return
             end
+            self._wallpaperInFlight = true
 
             self:Notify("WALLPAPER", "Downloading...", "info")
             if self.ShowLoading then self:ShowLoading("Downloading wallpaper...") end
 
             task.spawn(function()
+                local _wpOk, _wpErr = pcall(function()
                 local timedOut = false
-                local watchdog = task.delay(10, function()
+                local watchdog = task.delay(4, function()
                     if timedOut then return end
                     timedOut = true
                     if self.HideLoading then self:HideLoading() end
                     if self:_isDead() then return end
-                    self:Notify("WALLPAPER", "Download timeout (>10s) — server slow or unreachable", "error")
+                    self:Notify("WALLPAPER", "Download timeout (>4s)", "error")
                 end)
+                task.wait()
                 local success, content = pcall(function()
-                    return game:HttpGet(img, true)
+                    return Fn.httpGet(img, true)
                 end)
+                task.wait()
                 if watchdog then pcall(task.cancel, watchdog) end
                 if timedOut or self:_isDead() then return end
 
@@ -4133,13 +4340,14 @@
                 local baseName = self:_wallpaperCachePath(img):gsub("%.url$", "")
                 local fileName = baseName .. ext
 
+                local _urlPrefix = self:_wallpaperCachePath(img):gsub("%.url$", "")
                 if listfiles and delfile then
                     pcall(function()
                         for _, f in ipairs(listfiles()) do
                             local base = string.match(tostring(f), "[^\\/]+$") or tostring(f)
-                            if string.find(base, "DoD_Wallpaper_", 1, true)
+                            if string.find(base, _urlPrefix, 1, true)
                             and base ~= fileName
-                            and base ~= (baseName .. ".url") then
+                            and not string.find(base, "%.url$") then
                                 delfile(f)
                             end
                         end
@@ -4164,7 +4372,7 @@
                     self:Notify("WALLPAPER", "Gagal load file lokal ke Roblox", "error")
                     return
                 end
-                pcall(function() self:_setWallpaperCache(img, assetContent) end)
+                pcall(function() self:_setWallpaperCache(img, fileName) end)
 
                 local setOk = pcall(function()
                     UI.Wallpaper.Image = assetContent
@@ -4177,6 +4385,16 @@
                     self:_generateAutoTheme(img)
                 else
                     self:Notify("WALLPAPER", "Gagal apply gambar ke UI", "error")
+                end
+                end)
+                if not _wpOk then
+                    warn("[DoD UI] Wallpaper download error: " .. tostring(_wpErr))
+                end
+                self._wallpaperInFlight = false
+                local _wpQ = self._wallpaperQueued
+                self._wallpaperQueued = nil
+                if _wpQ and not self:_isDead() then
+                    self:SetWallpaper(_wpQ.url, _wpQ.trans)
                 end
             end)
             return
@@ -4222,7 +4440,7 @@
         end
         self._cursorTrailEnabled = enabled
         if enabled then
-
+            self:_initCursorTrail()
             self._perfCursorBlocked = false
             self._cursorTrailPrevPos = UserInputService:GetMouseLocation()
             self._cursorTrailSpawnDist = 0
@@ -4321,7 +4539,10 @@
     function Library:_updateCursorTrail(mouse)
         if not self._cursorTrailEnabled then return end
         if self._perfCursorBlocked then return end
-        if not self._cursorTrailPool then return end
+        if not self._cursorTrailPool then
+            self:_initCursorTrail()
+            if not self._cursorTrailPool then return end
+        end
         if self._isMobile then return end
         if not self._UI.CustomCursor or not self._UI.CustomCursor.Visible then
             for _, _dot in ipairs(self._cursorTrailPool) do
@@ -4565,9 +4786,11 @@
         task.spawn(function()
 
             local function attempt(isRetry)
+                task.wait()
                 local ok, content = pcall(function()
-                    return game:HttpGet(source, true)
+                    return Fn.httpGet(source, true)
                 end)
+                task.wait()
                 if not ok or type(content) ~= "string" or #content == 0 then
                     if not isRetry then
                         task.wait(1)
@@ -4709,6 +4932,26 @@
         logoBadge.BorderSizePixel = 0
         Instance.new("UICorner", logoBadge).CornerRadius = UDim.new(0, 8)
 
+        if self.LogoHalo then
+            local logoHalo = Instance.new("ImageLabel", logoBadge)
+            logoHalo.Name = "LogoHalo"
+            logoHalo.AnchorPoint = Vector2.new(0.5, 0.5)
+            logoHalo.Position = UDim2.fromScale(0.5, 0.5)
+            logoHalo.Size = UDim2.fromScale(2.2, 2.2)
+            logoHalo.BackgroundTransparency = 1
+            logoHalo.Image = "rbxassetid://5028857084"
+            logoHalo.ImageColor3 = self._Colors.Accent
+            logoHalo.ImageTransparency = 0.65
+            logoHalo.ZIndex = 0
+            UI.TitleLogoHalo = logoHalo
+
+            self:_registerThemeRefresher(function()
+                if UI.TitleLogoHalo and UI.TitleLogoHalo.Parent then
+                    UI.TitleLogoHalo.ImageColor3 = self._Colors.Accent
+                end
+            end)
+        end
+
         local logoStroke = Instance.new("UIStroke", logoBadge)
         logoStroke.Color = Color3.new(1, 1, 1)
         logoStroke.Thickness = 1
@@ -4776,6 +5019,7 @@
         UI.TitleLabel.TextSize = 14
         UI.TitleLabel.TextXAlignment = Enum.TextXAlignment.Left
         UI.TitleLabel.TextYAlignment = Enum.TextYAlignment.Center
+        UI.TitleLabel.TextTruncate = Enum.TextTruncate.AtEnd
 
         UI.TitleSubtitle = Instance.new("TextLabel", UI.TitleBar)
         UI.TitleSubtitle.Size = UDim2.new(0, 200, 1, 0)
@@ -4895,11 +5139,6 @@
                 end
             end)
 
-            if self.TitleBarColor then
-                self._TitleBarAutoTint = self.TitleBarColor
-                self:_applyTitleBarTint(self.TitleBarColor)
-            end
-
             UI.TitleImageLabel = img
             UI.TitleImageContainer = imgContainer
 
@@ -4908,6 +5147,11 @@
                     img.ImageColor3 = self._Colors.Text
                 end
             end)
+        end
+
+        if self.TitleBarColor then
+            self._TitleBarAutoTint = self.TitleBarColor
+            self:_applyTitleBarTint(self.TitleBarColor)
         end
 
         UI.TitleVersionBadge = Instance.new("TextLabel", UI.TitleBar)
@@ -5116,7 +5360,8 @@
 
             local badgeW = UI.TitleVersionBadge.AbsoluteSize.X
             if badgeW <= 0 then badgeW = 40 end
-            local badgeStart = 46 + mainTextW + (subTextW > 0 and subTextW + 12 or 10)
+            local labelX = self.TitleImage and 12 or 46
+            local badgeStart = labelX + mainTextW + (subTextW > 0 and subTextW + 12 or 10)
             local badgeEnd = badgeStart + badgeW
 
             local hintStart = width - hintOffset - hintW
@@ -5274,10 +5519,16 @@
                 }):Play()
             elseif target == "MAXIMIZED" then
                 local vp = camera.ViewportSize
-                TweenService:Create(UI.MainContainer, hudTweenInfo, {
+                local tw = TweenService:Create(UI.MainContainer, hudTweenInfo, {
                     Size = UDim2.new(0, math.max(1, vp.X - 40), 0, math.max(1, vp.Y - 40)),
                     Position = UDim2.new(0.5, 0, 0.5, 0),
-                }):Play()
+                })
+                tw:Play()
+                tw.Completed:Connect(function()
+                    if self._hudState == "MAXIMIZED" then
+                        self:_applyNavigationLayout()
+                    end
+                end)
             else
                 local tw = TweenService:Create(UI.MainContainer, hudTweenInfo, {
                     Size = self._hudNormalSize,
@@ -5322,7 +5573,7 @@
         local container = Instance.new("Frame", UI.TitleBar)
         container.Name = "Windows11Controls"
         local btnW = self._isMobile and 52 or 46
-        local btnH = self._isMobile and 40 or 32
+        local btnH = self._isMobile and 34 or 32
         local totalW = btnW * 3
         container.Size = UDim2.fromOffset(totalW, btnH)
         container.Position = UDim2.new(1, -totalW, 0.5, -(btnH / 2))
@@ -5357,8 +5608,8 @@
                     TweenService:Create(btn, TweenInfo.new(0.1), {BackgroundColor3 = Color3.fromRGB(196, 43, 28), BackgroundTransparency = 0}):Play()
                     TweenService:Create(icon, TweenInfo.new(0.1), {ImageColor3 = Color3.new(1, 1, 1)}):Play()
                 else
-                    TweenService:Create(btn, TweenInfo.new(0.1), {BackgroundColor3 = Color3.fromRGB(50, 50, 50), BackgroundTransparency = 0}):Play()
-                    TweenService:Create(icon, TweenInfo.new(0.1), {ImageColor3 = Color3.new(1, 1, 1)}):Play()
+                    TweenService:Create(btn, TweenInfo.new(0.1), {BackgroundColor3 = self._Colors.CardHover, BackgroundTransparency = 0}):Play()
+                    TweenService:Create(icon, TweenInfo.new(0.1), {ImageColor3 = self._Colors.Text}):Play()
                 end
             end)
             btn.MouseLeave:Connect(function()
@@ -5405,7 +5656,7 @@
         end
 
         local minCtl = makeBtn(1, "minus", doMinimize, false)
-        local maxCtl = makeBtn(2, "copy", doMaximize, false)
+        local maxCtl = makeBtn(2, "maximize-2", doMaximize, false)
         local closeCtl = makeBtn(3, "x", doClose, true)
 
         self:_registerThemeRefresher(function()
@@ -5519,8 +5770,8 @@
 
         local miniProfile = Instance.new("Frame", UI.CategoryBar)
         miniProfile.Name = "SideProfileMini"
-        miniProfile.Size = UDim2.new(1, -16, 0, 36)
-        miniProfile.Position = UDim2.new(0, 8, 1, -44)
+        miniProfile.Size = UDim2.new(1, -16, 0, 52)
+        miniProfile.Position = UDim2.new(0, 8, 1, -60)
         miniProfile.BackgroundColor3 = self._Colors.Card
         miniProfile.BackgroundTransparency = 0.5
         miniProfile.BorderSizePixel = 0
@@ -5533,32 +5784,74 @@
         spStroke.Thickness = 1
         spStroke.Transparency = 0.5
 
-        local spAvatar = Instance.new("ImageLabel", miniProfile)
+        local spAvatarWrap = Instance.new("Frame", miniProfile)
+        spAvatarWrap.Name = "AvatarWrap"
+        spAvatarWrap.Size = UDim2.fromOffset(32, 32)
+        spAvatarWrap.Position = UDim2.new(0, 10, 0.5, -16)
+        spAvatarWrap.BackgroundTransparency = 1
+        spAvatarWrap.ZIndex = 11
+
+        local spAvatar = Instance.new("ImageLabel", spAvatarWrap)
         spAvatar.Name = "Avatar"
-        spAvatar.Size = UDim2.fromOffset(22, 22)
-        spAvatar.Position = UDim2.new(0, 8, 0.5, -11)
+        spAvatar.Size = UDim2.fromScale(1, 1)
         spAvatar.BackgroundColor3 = self._Colors.Bg2
         spAvatar.BorderSizePixel = 0
         spAvatar.ZIndex = 11
         spAvatar.Image = "rbxthumb://type=AvatarHeadShot&id=" .. tostring(LocalPlayer.UserId) .. "&w=150&h=150&filters=circular"
         Instance.new("UICorner", spAvatar).CornerRadius = UDim.new(1, 0)
 
+        local spAvatarRing = Instance.new("UIStroke", spAvatar)
+        spAvatarRing.Color = self._Colors.Accent
+        spAvatarRing.Thickness = 1.5
+        spAvatarRing.Transparency = 0.4
+
+        local spStatus = Instance.new("Frame", spAvatarWrap)
+        spStatus.Name = "StatusDot"
+        spStatus.Size = UDim2.fromOffset(10, 10)
+        spStatus.AnchorPoint = Vector2.new(1, 1)
+        spStatus.Position = UDim2.new(1, 2, 1, 2)
+        spStatus.BackgroundColor3 = Color3.fromRGB(52, 211, 153)
+        spStatus.BorderSizePixel = 0
+        spStatus.ZIndex = 13
+        Instance.new("UICorner", spStatus).CornerRadius = UDim.new(1, 0)
+
+        local spStatusRing = Instance.new("UIStroke", spStatus)
+        spStatusRing.Color = self._Colors.Card
+        spStatusRing.Thickness = 2
+        spStatusRing.Transparency = 0
+
         local spName = Instance.new("TextLabel", miniProfile)
-        spName.Name = "Name"
-        spName.Size = UDim2.new(1, -44, 1, 0)
-        spName.Position = UDim2.new(0, 36, 0, 0)
+        spName.Name = "DisplayName"
+        spName.Size = UDim2.new(1, -58, 0, 16)
+        spName.Position = UDim2.new(0, 50, 0, 10)
         spName.BackgroundTransparency = 1
-        spName.Text = LocalPlayer.Name
+        spName.Text = LocalPlayer.DisplayName or LocalPlayer.Name
         spName.TextColor3 = self._Colors.Text
         spName.Font = Enum.Font.GothamBold
-        spName.TextSize = 12
+        spName.TextSize = 13
         spName.TextXAlignment = Enum.TextXAlignment.Left
         spName.TextTruncate = Enum.TextTruncate.AtEnd
         spName.ZIndex = 11
 
+        local spUser = Instance.new("TextLabel", miniProfile)
+        spUser.Name = "Username"
+        spUser.Size = UDim2.new(1, -58, 0, 14)
+        spUser.Position = UDim2.new(0, 50, 0, 28)
+        spUser.BackgroundTransparency = 1
+        spUser.Text = "@" .. LocalPlayer.Name
+        spUser.TextColor3 = self._Colors.TextDim
+        spUser.Font = Enum.Font.GothamMedium
+        spUser.TextSize = 10
+        spUser.TextXAlignment = Enum.TextXAlignment.Left
+        spUser.TextTruncate = Enum.TextTruncate.AtEnd
+        spUser.ZIndex = 11
+
         UI.SideProfileMini = miniProfile
         UI.SideProfileAvatar = spAvatar
+        UI.SideProfileAvatarWrap = spAvatarWrap
+        UI.SideProfileStatus = spStatus
         UI.SideProfileName = spName
+        UI.SideProfileUser = spUser
         UI.SideProfileStroke = spStroke
 
         UI.BottomPill = Instance.new("Frame", UI.CategoryBar)
@@ -5581,6 +5874,9 @@
             miniProfile.BackgroundColor3 = self._Colors.Card
             spStroke.Color = self._Colors.Border
             spName.TextColor3 = self._Colors.Text
+            if spUser then spUser.TextColor3 = self._Colors.TextDim end
+            if spAvatarRing then spAvatarRing.Color = self._Colors.Accent end
+            if spStatusRing then spStatusRing.Color = self._Colors.Card end
             spAvatar.BackgroundColor3 = self._Colors.Bg2
             if accordionScroll and accordionScroll.Parent then
                 accordionScroll.ScrollBarImageColor3 = self._Colors.Accent
@@ -5609,6 +5905,84 @@
         catIndicator.Visible = false
         Instance.new("UICorner", catIndicator).CornerRadius = UDim.new(1, 0)
         UI.CategoryIndicator = catIndicator
+    end
+
+    function Library:_initFloatingNav()
+        local UI = self._UI
+        local nav = Instance.new("Frame", UI.MainGui)
+        nav.Name = "FloatingNav"
+        nav.Size = UDim2.fromOffset(44, 0)
+        nav.Position = UDim2.fromOffset(-200, -200)
+        nav.BackgroundTransparency = 1
+        nav.BorderSizePixel = 0
+        nav.Visible = false
+        nav.ZIndex = 11
+        UI.FloatingNav = nav
+
+        local navScale = Instance.new("UIScale", nav)
+        navScale.Scale = 1
+        UI.FloatingNavScale = navScale
+
+        local scroll = Instance.new("ScrollingFrame", nav)
+        scroll.Name = "FloatingScroll"
+        scroll.Size = UDim2.fromScale(1, 1)
+        scroll.BackgroundTransparency = 1
+        scroll.BorderSizePixel = 0
+        scroll.ScrollBarThickness = 0
+        scroll.CanvasSize = UDim2.new(0, 0, 0, 0)
+        scroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
+        scroll.ScrollingDirection = Enum.ScrollingDirection.Y
+        scroll.ZIndex = 11
+        UI.FloatingNavScroll = scroll
+
+        local navLayout = Instance.new("UIListLayout", scroll)
+        navLayout.SortOrder = Enum.SortOrder.LayoutOrder
+        navLayout.Padding = UDim.new(0, 8)
+        navLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+
+        local lastX, lastY = -10000, -10000
+        self:_registerAnimator(function()
+            if not nav or not nav.Parent then return end
+            if not self._STATE.GuiVisible then
+                if nav.Visible then nav.Visible = false end
+                return
+            end
+            if self.TabPosition ~= "SideFloating" then
+                if nav.Visible then nav.Visible = false end
+                return
+            end
+            if not nav.Visible then nav.Visible = true end
+
+            local mc = UI.MainContainer
+            if not mc then return end
+            local mcAbs = mc.AbsolutePosition
+            local s = (UI.MainScale and UI.MainScale.Scale) or 1
+            if navScale.Scale ~= s then navScale.Scale = s end
+
+            local iconCount = 0
+            for _, c in ipairs(scroll:GetChildren()) do
+                if c:IsA("TextButton") then iconCount = iconCount + 1 end
+            end
+            if iconCount > 0 then
+                local fullH = iconCount * 44 + (iconCount - 1) * 8
+                if nav.Size.Y.Offset ~= fullH then
+                    nav.Size = UDim2.fromOffset(44, fullH)
+                end
+            end
+
+            local navW = 44 * s
+            local gap = 12 * s
+            local finalX = mcAbs.X - navW - gap
+            local cam = getCam()
+            if cam then finalX = math.max(8, finalX) end
+            local finalY = mcAbs.Y
+
+            if math.abs(finalX - lastX) < 0.5 and math.abs(finalY - lastY) < 0.5 then
+                return
+            end
+            lastX, lastY = finalX, finalY
+            nav.Position = UDim2.fromOffset(finalX, finalY)
+        end, "floating-nav-position")
     end
 
     function Library:_createPinnedCard(tabName, iconSpec, catData)
@@ -5747,7 +6121,7 @@
         if UI.CategoriesSectionLabel then UI.CategoriesSectionLabel.Visible = false end
         if self.TabPosition == "Side" and UI.CategoryBar and UI.AccordionScroll then
             UI.AccordionScroll.Position = UDim2.new(0, 6, 0, 54)
-            UI.AccordionScroll.Size = UDim2.new(1, -12, 1, -106)
+            UI.AccordionScroll.Size = UDim2.new(1, -12, 1, -140)
         end
     end
 
@@ -5770,29 +6144,29 @@
             if hasSearch and UI.SearchBar.Parent ~= UI.CategoryBar then
                 UI.SearchBar.Parent = UI.CategoryBar
             end
-            UI.CategoryBar.Size = UDim2.new(0, sideWidth, 1, -62)
-            UI.CategoryBar.Position = UDim2.new(0, 10, 0, 50)
+            UI.CategoryBar.Size = UDim2.new(0, sideWidth, 1, -54)
+            UI.CategoryBar.Position = UDim2.new(0, 10, 0, 42)
             UI.CategoryBar.BackgroundColor3 = self._Colors.Sidebar
             UI.CategoryBar.BackgroundTransparency = 0.35
             UI.CategoryBarStroke.Transparency = 0
             UI.CategoryBarStroke.Color = self._Colors.Border
 
             if hasSearch then
-                UI.SearchBar.Size = UDim2.new(1, -16, 0, 32)
-                UI.SearchBar.Position = UDim2.new(0, 8, 0, 8)
+                UI.SearchBar.Size = UDim2.new(1, -20, 0, 32)
+                UI.SearchBar.Position = UDim2.new(0, 10, 0, 10)
                 if UI.SearchInput then
-                    UI.SearchInput.Size = UDim2.new(1, -82, 1, 0)
+                    UI.SearchInput.Size = UDim2.new(1, -100, 1, 0)
                     UI.SearchInput.Position = UDim2.new(0, 36, 0, 0)
-                    UI.SearchInput.PlaceholderText = (sideWidth - 16) >= 130 and "Search..." or ""
+                    UI.SearchInput.PlaceholderText = "Search settings..."
                 end
                 if UI.SearchIcon then UI.SearchIcon.ZIndex = 2 end
                 if UI.FavoritesToggle then
-                    UI.FavoritesToggle.Position = UDim2.new(1, -42, 0.5, -8)
+                    UI.FavoritesToggle.Position = UDim2.new(1, -48, 0.5, -8)
                     UI.FavoritesToggle.ZIndex = 4
                 end
                 local clearBtn = UI.SearchBar:FindFirstChild("ClearBtn")
                 if clearBtn then
-                    clearBtn.Position = UDim2.new(1, -22, 0.5, -8)
+                    clearBtn.Position = UDim2.new(1, -26, 0.5, -8)
                     clearBtn.ZIndex = 4
                 end
             end
@@ -5803,10 +6177,41 @@
             if UI.SideProfileMini then UI.SideProfileMini.Visible = true end
 
             if hasContent then
-                UI.ContentArea.Size = UDim2.new(1, -(sideWidth + 30), 1, -62)
-                UI.ContentArea.Position = UDim2.new(0, sideWidth + 20, 0, 50)
+                UI.ContentArea.Size = UDim2.new(1, -(sideWidth + 30), 1, -54)
+                UI.ContentArea.Position = UDim2.new(0, sideWidth + 20, 0, 42)
             end
             if UI.BottomPill then UI.BottomPill.Visible = false end
+
+        elseif position == "SideFloating" then
+            if hasSearch and UI.SearchBar.Parent ~= UI.MainContainer then
+                UI.SearchBar.Parent = UI.MainContainer
+            end
+            UI.CategoryBar.Size = UDim2.new(1, -20, 0, 0)
+            UI.CategoryBar.Position = UDim2.new(0, 10, 0, 42)
+            UI.CategoryBar.BackgroundTransparency = 1
+            UI.CategoryBarStroke.Transparency = 1
+            if UI.FloatingNav then UI.FloatingNav.Visible = true end
+            if UI.AccordionScroll then UI.AccordionScroll.Visible = false end
+            if UI.SideProfileMini then UI.SideProfileMini.Visible = false end
+            if UI.BottomPill then UI.BottomPill.Visible = false end
+
+            UI.Sidebar.Size = UDim2.new(1, -20, 0, 30)
+            UI.Sidebar.Position = UDim2.new(0, 10, 0, 50)
+            UI.TabBarDivider.Size = UDim2.new(1, -20, 0, 1)
+            UI.TabBarDivider.Position = UDim2.new(0, 10, 0, 82)
+
+            if hasSearch then
+                UI.SearchBar.Size = UDim2.new(1, -30, 0, 28)
+                UI.SearchBar.Position = UDim2.new(0, 15, 0, 87)
+                if UI.SearchInput then UI.SearchInput.Size = UDim2.new(1, -100, 1, 0) end
+                if UI.FavoritesToggle then UI.FavoritesToggle.Position = UDim2.new(1, -48, 0.5, -8) end
+            end
+            if hasContent then
+                local contentTop = 121
+                local contentH = math.max(150, mainH - contentTop - BOTTOM_PADDING)
+                UI.ContentArea.Size = UDim2.new(1, -30, 0, contentH)
+                UI.ContentArea.Position = UDim2.new(0, 15, 0, contentTop)
+            end
 
         elseif position == "Bottom" then
             if hasSearch and UI.SearchBar.Parent ~= UI.MainContainer then
@@ -6000,7 +6405,7 @@
         UI.SearchInput.Position = UDim2.new(0, 36, 0, 0)
         UI.SearchInput.BackgroundTransparency = 1
         UI.SearchInput.Text = ""
-        UI.SearchInput.PlaceholderText = "Search settings..."
+        UI.SearchInput.PlaceholderText = self.SearchPlaceholder
         UI.SearchInput.PlaceholderColor3 = self._Colors.TextDim
         UI.SearchInput.TextColor3 = Color3.fromRGB(255, 255, 255)
         UI.SearchInput.TextStrokeTransparency = 1
@@ -6129,6 +6534,7 @@
         end)
 
         if self._isMobile and self.TabPosition ~= "Side" then
+            UI.SearchBar.Visible = false
             local fab = Instance.new("TextButton", UI.MainContainer)
             fab.Name = "MobileSearchFAB"
             fab.Size = UDim2.fromOffset(48, 48)
@@ -6192,7 +6598,7 @@
             ovInput.Position = UDim2.new(0, 48, 0, 0)
             ovInput.BackgroundTransparency = 1
             ovInput.Text = ""
-            ovInput.PlaceholderText = "Search settings..."
+            ovInput.PlaceholderText = self.SearchPlaceholder
             ovInput.PlaceholderColor3 = self._Colors.TextDim
             ovInput.TextColor3 = self._Colors.Text
             ovInput.Font = Enum.Font.GothamMedium
@@ -6627,7 +7033,8 @@
                 if (inst:IsA("TextLabel") or inst:IsA("TextButton"))
                     and not inst.RichText
                     and inst.Text ~= ""
-                    and not inst:GetAttribute("DoD_OrigText") then
+                    and not inst:GetAttribute("DoD_OrigText")
+                    and not inst:GetAttribute("DoD_NoHighlight") then
                     inst:SetAttribute("DoD_OrigText", inst.Text)
                     inst:SetAttribute("DoD_Highlightable", true)
                 end
@@ -6727,12 +7134,11 @@
         local star = Instance.new("ImageButton", holder)
         star.Name = "FavoriteStar"
         if self._isMobile then
-
             star.Size = UDim2.fromOffset(14, 14)
-            star.Position = starPos or UDim2.new(1, -20, 0, 1)
+            star.Position = starPos or UDim2.new(1, -18, 0, 0)
         else
-            star.Size = UDim2.fromOffset(11, 11)
-            star.Position = starPos or UDim2.new(1, -14, 0, 2)
+            star.Size = UDim2.fromOffset(10, 10)
+            star.Position = starPos or UDim2.new(1, -14, 0, 0)
         end
         star.BackgroundTransparency = 1
         star.BorderSizePixel = 0
@@ -7137,7 +7543,7 @@
     function Library:_stopWeather()
         local STATE = self._STATE
         if STATE.SnowConnection then
-            Fn.untrack(STATE.SnowConnection, self)
+            self:_unregisterAnimator(STATE.SnowConnection)
             STATE.SnowConnection = nil
         end
         for _, particle in ipairs(STATE.SnowParticles) do
@@ -7279,7 +7685,7 @@
         end
 
         STATE.WeatherClock = 0
-        STATE.SnowConnection = Fn.track(RunService.RenderStepped, function(dt)
+        STATE.SnowConnection = self:_registerAnimator(function(dt)
             if not STATE.WeatherEnabled then
                 self:_stopWeather()
                 return
@@ -7377,7 +7783,7 @@
                     end
                 end
             end
-        end, self)
+        end, "weather")
     end
 
     function Library:_initMobileToggle()
@@ -7480,7 +7886,7 @@
             end
         end, self)
 
-        Fn.track(RunService.RenderStepped, function()
+        self:_registerAnimator(function(dt)
             if not resizing then return end
             local cam = getCam()
             if not cam then return end
@@ -7515,7 +7921,7 @@
                     mc.Position = UDim2.new(p.X.Scale, p.X.Offset + (wantX - cx), p.Y.Scale, p.Y.Offset + (wantY - cy))
                 end
             end
-        end, self)
+        end, "resize")
 
         Fn.track(UserInputService.InputEnded, function(input)
             if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
@@ -7554,7 +7960,7 @@
             end
         end, self)
 
-        Fn.track(RunService.RenderStepped, function()
+        self:_registerAnimator(function(dt)
             if not dragging then return end
             local camera = getCam()
             if not camera then return end
@@ -7576,7 +7982,7 @@
                 dragStartPos.Y.Scale,
                 targetAbsY - dragStartPos.Y.Scale * vp.Y
             )
-        end, self)
+        end, "drag")
 
         Fn.track(UserInputService.InputEnded, function(inp)
             if inp.UserInputType == Enum.UserInputType.MouseButton1 or inp.UserInputType == Enum.UserInputType.Touch then
@@ -7603,6 +8009,202 @@
         STATE.CategoryButtons = STATE.CategoryButtons or {}
         if not STATE.CategoryButtons[categoryName] then
             table.insert(STATE.CategoryOrder, categoryName)
+        end
+
+        if self.TabPosition == "SideFloating" then
+            local nav = UI.FloatingNav
+            local scroll = UI.FloatingNavScroll
+            if not nav or not scroll then
+                error("[DoD UI] SideFloating requires _initFloatingNav, which failed.")
+            end
+
+            local order = #STATE.CategoryOrder
+            local iconBtn = Instance.new("TextButton", scroll)
+            iconBtn.Name = "Float_" .. categoryName
+            iconBtn.LayoutOrder = order
+            iconBtn.Size = UDim2.fromOffset(44, 44)
+            iconBtn.BackgroundColor3 = self._Colors.Card
+            iconBtn.BackgroundTransparency = 0.4
+            iconBtn.Text = ""
+            iconBtn.AutoButtonColor = false
+            iconBtn.BorderSizePixel = 0
+            iconBtn.ZIndex = 11
+            Instance.new("UICorner", iconBtn).CornerRadius = UDim.new(0, 12)
+
+            local iStroke = Instance.new("UIStroke", iconBtn)
+            iStroke.Color = self._Colors.Border
+            iStroke.Thickness = 1
+            iStroke.Transparency = 0.5
+
+            local iScale = Instance.new("UIScale", iconBtn)
+            iScale.Scale = 1
+
+            local iImg = Instance.new("ImageLabel", iconBtn)
+            iImg.Size = UDim2.fromOffset(20, 20)
+            iImg.Position = UDim2.new(0.5, -10, 0.5, -10)
+            iImg.BackgroundTransparency = 1
+            if iconSpec then
+                if string.sub(iconSpec, 1, 6) == "asset:" then
+                    iImg.Image = "rbxassetid://" .. string.sub(iconSpec, 7)
+                else
+                    iImg.Image = GetIcon(iconSpec)
+                end
+            else
+                iImg.Image = GetIcon("hexagon")
+            end
+            iImg.ImageColor3 = self._Colors.TextDim
+            iImg.ImageTransparency = 0.4
+            iImg.ScaleType = Enum.ScaleType.Fit
+            iImg.ZIndex = 12
+
+            local activeBar = Instance.new("Frame", iconBtn)
+            activeBar.Name = "ActiveBar"
+            activeBar.Size = UDim2.fromOffset(3, 16)
+            activeBar.AnchorPoint = Vector2.new(1, 0.5)
+            activeBar.Position = UDim2.new(0, -2, 0.5, 0)
+            activeBar.BackgroundColor3 = self._Colors.Accent
+            activeBar.BorderSizePixel = 0
+            activeBar.Visible = false
+            activeBar.ZIndex = 13
+            Instance.new("UICorner", activeBar).CornerRadius = UDim.new(1, 0)
+
+            local pill = Instance.new("Frame", scroll)
+            pill.Name = "FloatPill_" .. categoryName
+            pill.AnchorPoint = Vector2.new(1, 0.5)
+            pill.Position = UDim2.fromOffset(-6, (order - 1) * 52 + 22)
+            pill.Size = UDim2.new(0, 0, 0, 26)
+            pill.AutomaticSize = Enum.AutomaticSize.X
+            pill.BackgroundColor3 = self._Colors.Bg2
+            pill.BackgroundTransparency = 1
+            pill.BorderSizePixel = 0
+            pill.Visible = false
+            pill.ZIndex = 20
+            Instance.new("UICorner", pill).CornerRadius = UDim.new(0, 8)
+
+            local pStroke = Instance.new("UIStroke", pill)
+            pStroke.Color = self._Colors.Accent
+            pStroke.Thickness = 1
+            pStroke.Transparency = 0.2
+
+            local pPad = Instance.new("UIPadding", pill)
+            pPad.PaddingLeft = UDim.new(0, 10)
+            pPad.PaddingRight = UDim.new(0, 12)
+            pPad.PaddingTop = UDim.new(0, 4)
+            pPad.PaddingBottom = UDim.new(0, 4)
+
+            local pLabel = Instance.new("TextLabel", pill)
+            pLabel.Size = UDim2.new(0, 0, 1, 0)
+            pLabel.AutomaticSize = Enum.AutomaticSize.X
+            pLabel.BackgroundTransparency = 1
+            pLabel.Text = categoryName
+            pLabel.TextColor3 = self._Colors.Text
+            pLabel.Font = Enum.Font.GothamBold
+            pLabel.TextSize = 12
+            pLabel.TextXAlignment = Enum.TextXAlignment.Center
+            pLabel.TextTransparency = 1
+            pLabel.ZIndex = 21
+
+            local floating = {
+                btn = iconBtn,
+                img = iImg,
+                stroke = iStroke,
+                scale = iScale,
+                activeBar = activeBar,
+                pill = pill,
+                pillStroke = pStroke,
+                pillLabel = pLabel,
+                isActive = false,
+                hovered = false,
+            }
+
+            local pillBaseY = (order - 1) * 52 + 22
+
+            iconBtn.MouseEnter:Connect(function()
+                if self:_isDead() then return end
+                floating.hovered = true
+                TweenService:Create(iScale, TweenInfo.new(0.18, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {Scale = 0.92}):Play()
+                TweenService:Create(iStroke, TweenInfo.new(0.18), {
+                    Color = self._Colors.Accent,
+                    Transparency = 0.3,
+                }):Play()
+                TweenService:Create(iconBtn, TweenInfo.new(0.18), {
+                    BackgroundTransparency = 0.15,
+                }):Play()
+                if not floating.isActive then
+                    TweenService:Create(iImg, TweenInfo.new(0.18), {
+                        ImageColor3 = self._Colors.Accent,
+                        ImageTransparency = 0,
+                    }):Play()
+                end
+
+                pill.Visible = true
+                pill.Position = UDim2.fromOffset(-6, pillBaseY)
+                pill.BackgroundTransparency = 1
+                pLabel.TextTransparency = 1
+                TweenService:Create(pill, TweenInfo.new(0.22, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
+                    Position = UDim2.fromOffset(-10, pillBaseY),
+                    BackgroundTransparency = 0.05,
+                }):Play()
+                TweenService:Create(pLabel, TweenInfo.new(0.22), {
+                    TextTransparency = 0,
+                }):Play()
+            end)
+
+            iconBtn.MouseLeave:Connect(function()
+                if self:_isDead() then return end
+                floating.hovered = false
+                TweenService:Create(iScale, TweenInfo.new(0.18, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {Scale = 1}):Play()
+                TweenService:Create(iStroke, TweenInfo.new(0.18), {
+                    Color = floating.isActive and self._Colors.Accent or self._Colors.Border,
+                    Transparency = floating.isActive and 0 or 0.5,
+                }):Play()
+                TweenService:Create(iconBtn, TweenInfo.new(0.18), {
+                    BackgroundTransparency = floating.isActive and 0.8 or 0.4,
+                }):Play()
+                if not floating.isActive then
+                    TweenService:Create(iImg, TweenInfo.new(0.18), {
+                        ImageColor3 = self._Colors.TextDim,
+                        ImageTransparency = 0.4,
+                    }):Play()
+                end
+
+                TweenService:Create(pill, TweenInfo.new(0.15, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
+                    Position = UDim2.fromOffset(-6, pillBaseY),
+                    BackgroundTransparency = 1,
+                }):Play()
+                TweenService:Create(pLabel, TweenInfo.new(0.15), {
+                    TextTransparency = 1,
+                }):Play()
+                task.delay(0.16, function()
+                    if not floating.hovered then pill.Visible = false end
+                end)
+            end)
+
+            iconBtn.MouseButton1Click:Connect(function()
+                if self:_isDead() then return end
+                self:PlaySound("TabSwitch")
+                self:SetActiveCategory(categoryName)
+            end)
+
+            STATE.CategoryButtons[categoryName] = {
+                button = iconBtn,
+                icon = iImg,
+                label = nil,
+                floating = floating,
+            }
+
+            self:_registerThemeRefresher(function()
+                if not iconBtn.Parent then return end
+                iconBtn.BackgroundColor3 = floating.isActive and self._Colors.Accent or self._Colors.Card
+                iStroke.Color = floating.isActive and self._Colors.Accent or self._Colors.Border
+                iImg.ImageColor3 = floating.isActive and self._Colors.Accent or self._Colors.TextDim
+                activeBar.BackgroundColor3 = self._Colors.Accent
+                pStroke.Color = self._Colors.Accent
+                pLabel.TextColor3 = self._Colors.Text
+                pill.BackgroundColor3 = self._Colors.Bg2
+            end)
+
+            return iconBtn
         end
 
         if self.TabPosition == "Side" and self.TabStyle == "FlatList" and UI.AccordionScroll then
@@ -7839,7 +8441,7 @@
         iconImg.Size = UDim2.new(0, 16, 0, 16)
         iconImg.Position = UDim2.new(0, 14, 0.5, -8)
         iconImg.BackgroundTransparency = 1
-        iconImg.ImageColor3 = Color3.new(1, 1, 1)
+        iconImg.ImageColor3 = self._Colors.TextDim
         iconImg.ImageTransparency = 0.45
         iconImg.ScaleType = Enum.ScaleType.Fit
         if iconSpec then
@@ -7873,9 +8475,12 @@
         self:_registerThemeRefresher(function()
             if not btn.Parent then return end
             btn.BackgroundColor3 = self._Colors.Card
-
-            label.TextColor3 = categoryName == STATE.ActiveCategory
+            local _active = categoryName == STATE.ActiveCategory
+            label.TextColor3 = _active
                 and Fn.contrastForeground(self._Colors.Sidebar) or self._Colors.TextDim
+            if iconImg and iconImg.Parent then
+                iconImg.ImageColor3 = _active and self._Colors.Accent or self._Colors.TextDim
+            end
         end)
 
         self:_layoutCategoryButtons()
@@ -7886,7 +8491,7 @@
         local STATE = self._STATE
         local UI = self._UI
         if not STATE.CategoryButtons then return end
-        if self.TabPosition == "Side" then
+        if self.TabPosition == "Side" or self.TabPosition == "SideFloating" then
             if UI.BottomPill then UI.BottomPill.Visible = false end
             return
         end
@@ -7952,7 +8557,7 @@
         local STATE = self._STATE
         local UI = self._UI
         if not (UI and UI.CategoryIndicator) then return end
-        if self.TabPosition == "Side" then
+        if self.TabPosition == "Side" or self.TabPosition == "SideFloating" or self.TabPosition == "Bottom" then
             UI.CategoryIndicator.Visible = false
             return
         end
@@ -8095,7 +8700,30 @@
         STATE.ActiveCategory = categoryName
         STATE.ActiveSubIndices = STATE.ActiveSubIndices or {}
 
-        if self.TabPosition ~= "Side" then
+        if self.TabPosition == "SideFloating" then
+            for name, data in pairs(STATE.CategoryButtons or {}) do
+                if data.floating then
+                    local f = data.floating
+                    local active = (name == categoryName)
+                    f.isActive = active
+                    TweenService:Create(f.stroke, TweenInfo.new(0.2), {
+                        Color = active and self._Colors.Accent or self._Colors.Border,
+                        Transparency = active and 0 or 0.5,
+                    }):Play()
+                    TweenService:Create(f.btn, TweenInfo.new(0.2), {
+                        BackgroundColor3 = active and self._Colors.Accent or self._Colors.Card,
+                        BackgroundTransparency = active and 0.8 or 0.4,
+                    }):Play()
+                    TweenService:Create(f.img, TweenInfo.new(0.2), {
+                        ImageColor3 = active and self._Colors.Accent or self._Colors.TextDim,
+                        ImageTransparency = active and 0 or 0.4,
+                    }):Play()
+                    f.activeBar.Visible = active
+                end
+            end
+        end
+
+        if self.TabPosition ~= "Side" and self.TabPosition ~= "SideFloating" then
             for name, data in pairs(STATE.CategoryButtons or {}) do
                 local active = (name == categoryName)
 
@@ -8108,6 +8736,7 @@
                 data.label.Font = active and Enum.Font.GothamBold or Enum.Font.GothamMedium
                 TweenService:Create(data.icon, TweenInfo.new(0.22), {
                     ImageTransparency = active and 0 or 0.45,
+                    ImageColor3 = active and self._Colors.Accent or self._Colors.TextDim,
                 }):Play()
             end
             self:_updateCategoryIndicator(true)
@@ -8767,11 +9396,12 @@
         bodyLayout.SortOrder = Enum.SortOrder.LayoutOrder
         bodyLayout.Padding = UDim.new(0, self:_densityPadding(8))
 
+        local _compactPad = self._isMobile or self:_isNarrow()
         local bodyPad = Instance.new("UIPadding", body)
-        bodyPad.PaddingLeft = UDim.new(0, self._isMobile and 8 or 12)
-        bodyPad.PaddingRight = UDim.new(0, self._isMobile and 10 or 20)
-        bodyPad.PaddingTop = UDim.new(0, self._isMobile and 6 or 10)
-        bodyPad.PaddingBottom = UDim.new(0, self._isMobile and 10 or 14)
+        bodyPad.PaddingLeft = UDim.new(0, _compactPad and 8 or 12)
+        bodyPad.PaddingRight = UDim.new(0, _compactPad and 16 or 20)
+        bodyPad.PaddingTop = UDim.new(0, _compactPad and 6 or 10)
+        bodyPad.PaddingBottom = UDim.new(0, _compactPad and 10 or 14)
 
         local scrollTrack = Instance.new("Frame", section)
         scrollTrack.Name = "ScrollTrack"
@@ -8944,10 +9574,10 @@
             if not body or not body.Parent then return end
             local innerH = bodyLayout.AbsoluteContentSize.Y
             local contentH = (innerH > 0) and (innerH + 24) or 24
-            local maxH = 450
+            local maxH = 620
             local contentArea = self._UI.ContentArea
             if contentArea and contentArea.AbsoluteSize.Y > 0 then
-                maxH = math.min(450, math.max(240, contentArea.AbsoluteSize.Y - 40))
+                maxH = math.max(280, contentArea.AbsoluteSize.Y * 0.75)
             end
             local cappedH = math.min(contentH, maxH)
             local targetH = expanded and (HEADER_HEIGHT + cappedH) or HEADER_HEIGHT
@@ -9138,66 +9768,145 @@
             else return "Good Night" end
         end
 
-        local PlayerCard = Instance.new("Frame", topContainer)
-        PlayerCard.Name = "PlayerGreetingCard"
-        PlayerCard.LayoutOrder = #topContainer:GetChildren() + 1
-        PlayerCard.Size = UDim2.new(1, 0, 0, 68)
-        PlayerCard.BackgroundColor3 = self._Colors.Card
-        PlayerCard.BorderSizePixel = 0
-        Instance.new("UICorner", PlayerCard).CornerRadius = UDim.new(0, 12)
-        local pcStroke = Instance.new("UIStroke", PlayerCard)
-        pcStroke.Color = self._Colors.Border
-        pcStroke.Thickness = 1
+        local HomeCard = Instance.new("Frame", topContainer)
+        HomeCard.Name = "HomeProfileCard"
+        HomeCard.LayoutOrder = #topContainer:GetChildren() + 1
+        HomeCard.Size = UDim2.new(1, 0, 0, 100)
+        HomeCard.BackgroundColor3 = self._Colors.Card
+        HomeCard.BorderSizePixel = 0
+        HomeCard.ClipsDescendants = true
+        Instance.new("UICorner", HomeCard).CornerRadius = UDim.new(0, 12)
+        local hcStroke = Instance.new("UIStroke", HomeCard)
+        hcStroke.Color = self._Colors.Border
+        hcStroke.Thickness = 1
+        hcStroke.Transparency = 0.3
 
-        local AvatarImg = Instance.new("ImageLabel", PlayerCard)
-        AvatarImg.Size = UDim2.new(0, 46, 0, 46)
-        AvatarImg.Position = UDim2.new(0, 12, 0.5, -23)
-        AvatarImg.BackgroundTransparency = 1
-        AvatarImg.Image = "rbxthumb://type=AvatarHeadShot&id=" .. tostring(LocalPlayer.UserId) .. "&w=150&h=150&filters=circular"
-        Instance.new("UICorner", AvatarImg).CornerRadius = UDim.new(1, 0)
-        local avStroke = Instance.new("UIStroke", AvatarImg)
-        avStroke.Color = self._Colors.Border
-        avStroke.Thickness = 1
+        local bust = Instance.new("ImageLabel", HomeCard)
+        bust.Name = "AvatarBust"
+        bust.AnchorPoint = Vector2.new(1, 1)
+        bust.Position = UDim2.new(1, -10, 1, 6)
+        bust.Size = UDim2.fromOffset(80, 80)
+        bust.BackgroundTransparency = 1
+        bust.Image = "rbxthumb://type=AvatarBust&id=" .. tostring(LocalPlayer.UserId) .. "&w=420&h=420"
+        bust.ScaleType = Enum.ScaleType.Fit
+        bust.ZIndex = 2
 
-        local GreetLabel = Instance.new("TextLabel", PlayerCard)
-        GreetLabel.Size = UDim2.new(0.5, -70, 0, 14)
-        GreetLabel.Position = UDim2.new(0, 68, 0, 14)
-        GreetLabel.BackgroundTransparency = 1
-        GreetLabel.Font = Enum.Font.GothamMedium
-        GreetLabel.TextSize = 10.5
-        GreetLabel.TextColor3 = self._Colors.TextDim
-        GreetLabel.TextXAlignment = Enum.TextXAlignment.Left
-        GreetLabel.Text = GetGreeting()
+        local bustGrad = Instance.new("UIGradient", bust)
+        bustGrad.Transparency = NumberSequence.new({
+            NumberSequenceKeypoint.new(0, 1),
+            NumberSequenceKeypoint.new(0.45, 0),
+            NumberSequenceKeypoint.new(1, 0),
+        })
 
-        local NameLabel = Instance.new("TextLabel", PlayerCard)
-        NameLabel.Size = UDim2.new(0.5, -70, 0, 22)
-        NameLabel.Position = UDim2.new(0, 68, 0, 30)
-        NameLabel.BackgroundTransparency = 1
-        NameLabel.Font = Enum.Font.GothamBold
-        NameLabel.TextSize = 16
-        NameLabel.TextColor3 = self._Colors.Text
-        NameLabel.TextXAlignment = Enum.TextXAlignment.Left
-        NameLabel.Text = LocalPlayer.DisplayName or LocalPlayer.Name
+        local welcomeLbl = Instance.new("TextLabel", HomeCard)
+        welcomeLbl.Name = "Welcome"
+        welcomeLbl.Size = UDim2.new(1, -110, 0, 11)
+        welcomeLbl.Position = UDim2.new(0, 20, 0, 10)
+        welcomeLbl.BackgroundTransparency = 1
+        welcomeLbl.Text = string.upper(self.WelcomeText or GetGreeting())
+        welcomeLbl.TextColor3 = self._Colors.TextDim
+        welcomeLbl.Font = Enum.Font.GothamBold
+        welcomeLbl.TextSize = 10
+        welcomeLbl.TextXAlignment = Enum.TextXAlignment.Left
+        welcomeLbl.ZIndex = 3
 
-        local ClockLabel = Instance.new("TextLabel", PlayerCard)
-        ClockLabel.Size = UDim2.new(0.5, 0, 0, 24)
-        ClockLabel.Position = UDim2.new(0.5, -16, 0, 11)
-        ClockLabel.BackgroundTransparency = 1
-        ClockLabel.Font = Enum.Font.GothamBold
-        ClockLabel.TextSize = 20
-        ClockLabel.TextColor3 = self._Colors.Text
-        ClockLabel.TextXAlignment = Enum.TextXAlignment.Right
-        ClockLabel.Text = os.date("%H:%M:%S")
+        local displayLbl = Instance.new("TextLabel", HomeCard)
+        displayLbl.Name = "DisplayName"
+        displayLbl.Size = UDim2.new(1, -110, 0, 22)
+        displayLbl.Position = UDim2.new(0, 20, 0, 22)
+        displayLbl.BackgroundTransparency = 1
+        displayLbl.Text = LocalPlayer.DisplayName or LocalPlayer.Name
+        displayLbl.TextColor3 = self._Colors.Text
+        displayLbl.Font = Enum.Font.GothamBlack
+        displayLbl.TextSize = 24
+        displayLbl.TextXAlignment = Enum.TextXAlignment.Left
+        displayLbl.TextTruncate = Enum.TextTruncate.AtEnd
+        displayLbl.ZIndex = 3
 
-        local DateLabel = Instance.new("TextLabel", PlayerCard)
-        DateLabel.Size = UDim2.new(0.45, 0, 0, 14)
-        DateLabel.Position = UDim2.new(0.55, -16, 0, 38)
-        DateLabel.BackgroundTransparency = 1
-        DateLabel.Font = Enum.Font.GothamMedium
-        DateLabel.TextSize = 10.5
-        DateLabel.TextColor3 = self._Colors.TextDim
-        DateLabel.TextXAlignment = Enum.TextXAlignment.Right
-        DateLabel.Text = os.date("%d / %m / %Y")
+        local userLbl = Instance.new("TextLabel", HomeCard)
+        userLbl.Name = "Username"
+        userLbl.Size = UDim2.new(1, -110, 0, 12)
+        userLbl.Position = UDim2.new(0, 20, 0, 44)
+        userLbl.BackgroundTransparency = 1
+        userLbl.Text = "@" .. LocalPlayer.Name
+        userLbl.TextColor3 = self._Colors.TextDim
+        userLbl.Font = Enum.Font.GothamMedium
+        userLbl.TextSize = 12
+        userLbl.TextXAlignment = Enum.TextXAlignment.Left
+        userLbl.TextTruncate = Enum.TextTruncate.AtEnd
+        userLbl.ZIndex = 3
+
+        local chipsRow = Instance.new("Frame", HomeCard)
+        chipsRow.Name = "Chips"
+        chipsRow.Size = UDim2.new(1, -40, 0, 20)
+        chipsRow.Position = UDim2.new(0, 20, 1, -26)
+        chipsRow.BackgroundTransparency = 1
+        chipsRow.ZIndex = 3
+
+        local chipsLayout = Instance.new("UIListLayout", chipsRow)
+        chipsLayout.FillDirection = Enum.FillDirection.Horizontal
+        chipsLayout.VerticalAlignment = Enum.VerticalAlignment.Center
+        chipsLayout.SortOrder = Enum.SortOrder.LayoutOrder
+        chipsLayout.Padding = UDim.new(0, 6)
+
+        local function makeChip(iconName, text)
+            local chip = Instance.new("Frame", chipsRow)
+            chip.AutomaticSize = Enum.AutomaticSize.X
+            chip.Size = UDim2.new(0, 0, 1, 0)
+            chip.BackgroundColor3 = self._Colors.Bg2
+            chip.BackgroundTransparency = 0.4
+            chip.BorderSizePixel = 0
+            chip.ZIndex = 3
+            Instance.new("UICorner", chip).CornerRadius = UDim.new(1, 0)
+
+            local chipStroke = Instance.new("UIStroke", chip)
+            chipStroke.Color = self._Colors.Border
+            chipStroke.Thickness = 1
+            chipStroke.Transparency = 0.6
+
+            local chipLayout = Instance.new("UIListLayout", chip)
+            chipLayout.FillDirection = Enum.FillDirection.Horizontal
+            chipLayout.SortOrder = Enum.SortOrder.LayoutOrder
+            chipLayout.VerticalAlignment = Enum.VerticalAlignment.Center
+            chipLayout.Padding = UDim.new(0, 5)
+
+            local chipPad = Instance.new("UIPadding", chip)
+            chipPad.PaddingLeft = UDim.new(0, 8)
+            chipPad.PaddingRight = UDim.new(0, 10)
+
+            local icon = Instance.new("ImageLabel", chip)
+            icon.LayoutOrder = 1
+            icon.Size = UDim2.fromOffset(10, 10)
+            icon.BackgroundTransparency = 1
+            icon.Image = GetIcon(iconName)
+            icon.ImageColor3 = self._Colors.Accent
+            icon.ScaleType = Enum.ScaleType.Fit
+
+            local lbl = Instance.new("TextLabel", chip)
+            lbl.LayoutOrder = 2
+            lbl.AutomaticSize = Enum.AutomaticSize.X
+            lbl.Size = UDim2.new(0, 0, 1, 0)
+            lbl.BackgroundTransparency = 1
+            lbl.Text = text
+            lbl.TextColor3 = self._Colors.Text
+            lbl.Font = Enum.Font.GothamBold
+            lbl.TextSize = 9
+            lbl.TextXAlignment = Enum.TextXAlignment.Left
+
+            return chip, lbl, icon, chipStroke
+        end
+
+        local tierChip, tierLbl, tierIcon, tierStroke
+        if self.Tier and self.Tier ~= "" then
+            tierChip, tierLbl, tierIcon, tierStroke = makeChip(self.TierIcon, tostring(self.Tier))
+            tierChip.LayoutOrder = 1
+        end
+
+        local sessChip, sessLbl, sessIcon, sessStroke = makeChip("zap", "0s")
+        sessChip.LayoutOrder = 2
+
+        local plChip, plLbl, plIcon, plStroke = makeChip("users", tostring(#Players:GetPlayers()) .. "/" .. tostring(Players.MaxPlayers))
+        plChip.LayoutOrder = 3
 
         local placeName = "Roblox Experience"
         local creatorName = "Roblox Studio"
@@ -9278,8 +9987,19 @@
         GameSubLbl.ZIndex = 3
 
         task.spawn(function()
+            task.wait()
+            self._productInfoCache = self._productInfoCache or {}
+            local _piKey = tostring(game.PlaceId)
+            local info = self._productInfoCache[_piKey]
+            if not info then
+                local fetchOk = pcall(function()
+                    info = MarketplaceService:GetProductInfo(game.PlaceId)
+                end)
+                if fetchOk and info then
+                    self._productInfoCache[_piKey] = info
+                end
+            end
             local ok = pcall(function()
-                local info = MarketplaceService:GetProductInfo(game.PlaceId)
                 if not info or self:_isDead() then return end
                 if info.Name and info.Name ~= "" then
                     placeName = info.Name
@@ -9371,10 +10091,11 @@
         task.spawn(function()
             local frames = 0
             local timeElapsed = 0
+            local sessionStart = os.clock()
             local fpsConn = RunService.RenderStepped:Connect(function(dt)
-
-                if not PlayerCard.Visible then return end
+                if not HomeCard.Visible then return end
                 if not self._STATE.GuiVisible then return end
+                if self._STATE.ActiveTab ~= tabName then return end
                 frames = frames + 1
                 timeElapsed = timeElapsed + dt
                 if timeElapsed >= 0.5 then
@@ -9386,16 +10107,23 @@
             end)
 
             while task.wait(0.25) do
-                if not PlayerCard or not PlayerCard.Parent then
+                if not HomeCard or not HomeCard.Parent then
                     fpsConn:Disconnect()
                     break
                 end
-                if not PlayerCard.Visible or not self._STATE.GuiVisible then
+                if not HomeCard.Visible or not self._STATE.GuiVisible or self._STATE.ActiveTab ~= tabName then
                     continue
                 end
-                ClockLabel.Text = os.date("%H:%M:%S")
-                DateLabel.Text = os.date("%d / %m / %Y")
-                GreetLabel.Text = GetGreeting()
+                local elapsed = math.floor(os.clock() - sessionStart)
+                local sessionText
+                if elapsed < 60 then
+                    sessionText = tostring(elapsed) .. "s"
+                elseif elapsed < 3600 then
+                    sessionText = string.format("%dm %ds", math.floor(elapsed / 60), elapsed % 60)
+                else
+                    sessionText = string.format("%dh %dm", math.floor(elapsed / 3600), math.floor((elapsed % 3600) / 60))
+                end
+                sessLbl.Text = sessionText
                 pillPl.Label.Text = tostring(#Players:GetPlayers()) .. "/" .. tostring(Players.MaxPlayers)
                 pcall(function()
                     local p = math.floor(Stats.Network.ServerStatsItem["Data Ping"]:GetValue())
@@ -9405,13 +10133,27 @@
         end)
 
         self:_registerThemeRefresher(function()
-            PlayerCard.BackgroundColor3 = self._Colors.Card
-            pcStroke.Color = self._Colors.Border
-            avStroke.Color = self._Colors.Border
-            GreetLabel.TextColor3 = self._Colors.TextDim
-            NameLabel.TextColor3 = self._Colors.Text
-            ClockLabel.TextColor3 = self._Colors.Text
-            DateLabel.TextColor3 = self._Colors.TextDim
+            if HomeCard.Parent then
+                HomeCard.BackgroundColor3 = self._Colors.Card
+                hcStroke.Color = self._Colors.Border
+                welcomeLbl.TextColor3 = self._Colors.TextDim
+                displayLbl.TextColor3 = self._Colors.Text
+                userLbl.TextColor3 = self._Colors.TextDim
+                if tierChip then
+                    tierChip.BackgroundColor3 = self._Colors.Bg2
+                    tierStroke.Color = self._Colors.Border
+                    tierLbl.TextColor3 = self._Colors.Text
+                    tierIcon.ImageColor3 = self._Colors.Accent
+                end
+                sessChip.BackgroundColor3 = self._Colors.Bg2
+                sessStroke.Color = self._Colors.Border
+                sessLbl.TextColor3 = self._Colors.Text
+                sessIcon.ImageColor3 = self._Colors.Accent
+                plChip.BackgroundColor3 = self._Colors.Bg2
+                plStroke.Color = self._Colors.Border
+                plLbl.TextColor3 = self._Colors.Text
+                plIcon.ImageColor3 = self._Colors.Accent
+            end
             GameCard.BackgroundColor3 = self._Colors.Card
             gcStroke.Color = self._Colors.Border
             GameThumb.BackgroundColor3 = self._Colors.Bg2
@@ -9761,7 +10503,9 @@
                     local url = string.format(
                         "https://games.roblox.com/v1/games/%d/servers/Public?sortOrder=Asc&limit=100&excludeFullGames=true",
                         game.PlaceId)
-                    local response = HttpService:JSONDecode(game:HttpGet(url))
+                    task.wait()
+                    local response = HttpService:JSONDecode(Fn.httpGet(url))
+                    task.wait()
                     local picked = nil
                     if response and type(response.data) == "table" then
 
@@ -9949,9 +10693,13 @@
         local startTime = os.clock()
         local maxObservedFPS = 60
 
-        Fn.track(RunService.RenderStepped, function()
+        self:_registerAnimator(function(dt)
             if not WaveBox.Parent then return end
-
+            if self._STATE.ActiveTab ~= tabName then
+                lastCheck = os.clock()
+                frameCount = 0
+                return
+            end
             if not WaveBox.Visible or not self._STATE.GuiVisible then
                 lastCheck = os.clock()
                 frameCount = 0
@@ -9980,12 +10728,12 @@
                     bar.Size = UDim2.new(0, 4, targetHeight, 0)
                 end
             end
-        end, self)
+        end, "fps-counter")
 
         task.spawn(function()
             while task.wait(0.5) do
                 if not WaveBox.Parent then break end
-                if not WaveBox.Visible or not self._STATE.GuiVisible then continue end
+                if not WaveBox.Visible or not self._STATE.GuiVisible or self._STATE.ActiveTab ~= tabName then continue end
                 local elapsed = math.floor(os.clock() - startTime)
                 sessM.Text = string.format("%02d:%02d", math.floor(elapsed / 60), elapsed % 60)
                 plM.Text = tostring(#Players:GetPlayers()) .. " / " .. tostring(Players.MaxPlayers)
@@ -10032,7 +10780,7 @@
         local _knY = -(_knSz / 2)
         local _swRightX = -(_swW + 12)
         local _swY = -(_swH / 2)
-        local _rowH = _isMobTgl and 44 or 38
+        local _rowH = (self.RowHeights and self.RowHeights.toggle) or (_isMobTgl and 44 or 38)
         local _labPad = _swW + 24
 
         local holder = Instance.new("Frame", page)
@@ -10093,6 +10841,8 @@
             local targetKnob = Fn.contrastForeground(targetBg)
             local onPos = UDim2.new(1, _knOnX, 0.5, _knY)
             local offPos = UDim2.new(0, _knOffX, 0.5, _knY)
+            trackGrad.Enabled = state
+            trackGrad.Color = ColorSequence.new(self._Colors.Accent, self._Colors.Accent2 or self._Colors.Accent)
             if animate then
                 TweenService:Create(switchBg, tInfo, {BackgroundColor3 = targetBg}):Play()
                 TweenService:Create(switchStroke, tInfo, {Color = targetStroke}):Play()
@@ -10163,7 +10913,7 @@
         holder.MouseEnter:Connect(function()
             self:PlaySound("Hover")
             if not state then
-                TweenService:Create(switchBg, TweenInfo.new(0.15), {BackgroundColor3 = Color3.fromRGB(60, 60, 70)}):Play()
+                TweenService:Create(switchBg, TweenInfo.new(0.15), {BackgroundColor3 = self._Colors.Card:Lerp(self._Colors.Text, 0.15)}):Play()
             else
                 TweenService:Create(switchBg, TweenInfo.new(0.15), {BackgroundColor3 = self._Colors.Accent:Lerp(Color3.new(1,1,1), 0.15)}):Play()
             end
@@ -10230,7 +10980,7 @@
         callback = callback or function() end
 
         local holder = Instance.new("Frame", page)
-        holder.Size = UDim2.new(1, 0, 0, 44)
+        holder.Size = UDim2.new(1, 0, 0, (self.RowHeights and self.RowHeights.slider) or 44)
         holder.BackgroundColor3 = self._Colors.Card
         holder.BackgroundTransparency = 0.3
         holder.BorderSizePixel = 0
@@ -10278,10 +11028,10 @@
         valBox.Position = UDim2.new(1, -68, 0, 4)
         valBox.BackgroundColor3 = self._Colors.Bg2
         valBox.BackgroundTransparency = 0.5
-        valBox.TextColor3 = Color3.fromRGB(255, 255, 255)
+        valBox.TextColor3 = self._Colors.Text
         valBox.TextStrokeTransparency = 1
         valBox.Font = Enum.Font.RobotoMono
-        valBox.TextSize = 13
+        valBox.TextSize = 12
         valBox.Text = tostring(default)
         valBox.TextXAlignment = Enum.TextXAlignment.Center
         valBox.ClearTextOnFocus = false
@@ -10499,6 +11249,14 @@
         local minusHold = makeHold(-1)
         local plusHold = makeHold(1)
 
+        Fn.track(UserInputService.InputEnded, function(inp)
+            if inp.UserInputType == Enum.UserInputType.MouseButton1
+                or inp.UserInputType == Enum.UserInputType.Touch then
+                minusHold.stop()
+                plusHold.stop()
+            end
+        end, self)
+
         btnMinus.InputBegan:Connect(function(inp)
             if inp.UserInputType == Enum.UserInputType.MouseButton1 or inp.UserInputType == Enum.UserInputType.Touch then
                 minusHold.start()
@@ -10713,7 +11471,7 @@
         local UI = self._UI
 
         local holder = Instance.new("Frame", page)
-        holder.Size = UDim2.new(1, 0, 0, 40)
+        holder.Size = UDim2.new(1, 0, 0, (self.RowHeights and self.RowHeights.dropdown) or 40)
         holder.BackgroundColor3 = self._Colors.Card
         holder.BackgroundTransparency = 0.3
         holder.BorderSizePixel = 0
@@ -10772,6 +11530,7 @@
         chipLabel.Position = UDim2.new(0, 12, 0, 0)
         chipLabel.BackgroundTransparency = 1
         chipLabel.Text = tostring(options[defaultIndex])
+        chipLabel:SetAttribute("DoD_NoHighlight", true)
         chipLabel.TextColor3 = self._Colors.Text
         chipLabel.Font = Enum.Font.GothamBold
         chipLabel.TextSize = 11
@@ -10914,7 +11673,7 @@
         searchBox.Text = ""
         searchBox.PlaceholderText = "Search options..."
         searchBox.PlaceholderColor3 = self._Colors.TextDim
-        searchBox.TextColor3 = Color3.fromRGB(255, 255, 255)
+        searchBox.TextColor3 = self._Colors.Text
         searchBox.TextStrokeTransparency = 1
         searchBox.Font = Enum.Font.GothamMedium
         searchBox.TextSize = 11
@@ -11136,9 +11895,17 @@
         local function stepHighlight(delta)
             local count = #optionButtons
             if count == 0 then return end
-            local nextIndex = highlightedIndex + delta
-            if nextIndex < 1 then nextIndex = count end
-            if nextIndex > count then nextIndex = 1 end
+            local nextIndex = highlightedIndex
+            local attempts = 0
+            while attempts < count do
+                nextIndex = nextIndex + delta
+                if nextIndex < 1 then nextIndex = count end
+                if nextIndex > count then nextIndex = 1 end
+                if optionButtons[nextIndex] and optionButtons[nextIndex].Visible then
+                    break
+                end
+                attempts = attempts + 1
+            end
             setHighlight(nextIndex)
         end
         popup:GetPropertyChangedSignal("Visible"):Connect(function()
@@ -11833,6 +12600,16 @@
             popup.BackgroundColor3 = self._Colors.Bg2
             popupStroke.Color = self._Colors.Accent
             popupScroll.ScrollBarImageColor3 = self._Colors.Accent
+            mdSearchFrame.BackgroundColor3 = self._Colors.Card
+            mdSearchIcon.ImageColor3 = self._Colors.TextDim
+            mdSearchBox.TextColor3 = self._Colors.Text
+            mdSearchBox.PlaceholderColor3 = self._Colors.TextDim
+            mdAllBtn.BackgroundColor3 = self._Colors.Accent
+            mdAllBtn.BackgroundTransparency = 0.7
+            mdAllBtn.TextColor3 = self._Colors.Accent
+            mdNoneBtn.BackgroundColor3 = self._Colors.Card
+            mdNoneBtn.BackgroundTransparency = 0.3
+            mdNoneBtn.TextColor3 = self._Colors.TextDim
             for _, btn in ipairs(optionButtons) do
                 btn.BackgroundColor3 = self._Colors.Card
                 local box = btn:FindFirstChild("CheckBox")
@@ -12224,7 +13001,7 @@
         end
         local STATE = self._STATE
         local holder = Instance.new("Frame", page)
-        holder.Size = UDim2.new(1, 0, 0, 36)
+        holder.Size = UDim2.new(1, 0, 0, (self.RowHeights and self.RowHeights.keybind) or 36)
         holder.BackgroundColor3 = self._Colors.Card
         holder.BackgroundTransparency = 0.3
         holder.BorderSizePixel = 0
@@ -12283,6 +13060,7 @@
         btnText.Font = Enum.Font.GothamBold
         btnText.TextSize = 11
         btnText.TextXAlignment = Enum.TextXAlignment.Left
+        btnText.TextTruncate = Enum.TextTruncate.AtEnd
 
         local listener
         local function _formatKeyName(k)
@@ -12346,10 +13124,21 @@
             function(v, silent)
                 if type(v) ~= "string" then return end
                 local _k, _mods = nil, {}
-                local _upper = string.upper(v)
+                local _rest = v
+                while true do
+                    local _prefix, _after = _rest:match("^(%a+)%+(.+)$")
+                    if _prefix and (_prefix == "Ctrl" or _prefix == "Shift" or _prefix == "Alt") then
+                        table.insert(_mods, _prefix)
+                        _rest = _after
+                    else
+                        break
+                    end
+                end
+                local _upper = string.upper(_rest)
                 if _upper == "LCLICK" then _k = "LClick"
                 elseif _upper == "RCLICK" then _k = "RClick"
-                elseif _upper ~= "NONE" and v ~= "" then
+                elseif _upper == "NONE" or _rest == "" then _k = nil
+                else
                     local _ok, _e = pcall(function() return Enum.KeyCode[_upper] end)
                     if _ok and _e then _k = _e
                     else
@@ -12426,11 +13215,11 @@
                         if l.btnStroke then TweenService:Create(l.btnStroke, TweenInfo.new(0.15), {Color = self._Colors.Border, Transparency = 0.5}):Play() end
                     end
                 end
-                if getgenv()._lastParryFireAt_ball then table.clear(getgenv()._lastParryFireAt_ball) end
             end, self)
 
             Fn.track(UserInputService.InputBegan, function(inp, proc)
                 if proc then return end
+                if UserInputService:GetFocusedTextBox() then return end
                 for _, l in ipairs(STATE.activeKeybindListeners) do
                     local mp = inp.Position
                     local bp, bs = l.btn.AbsolutePosition, l.btn.AbsoluteSize
@@ -12454,9 +13243,9 @@
                                 l.setKey("LClick", capturedMods)
                                 l.callback(Enum.UserInputType.MouseButton1, capturedMods)
                             else
-
                                 l.setKey(l.key, l.mods)
                             end
+                            return
                         end
                     elseif l.key ~= nil and not onClickBtn then
                         local currentMods = getMods()
@@ -12476,7 +13265,6 @@
                             firedKey = Enum.UserInputType.MouseButton1
                         end
                         if matched and modsMatch(l.mods, currentMods) then
-
                             l.callback(firedKey, l.mods)
                         end
                     end
@@ -12542,7 +13330,7 @@
         end
         callback = callback or function() end
         local _isMobBtn = self._isMobile
-        local _btnRowH = _isMobBtn and 56 or 42
+        local _btnRowH = (self.RowHeights and self.RowHeights.button) or (_isMobBtn and 56 or 42)
         local _btnH = _isMobBtn and 44 or 32
         local _btnY = _isMobBtn and 6 or 5
         local _btnTxtMin = _isMobBtn and 12 or 9
@@ -12733,7 +13521,7 @@
 
         local holder = Instance.new("Frame", page)
         holder.Name = "Textbox"
-        holder.Size = UDim2.new(1, 0, 0, 40)
+        holder.Size = UDim2.new(1, 0, 0, (self.RowHeights and self.RowHeights.textbox) or 40)
         holder.BackgroundColor3 = self._Colors.Card
         holder.BackgroundTransparency = 0.3
         holder.BorderSizePixel = 0
@@ -12768,7 +13556,7 @@
         input.Text = ""
         input.PlaceholderText = tostring(placeholder or "")
         input.PlaceholderColor3 = self._Colors.TextDim
-        input.TextColor3 = Color3.fromRGB(255, 255, 255)
+        input.TextColor3 = self._Colors.Text
         input.TextStrokeTransparency = 1
         input.Font = Enum.Font.GothamMedium
         input.TextSize = 11
@@ -12892,7 +13680,7 @@
 
         local holder = Instance.new("Frame", page)
         holder.Name = "ColorPicker"
-        holder.Size = UDim2.new(1, 0, 0, 40)
+        holder.Size = UDim2.new(1, 0, 0, (self.RowHeights and self.RowHeights.colorpicker) or 40)
         holder.BackgroundColor3 = self._Colors.Card
         holder.BackgroundTransparency = 0.3
         holder.BorderSizePixel = 0
@@ -14128,6 +14916,19 @@
         return self._UI == nil
     end
 
+    function Library:_updateBreakpoint()
+        local cam = getCam()
+        if not cam then return end
+        local w = cam.ViewportSize.X
+        if w < 400 then self._bp = "narrow"
+        elseif w < 700 then self._bp = "medium"
+        else self._bp = "wide" end
+    end
+
+    function Library:_isNarrow() return self._bp == "narrow" end
+    function Library:_isMedium() return self._bp == "medium" end
+    function Library:_isWide() return self._bp == "wide" end
+
     function Library:Minimize()
         if self:_isDead() then return end
         local STATE = self._STATE
@@ -14137,6 +14938,10 @@
         STATE.AnimatingGui = true
         STATE.GuiVisible = false
         if UI.MobileToggle then UI.MobileToggle.Visible = false end
+        if UI.KeybindOverlay then UI.KeybindOverlay.Visible = false end
+        if UI.KeybindOverlayToggle then UI.KeybindOverlayToggle.Visible = false end
+        if UI.TooltipFrame then UI.TooltipFrame.Visible = false end
+        if self._activeContextMenu then pcall(function() self._activeContextMenu:Destroy() end); self._activeContextMenu = nil end
         for _, _entry in ipairs(STATE.activeDropdownPopups) do
             if _entry and _entry.close then pcall(_entry.close) end
         end
@@ -14172,6 +14977,16 @@
         if UI.AcrylicTexture then TweenService:Create(UI.AcrylicTexture, tweenInfo, {BackgroundTransparency = 1}):Play() end
         if UI.AcrylicSheen then TweenService:Create(UI.AcrylicSheen, tweenInfo, {BackgroundTransparency = 1}):Play() end
         if UI.FocusOverlay then TweenService:Create(UI.FocusOverlay, tweenInfo, {BackgroundTransparency = 1}):Play() end
+        if UI.MainStroke then TweenService:Create(UI.MainStroke, tweenInfo, {Transparency = 1}):Play() end
+        if UI.AmbientGlow then
+            TweenService:Create(UI.AmbientGlow, tweenInfo, {ImageTransparency = 1}):Play()
+            task.delay(0.5, function()
+                if UI.AmbientGlow and not self._STATE.GuiVisible then
+                    UI.AmbientGlow.Visible = false
+                end
+            end)
+        end
+        if UI.AmbientGlow then TweenService:Create(UI.AmbientGlow, tweenInfo, {ImageTransparency = 1}):Play() end
 
         st.Completed:Connect(function(playbackState)
             if STATE.Destroyed then return end
@@ -14201,6 +15016,37 @@
         end)
     end
 
+    function Library:_registerAnimator(fn, key)
+        local entry = { fn = fn, key = tostring(key or "?") }
+        table.insert(self._STATE.Animators, entry)
+        return entry
+    end
+
+    function Library:_unregisterAnimator(entry)
+        if not entry then return end
+        local idx = table.find(self._STATE.Animators, entry)
+        if idx then table.remove(self._STATE.Animators, idx) end
+    end
+
+    function Library:_installAnimatorPump()
+        if self._animatorPumpInstalled then return end
+        self._animatorPumpInstalled = true
+        Fn.track(RunService.RenderStepped, function(dt)
+            if self:_isDead() or self._STATE._destroying then return end
+            local list = self._STATE.Animators
+            for i = #list, 1, -1 do
+                local entry = list[i]
+                if entry and entry.fn then
+                    local ok, err = pcall(entry.fn, dt)
+                    if not ok then
+                        warn("[DoD UI] Animator '" .. tostring(entry.key) .. "' error: " .. tostring(err))
+                        entry.fn = nil
+                    end
+                end
+            end
+        end, self)
+    end
+
     function Library:_registerScrollFrame(frame)
         if not frame then return end
         table.insert(self._STATE.ScrollFrames, frame)
@@ -14209,7 +15055,7 @@
         frame:SetAttribute("DoD_LastSet", frame.CanvasPosition.Y)
         if not self._scrollPumpInstalled then
             self._scrollPumpInstalled = true
-            Fn.track(RunService.RenderStepped, function(dt)
+            self:_registerAnimator(function(dt)
                 if self:_isDead() then return end
                 local frames = self._STATE.ScrollFrames
                 for i = #frames, 1, -1 do
@@ -14235,7 +15081,7 @@
                         end
                     end
                 end
-            end, self)
+            end, "scroll-pump")
         end
         return frame
     end
@@ -14309,6 +15155,10 @@
             end
             STATE.GuiVisible = false
             self._overGui = false
+            if UI.KeybindOverlay then UI.KeybindOverlay.Visible = false end
+            if UI.KeybindOverlayToggle then UI.KeybindOverlayToggle.Visible = false end
+            if UI.TooltipFrame then UI.TooltipFrame.Visible = false end
+            if self._activeContextMenu then pcall(function() self._activeContextMenu:Destroy() end); self._activeContextMenu = nil end
 
             if self._savedMouseIconEnabled ~= nil then
                 UserInputService.MouseIconEnabled = self._savedMouseIconEnabled
@@ -14328,6 +15178,16 @@
             if UI.AcrylicTexture then TweenService:Create(UI.AcrylicTexture, tweenInfo, {BackgroundTransparency = 1}):Play() end
             if UI.AcrylicSheen then TweenService:Create(UI.AcrylicSheen, tweenInfo, {BackgroundTransparency = 1}):Play() end
             TweenService:Create(UI.FocusOverlay, tweenInfo, {BackgroundTransparency = 1}):Play()
+            if UI.MainStroke then TweenService:Create(UI.MainStroke, tweenInfo, {Transparency = 1}):Play() end
+            if UI.AmbientGlow then
+                TweenService:Create(UI.AmbientGlow, tweenInfo, {ImageTransparency = 1}):Play()
+                task.delay(0.4, function()
+                    if UI.AmbientGlow and not self._STATE.GuiVisible then
+                        UI.AmbientGlow.Visible = false
+                    end
+                end)
+            end
+            if UI.AmbientGlow then TweenService:Create(UI.AmbientGlow, tweenInfo, {ImageTransparency = 1}):Play() end
 
             local _tScale = self._adaptiveScaleTarget or 1
             STATE.GuiTween = TweenService:Create(UI.MainScale, tweenInfo, {Scale = _tScale * 0.96})
@@ -14356,6 +15216,9 @@
 
             local fromPill = UI.MinimizeButton and UI.MinimizeButton.Visible
             UI.MainContainer.Visible = true
+            if UI.KeybindOverlayToggle and not self._isMobile and #STATE.activeKeybindListeners > 0 then
+                UI.KeybindOverlayToggle.Visible = true
+            end
             local _wantParticles = (self._perfProfile and self._perfProfile.ParticleBG) ~= false
             if _wantParticles then
                 task.delay(0.08, function()
@@ -14403,6 +15266,16 @@
             TweenService:Create(UI.MainContainer, tweenInfo, {BackgroundTransparency = mainBgTrans, Position = basePos}):Play()
             if UI.AcrylicTexture then TweenService:Create(UI.AcrylicTexture, tweenInfo, {BackgroundTransparency = self.Acrylic and 0.94 or 1}):Play() end
             if UI.AcrylicSheen then TweenService:Create(UI.AcrylicSheen, tweenInfo, {BackgroundTransparency = self.Acrylic and 0.72 or 1}):Play() end
+            if UI.MainStroke then TweenService:Create(UI.MainStroke, tweenInfo, {Transparency = 0}):Play() end
+            if UI.AmbientGlow then
+                UI.AmbientGlow.Visible = true
+                UI.AmbientGlow.ImageTransparency = 1
+                TweenService:Create(UI.AmbientGlow, tweenInfo, {ImageTransparency = 0.83}):Play()
+            end
+            if UI.AmbientGlow then
+                UI.AmbientGlow.ImageTransparency = 1
+                TweenService:Create(UI.AmbientGlow, tweenInfo, {ImageTransparency = 0.83}):Play()
+            end
 
             STATE.GuiTween = TweenService:Create(UI.MainScale, tweenInfo, {Scale = _tScale})
             STATE.GuiTween:Play()
@@ -14584,6 +15457,7 @@
         local STATE = self._STATE
         if not STATE or STATE.Destroyed or STATE._destroying then return end
         STATE._destroying = true
+        if STATE.Animators then table.clear(STATE.Animators) end
         local _ok, _err = pcall(function()
         STATE.GuiVisible = false
 
@@ -14650,7 +15524,7 @@
         self._loadingSpinConn = nil
         self._favTweens = nil
         self._cursorTrailPool = nil
-        self._UI = {}
+        self._UI = nil
 
         table.clear(STATE.ThemeRefreshers)
         table.clear(STATE.activeKeybindListeners)
