@@ -6121,7 +6121,7 @@
         if UI.CategoriesSectionLabel then UI.CategoriesSectionLabel.Visible = false end
         if self.TabPosition == "Side" and UI.CategoryBar and UI.AccordionScroll then
             UI.AccordionScroll.Position = UDim2.new(0, 6, 0, 54)
-            UI.AccordionScroll.Size = UDim2.new(1, -12, 1, -106)
+            UI.AccordionScroll.Size = UDim2.new(1, -12, 1, -140)
         end
     end
 
@@ -6141,19 +6141,19 @@
         local BOTTOM_PADDING = 15
 
         if position == "Side" then
-            if hasSearch and UI.SearchBar.Parent ~= UI.MainContainer then
-                UI.SearchBar.Parent = UI.MainContainer
+            if hasSearch and UI.SearchBar.Parent ~= UI.CategoryBar then
+                UI.SearchBar.Parent = UI.CategoryBar
             end
-            UI.CategoryBar.Size = UDim2.new(0, sideWidth, 1, -102)
-            UI.CategoryBar.Position = UDim2.new(0, 10, 0, 90)
+            UI.CategoryBar.Size = UDim2.new(0, sideWidth, 1, -54)
+            UI.CategoryBar.Position = UDim2.new(0, 10, 0, 42)
             UI.CategoryBar.BackgroundColor3 = self._Colors.Sidebar
             UI.CategoryBar.BackgroundTransparency = 0.35
             UI.CategoryBarStroke.Transparency = 0
             UI.CategoryBarStroke.Color = self._Colors.Border
 
             if hasSearch then
-                UI.SearchBar.Size = UDim2.new(1, -30, 0, 32)
-                UI.SearchBar.Position = UDim2.new(0, 15, 0, 50)
+                UI.SearchBar.Size = UDim2.new(1, -20, 0, 32)
+                UI.SearchBar.Position = UDim2.new(0, 10, 0, 10)
                 if UI.SearchInput then
                     UI.SearchInput.Size = UDim2.new(1, -100, 1, 0)
                     UI.SearchInput.Position = UDim2.new(0, 36, 0, 0)
@@ -6177,8 +6177,8 @@
             if UI.SideProfileMini then UI.SideProfileMini.Visible = true end
 
             if hasContent then
-                UI.ContentArea.Size = UDim2.new(1, -(sideWidth + 30), 1, -102)
-                UI.ContentArea.Position = UDim2.new(0, sideWidth + 20, 0, 90)
+                UI.ContentArea.Size = UDim2.new(1, -(sideWidth + 30), 1, -54)
+                UI.ContentArea.Position = UDim2.new(0, sideWidth + 20, 0, 42)
             end
             if UI.BottomPill then UI.BottomPill.Visible = false end
 
@@ -9798,21 +9798,6 @@
             NumberSequenceKeypoint.new(1, 0),
         })
 
-        local statusDot = Instance.new("Frame", bust)
-        statusDot.Name = "StatusDot"
-        statusDot.Size = UDim2.fromOffset(10, 10)
-        statusDot.AnchorPoint = Vector2.new(1, 1)
-        statusDot.Position = UDim2.new(1, -12, 1, -12)
-        statusDot.BackgroundColor3 = Color3.fromRGB(52, 211, 153)
-        statusDot.BorderSizePixel = 0
-        statusDot.ZIndex = 4
-        Instance.new("UICorner", statusDot).CornerRadius = UDim.new(1, 0)
-
-        local statusRing = Instance.new("UIStroke", statusDot)
-        statusRing.Color = self._Colors.Card
-        statusRing.Thickness = 2
-        statusRing.Transparency = 0
-
         local welcomeLbl = Instance.new("TextLabel", HomeCard)
         welcomeLbl.Name = "Welcome"
         welcomeLbl.Size = UDim2.new(1, -110, 0, 11)
@@ -10154,7 +10139,6 @@
                 welcomeLbl.TextColor3 = self._Colors.TextDim
                 displayLbl.TextColor3 = self._Colors.Text
                 userLbl.TextColor3 = self._Colors.TextDim
-                statusRing.Color = self._Colors.Card
                 if tierChip then
                     tierChip.BackgroundColor3 = self._Colors.Bg2
                     tierStroke.Color = self._Colors.Border
