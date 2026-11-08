@@ -89,6 +89,27 @@
         ["crown"] = "rbxassetid://7734060101",
         ["clock"] = "rbxassetid://7733951517",
         ["user-x"] = "rbxassetid://7734082053",
+        ["flame"] = "rbxassetid://7734088669",
+        ["diamond"] = "rbxassetid://7734060101",
+        ["gem"] = "rbxassetid://7734060101",
+        ["eye"] = "rbxassetid://7734057332",
+        ["wrench"] = "rbxassetid://7734065547",
+        ["cog"] = "rbxassetid://7734065547",
+        ["database"] = "rbxassetid://7733991600",
+        ["terminal"] = "rbxassetid://7734007240",
+        ["box"] = "rbxassetid://7734028058",
+        ["package"] = "rbxassetid://7734028058",
+        ["layers"] = "rbxassetid://7734028058",
+        ["gamepad-2"] = "rbxassetid://7734007240",
+        ["bot"] = "rbxassetid://7734082053",
+        ["infinity"] = "rbxassetid://7734028058",
+        ["orbit"] = "rbxassetid://7733951517",
+        ["atom"] = "rbxassetid://7734005169",
+        ["sparkles"] = "rbxassetid://7734060101",
+        ["lock-keyhole"] = "rbxassetid://7734069485",
+        ["lock-keyhole-open"] = "rbxassetid://7734069485",
+        ["ghost"] = "rbxassetid://7734082053",
+        ["skull"] = "rbxassetid://7734082053",
     }
 
     local function GetIcon(name)
@@ -1924,7 +1945,9 @@
                     sec.section.BackgroundTransparency = trans
                     for _, control in ipairs(sec.controls or {}) do
                         local inst = control.instance
-                        if inst and inst.Parent and inst:IsA("GuiObject") then
+                        local ct = control.ctrlType
+                        if inst and inst.Parent and inst:IsA("GuiObject")
+                            and ct ~= "label" and ct ~= "paragraph" then
                             inst.BackgroundTransparency = rowTrans
                         end
                     end
@@ -2171,6 +2194,10 @@
         local function close(confirmed)
             if closed then return end
             closed = true
+            if self._ActiveConfirmEscConn then
+                pcall(function() Fn.untrack(self._ActiveConfirmEscConn, self) end)
+                self._ActiveConfirmEscConn = nil
+            end
             self._ConfirmAnimating = false
             if self._ActiveConfirm == overlay then self._ActiveConfirm = nil end
             TweenService:Create(overlay, TweenInfo.new(0.15), {BackgroundTransparency = 1}):Play()
@@ -2207,7 +2234,7 @@
         self._ActiveConfirm = overlay
         self._ActiveConfirmClose = close
 
-        Fn.track(UserInputService.InputBegan, function(input, gp)
+        self._ActiveConfirmEscConn = Fn.track(UserInputService.InputBegan, function(input, gp)
             if gp then return end
             if input.KeyCode ~= Enum.KeyCode.Escape then return end
             if self._ActiveConfirm == overlay then
@@ -4250,13 +4277,20 @@
                 return
             end
 
-            local cachedAsset = self:_getCachedWallpaper(img)
-            if type(cachedAsset) == "string" and cachedAsset ~= "" then
-                UI.Wallpaper.Image = cachedAsset
-                UI.Wallpaper.ImageTransparency = trans
-                UI.Wallpaper.Visible = true
-                self:Notify("WALLPAPER", "Wallpaper restored from cache", "info")
-                return
+            local cachedFile = self:_getCachedWallpaper(img)
+            if type(cachedFile) == "string" and cachedFile ~= "" then
+                local _fileExists = false
+                pcall(function() _fileExists = isfile and isfile(cachedFile) end)
+                if _fileExists then
+                    local _ok, _assetUrl = pcall(getcustomasset, cachedFile)
+                    if _ok and type(_assetUrl) == "string" then
+                        UI.Wallpaper.Image = _assetUrl
+                        UI.Wallpaper.ImageTransparency = trans
+                        UI.Wallpaper.Visible = true
+                        self:Notify("WALLPAPER", "Wallpaper restored from cache", "info")
+                        return
+                    end
+                end
             end
 
             if self._wallpaperInFlight then
@@ -4306,13 +4340,14 @@
                 local baseName = self:_wallpaperCachePath(img):gsub("%.url$", "")
                 local fileName = baseName .. ext
 
+                local _urlPrefix = self:_wallpaperCachePath(img):gsub("%.url$", "")
                 if listfiles and delfile then
                     pcall(function()
                         for _, f in ipairs(listfiles()) do
                             local base = string.match(tostring(f), "[^\\/]+$") or tostring(f)
-                            if string.find(base, "DoD_Wallpaper_", 1, true)
+                            if string.find(base, _urlPrefix, 1, true)
                             and base ~= fileName
-                            and base ~= (baseName .. ".url") then
+                            and not string.find(base, "%.url$") then
                                 delfile(f)
                             end
                         end
@@ -4337,7 +4372,7 @@
                     self:Notify("WALLPAPER", "Gagal load file lokal ke Roblox", "error")
                     return
                 end
-                pcall(function() self:_setWallpaperCache(img, assetContent) end)
+                pcall(function() self:_setWallpaperCache(img, fileName) end)
 
                 local setOk = pcall(function()
                     UI.Wallpaper.Image = assetContent
@@ -5104,11 +5139,6 @@
                 end
             end)
 
-            if self.TitleBarColor then
-                self._TitleBarAutoTint = self.TitleBarColor
-                self:_applyTitleBarTint(self.TitleBarColor)
-            end
-
             UI.TitleImageLabel = img
             UI.TitleImageContainer = imgContainer
 
@@ -5117,6 +5147,11 @@
                     img.ImageColor3 = self._Colors.Text
                 end
             end)
+        end
+
+        if self.TitleBarColor then
+            self._TitleBarAutoTint = self.TitleBarColor
+            self:_applyTitleBarTint(self.TitleBarColor)
         end
 
         UI.TitleVersionBadge = Instance.new("TextLabel", UI.TitleBar)
@@ -7099,12 +7134,11 @@
         local star = Instance.new("ImageButton", holder)
         star.Name = "FavoriteStar"
         if self._isMobile then
-
             star.Size = UDim2.fromOffset(14, 14)
-            star.Position = starPos or UDim2.new(1, -20, 0, 1)
+            star.Position = starPos or UDim2.new(1, -18, 0, 0)
         else
-            star.Size = UDim2.fromOffset(11, 11)
-            star.Position = starPos or UDim2.new(1, -14, 0, 2)
+            star.Size = UDim2.fromOffset(10, 10)
+            star.Position = starPos or UDim2.new(1, -14, 0, 0)
         end
         star.BackgroundTransparency = 1
         star.BorderSizePixel = 0
@@ -8407,7 +8441,7 @@
         iconImg.Size = UDim2.new(0, 16, 0, 16)
         iconImg.Position = UDim2.new(0, 14, 0.5, -8)
         iconImg.BackgroundTransparency = 1
-        iconImg.ImageColor3 = Color3.new(1, 1, 1)
+        iconImg.ImageColor3 = self._Colors.TextDim
         iconImg.ImageTransparency = 0.45
         iconImg.ScaleType = Enum.ScaleType.Fit
         if iconSpec then
@@ -8441,9 +8475,12 @@
         self:_registerThemeRefresher(function()
             if not btn.Parent then return end
             btn.BackgroundColor3 = self._Colors.Card
-
-            label.TextColor3 = categoryName == STATE.ActiveCategory
+            local _active = categoryName == STATE.ActiveCategory
+            label.TextColor3 = _active
                 and Fn.contrastForeground(self._Colors.Sidebar) or self._Colors.TextDim
+            if iconImg and iconImg.Parent then
+                iconImg.ImageColor3 = _active and self._Colors.Accent or self._Colors.TextDim
+            end
         end)
 
         self:_layoutCategoryButtons()
@@ -8520,7 +8557,7 @@
         local STATE = self._STATE
         local UI = self._UI
         if not (UI and UI.CategoryIndicator) then return end
-        if self.TabPosition == "Side" or self.TabPosition == "SideFloating" then
+        if self.TabPosition == "Side" or self.TabPosition == "SideFloating" or self.TabPosition == "Bottom" then
             UI.CategoryIndicator.Visible = false
             return
         end
@@ -8699,6 +8736,7 @@
                 data.label.Font = active and Enum.Font.GothamBold or Enum.Font.GothamMedium
                 TweenService:Create(data.icon, TweenInfo.new(0.22), {
                     ImageTransparency = active and 0 or 0.45,
+                    ImageColor3 = active and self._Colors.Accent or self._Colors.TextDim,
                 }):Play()
             end
             self:_updateCategoryIndicator(true)
@@ -10070,9 +10108,9 @@
             local timeElapsed = 0
             local sessionStart = os.clock()
             local fpsConn = RunService.RenderStepped:Connect(function(dt)
-
                 if not HomeCard.Visible then return end
                 if not self._STATE.GuiVisible then return end
+                if self._STATE.ActiveTab ~= tabName then return end
                 frames = frames + 1
                 timeElapsed = timeElapsed + dt
                 if timeElapsed >= 0.5 then
@@ -10088,7 +10126,7 @@
                     fpsConn:Disconnect()
                     break
                 end
-                if not HomeCard.Visible or not self._STATE.GuiVisible then
+                if not HomeCard.Visible or not self._STATE.GuiVisible or self._STATE.ActiveTab ~= tabName then
                     continue
                 end
                 local elapsed = math.floor(os.clock() - sessionStart)
@@ -10673,7 +10711,11 @@
 
         self:_registerAnimator(function(dt)
             if not WaveBox.Parent then return end
-
+            if self._STATE.ActiveTab ~= tabName then
+                lastCheck = os.clock()
+                frameCount = 0
+                return
+            end
             if not WaveBox.Visible or not self._STATE.GuiVisible then
                 lastCheck = os.clock()
                 frameCount = 0
@@ -10707,7 +10749,7 @@
         task.spawn(function()
             while task.wait(0.5) do
                 if not WaveBox.Parent then break end
-                if not WaveBox.Visible or not self._STATE.GuiVisible then continue end
+                if not WaveBox.Visible or not self._STATE.GuiVisible or self._STATE.ActiveTab ~= tabName then continue end
                 local elapsed = math.floor(os.clock() - startTime)
                 sessM.Text = string.format("%02d:%02d", math.floor(elapsed / 60), elapsed % 60)
                 plM.Text = tostring(#Players:GetPlayers()) .. " / " .. tostring(Players.MaxPlayers)
@@ -10815,6 +10857,8 @@
             local targetKnob = Fn.contrastForeground(targetBg)
             local onPos = UDim2.new(1, _knOnX, 0.5, _knY)
             local offPos = UDim2.new(0, _knOffX, 0.5, _knY)
+            trackGrad.Enabled = state
+            trackGrad.Color = ColorSequence.new(self._Colors.Accent, self._Colors.Accent2 or self._Colors.Accent)
             if animate then
                 TweenService:Create(switchBg, tInfo, {BackgroundColor3 = targetBg}):Play()
                 TweenService:Create(switchStroke, tInfo, {Color = targetStroke}):Play()
@@ -11220,6 +11264,14 @@
 
         local minusHold = makeHold(-1)
         local plusHold = makeHold(1)
+
+        Fn.track(UserInputService.InputEnded, function(inp)
+            if inp.UserInputType == Enum.UserInputType.MouseButton1
+                or inp.UserInputType == Enum.UserInputType.Touch then
+                minusHold.stop()
+                plusHold.stop()
+            end
+        end, self)
 
         btnMinus.InputBegan:Connect(function(inp)
             if inp.UserInputType == Enum.UserInputType.MouseButton1 or inp.UserInputType == Enum.UserInputType.Touch then
@@ -11859,9 +11911,17 @@
         local function stepHighlight(delta)
             local count = #optionButtons
             if count == 0 then return end
-            local nextIndex = highlightedIndex + delta
-            if nextIndex < 1 then nextIndex = count end
-            if nextIndex > count then nextIndex = 1 end
+            local nextIndex = highlightedIndex
+            local attempts = 0
+            while attempts < count do
+                nextIndex = nextIndex + delta
+                if nextIndex < 1 then nextIndex = count end
+                if nextIndex > count then nextIndex = 1 end
+                if optionButtons[nextIndex] and optionButtons[nextIndex].Visible then
+                    break
+                end
+                attempts = attempts + 1
+            end
             setHighlight(nextIndex)
         end
         popup:GetPropertyChangedSignal("Visible"):Connect(function()
@@ -12556,6 +12616,16 @@
             popup.BackgroundColor3 = self._Colors.Bg2
             popupStroke.Color = self._Colors.Accent
             popupScroll.ScrollBarImageColor3 = self._Colors.Accent
+            mdSearchFrame.BackgroundColor3 = self._Colors.Card
+            mdSearchIcon.ImageColor3 = self._Colors.TextDim
+            mdSearchBox.TextColor3 = self._Colors.Text
+            mdSearchBox.PlaceholderColor3 = self._Colors.TextDim
+            mdAllBtn.BackgroundColor3 = self._Colors.Accent
+            mdAllBtn.BackgroundTransparency = 0.7
+            mdAllBtn.TextColor3 = self._Colors.Accent
+            mdNoneBtn.BackgroundColor3 = self._Colors.Card
+            mdNoneBtn.BackgroundTransparency = 0.3
+            mdNoneBtn.TextColor3 = self._Colors.TextDim
             for _, btn in ipairs(optionButtons) do
                 btn.BackgroundColor3 = self._Colors.Card
                 local box = btn:FindFirstChild("CheckBox")
@@ -13070,10 +13140,21 @@
             function(v, silent)
                 if type(v) ~= "string" then return end
                 local _k, _mods = nil, {}
-                local _upper = string.upper(v)
+                local _rest = v
+                while true do
+                    local _prefix, _after = _rest:match("^(%a+)%+(.+)$")
+                    if _prefix and (_prefix == "Ctrl" or _prefix == "Shift" or _prefix == "Alt") then
+                        table.insert(_mods, _prefix)
+                        _rest = _after
+                    else
+                        break
+                    end
+                end
+                local _upper = string.upper(_rest)
                 if _upper == "LCLICK" then _k = "LClick"
                 elseif _upper == "RCLICK" then _k = "RClick"
-                elseif _upper ~= "NONE" and v ~= "" then
+                elseif _upper == "NONE" or _rest == "" then _k = nil
+                else
                     local _ok, _e = pcall(function() return Enum.KeyCode[_upper] end)
                     if _ok and _e then _k = _e
                     else
@@ -13150,11 +13231,11 @@
                         if l.btnStroke then TweenService:Create(l.btnStroke, TweenInfo.new(0.15), {Color = self._Colors.Border, Transparency = 0.5}):Play() end
                     end
                 end
-                if getgenv()._lastParryFireAt_ball then table.clear(getgenv()._lastParryFireAt_ball) end
             end, self)
 
             Fn.track(UserInputService.InputBegan, function(inp, proc)
                 if proc then return end
+                if UserInputService:GetFocusedTextBox() then return end
                 for _, l in ipairs(STATE.activeKeybindListeners) do
                     local mp = inp.Position
                     local bp, bs = l.btn.AbsolutePosition, l.btn.AbsoluteSize
@@ -13178,9 +13259,9 @@
                                 l.setKey("LClick", capturedMods)
                                 l.callback(Enum.UserInputType.MouseButton1, capturedMods)
                             else
-
                                 l.setKey(l.key, l.mods)
                             end
+                            return
                         end
                     elseif l.key ~= nil and not onClickBtn then
                         local currentMods = getMods()
@@ -13200,7 +13281,6 @@
                             firedKey = Enum.UserInputType.MouseButton1
                         end
                         if matched and modsMatch(l.mods, currentMods) then
-
                             l.callback(firedKey, l.mods)
                         end
                     end
@@ -14874,6 +14954,10 @@
         STATE.AnimatingGui = true
         STATE.GuiVisible = false
         if UI.MobileToggle then UI.MobileToggle.Visible = false end
+        if UI.KeybindOverlay then UI.KeybindOverlay.Visible = false end
+        if UI.KeybindOverlayToggle then UI.KeybindOverlayToggle.Visible = false end
+        if UI.TooltipFrame then UI.TooltipFrame.Visible = false end
+        if self._activeContextMenu then pcall(function() self._activeContextMenu:Destroy() end); self._activeContextMenu = nil end
         for _, _entry in ipairs(STATE.activeDropdownPopups) do
             if _entry and _entry.close then pcall(_entry.close) end
         end
@@ -15087,6 +15171,10 @@
             end
             STATE.GuiVisible = false
             self._overGui = false
+            if UI.KeybindOverlay then UI.KeybindOverlay.Visible = false end
+            if UI.KeybindOverlayToggle then UI.KeybindOverlayToggle.Visible = false end
+            if UI.TooltipFrame then UI.TooltipFrame.Visible = false end
+            if self._activeContextMenu then pcall(function() self._activeContextMenu:Destroy() end); self._activeContextMenu = nil end
 
             if self._savedMouseIconEnabled ~= nil then
                 UserInputService.MouseIconEnabled = self._savedMouseIconEnabled
@@ -15144,6 +15232,9 @@
 
             local fromPill = UI.MinimizeButton and UI.MinimizeButton.Visible
             UI.MainContainer.Visible = true
+            if UI.KeybindOverlayToggle and not self._isMobile and #STATE.activeKeybindListeners > 0 then
+                UI.KeybindOverlayToggle.Visible = true
+            end
             local _wantParticles = (self._perfProfile and self._perfProfile.ParticleBG) ~= false
             if _wantParticles then
                 task.delay(0.08, function()
@@ -15449,7 +15540,7 @@
         self._loadingSpinConn = nil
         self._favTweens = nil
         self._cursorTrailPool = nil
-        self._UI = {}
+        self._UI = nil
 
         table.clear(STATE.ThemeRefreshers)
         table.clear(STATE.activeKeybindListeners)
