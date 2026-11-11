@@ -2998,11 +2998,27 @@
                         end
                     end
                     local scrollAmount = 50
+                    local delta = input.Position.Z * scrollAmount
                     local currTarget = target:GetAttribute("TargetScrollY") or target.CanvasPosition.Y
-                    local targetY = currTarget - (input.Position.Z * scrollAmount)
                     local maxScroll = math.max(0, target.AbsoluteCanvasSize.Y - target.AbsoluteSize.Y)
-                    targetY = math.clamp(targetY, 0, maxScroll)
-                    target:SetAttribute("TargetScrollY", targetY)
+                    local wantY = currTarget - delta
+                    local clampedY = math.clamp(wantY, 0, maxScroll)
+                    local overflow = wantY - clampedY
+                    if math.abs(overflow) < 0.5 then
+                        target:SetAttribute("TargetScrollY", clampedY)
+                    else
+                        local _p = target.Parent
+                        while _p do
+                            if _p:IsA("ScrollingFrame") and _p.Visible and _p ~= target then
+                                local _pCurr = _p:GetAttribute("TargetScrollY") or _p.CanvasPosition.Y
+                                local _pMax = math.max(0, _p.AbsoluteCanvasSize.Y - _p.AbsoluteSize.Y)
+                                local _pWant = _pCurr + overflow
+                                _p:SetAttribute("TargetScrollY", math.clamp(_pWant, 0, _pMax))
+                                break
+                            end
+                            _p = _p.Parent
+                        end
+                    end
                     if self._SoundsEnabled then
                         local _now = os.clock()
                         if _now - (self._lastScrollSoundTime or 0) > 0.12 then
@@ -7334,7 +7350,9 @@
     end
 
     function Library:_initFocusOverlay()
-        self:_rebuildFocusPattern()
+        if self._STATE.FocusOverlayEnabled then
+            self:_rebuildFocusPattern()
+        end
     end
 
     function Library:_patternCacheKey()
@@ -7578,14 +7596,14 @@
             and (theme.OverlayTransparency or 0.45) or 1
         UI.FocusOverlay.Visible = _focusAllowed
 
-        if self._lastPatternKey ~= self:_patternCacheKey() then
+        if _focusAllowed and self._lastPatternKey ~= self:_patternCacheKey() then
             if self._patternRebuildDebounce then
                 pcall(task.cancel, self._patternRebuildDebounce)
             end
             self._patternRebuildDebounce = task.delay(0.15, function()
                 self._patternRebuildDebounce = nil
                 if self:_isDead() then return end
-                if self._lastPatternKey ~= self:_patternCacheKey() then
+                if self._STATE.FocusOverlayEnabled and self._lastPatternKey ~= self:_patternCacheKey() then
                     self:_rebuildFocusPattern()
                 end
             end)
@@ -9705,7 +9723,10 @@
             local maxH = 620
             local contentArea = self._UI.ContentArea
             if contentArea and contentArea.AbsoluteSize.Y > 0 then
-                maxH = math.max(280, contentArea.AbsoluteSize.Y * 0.75)
+                local _caH = contentArea.AbsoluteSize.Y
+                local _softCap = math.max(180, _caH * 0.75)
+                local _hardCap = math.max(140, _caH - HEADER_HEIGHT - 12)
+                maxH = math.min(_softCap, _hardCap)
             end
             local cappedH = math.min(contentH, maxH)
             local targetH = expanded and (HEADER_HEIGHT + cappedH) or HEADER_HEIGHT
@@ -15106,6 +15127,7 @@
         if UI.KeybindOverlay then UI.KeybindOverlay.Visible = false end
         if UI.KeybindOverlayToggle then UI.KeybindOverlayToggle.Visible = false end
         if UI.TooltipFrame then UI.TooltipFrame.Visible = false end
+        if UI.FloatingNav then UI.FloatingNav.Visible = false end
         if self._activeContextMenu then pcall(function() self._activeContextMenu:Destroy() end); self._activeContextMenu = nil end
         for _, _entry in ipairs(STATE.activeDropdownPopups) do
             if _entry and _entry.close then pcall(_entry.close) end
@@ -15196,16 +15218,27 @@
     function Library:_installAnimatorPump()
         if self._animatorPumpInstalled then return end
         self._animatorPumpInstalled = true
+        self._frameSinceVisible = 0
         Fn.track(RunService.RenderStepped, function(dt)
             if self:_isDead() or self._STATE._destroying then return end
+            if not self._STATE.GuiVisible then
+                self._frameSinceVisible = 0
+                return
+            end
+            self._frameSinceVisible = (self._frameSinceVisible or 0) + 1
+            local warmup = self._frameSinceVisible <= 2
             local list = self._STATE.Animators
             for i = #list, 1, -1 do
                 local entry = list[i]
                 if entry and entry.fn then
-                    local ok, err = pcall(entry.fn, dt)
-                    if not ok then
-                        warn("[DoD UI] Animator '" .. tostring(entry.key) .. "' error: " .. tostring(err))
-                        entry.fn = nil
+                    if warmup and (entry.key == "weather" or entry.key == "particle-bg" or entry.key == "fps-counter") then
+                        -- skip animator berat di frame 1-2 pertama visible
+                    else
+                        local ok, err = pcall(entry.fn, dt)
+                        if not ok then
+                            warn("[DoD UI] Animator '" .. tostring(entry.key) .. "' error: " .. tostring(err))
+                            entry.fn = nil
+                        end
                     end
                 end
             end
@@ -15324,6 +15357,7 @@
             if UI.KeybindOverlay then UI.KeybindOverlay.Visible = false end
             if UI.KeybindOverlayToggle then UI.KeybindOverlayToggle.Visible = false end
             if UI.TooltipFrame then UI.TooltipFrame.Visible = false end
+            if UI.FloatingNav then UI.FloatingNav.Visible = false end
             if self._activeContextMenu then pcall(function() self._activeContextMenu:Destroy() end); self._activeContextMenu = nil end
 
             if self._savedMouseIconEnabled ~= nil then
@@ -15393,6 +15427,9 @@
             STATE.GuiVisible = true
             if UI.MinimizeButton then
                 UI.MinimizeButton.Visible = false
+            end
+            if UI.FloatingNav and self.TabPosition == "SideFloating" then
+                UI.FloatingNav.Visible = true
             end
 
             local basePos = STATE.SavedPos or UI.MainContainer.Position
