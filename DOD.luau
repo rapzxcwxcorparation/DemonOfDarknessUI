@@ -3019,6 +3019,60 @@
                             _p = _p.Parent
                         end
                     end
+                    -- [D1 AUTO-FOLLOW]
+                    if target then
+                        local _secData = self._STATE.SearchBodies[target]
+                        local _ca = self._UI.ContentArea
+                        if _secData and _secData.section and _secData.section.Parent
+                                and _ca and _ca.Visible then
+                            local _pageScroll
+                            local _pp = target.Parent
+                            while _pp do
+                                if _pp:IsA("ScrollingFrame") and _pp ~= target then
+                                    _pageScroll = _pp
+                                    break
+                                end
+                                _pp = _pp.Parent
+                            end
+                            if _pageScroll then
+                                local _bodyMax = math.max(0,
+                                    target.AbsoluteCanvasSize.Y - target.AbsoluteSize.Y)
+                                local _bodyCurr = target:GetAttribute("TargetScrollY")
+                                    or target.CanvasPosition.Y
+                                local _bodyAtMax = _bodyCurr >= _bodyMax - 1
+                                local _bodyAtMin = _bodyCurr <= 1
+                                local _secAbs = _secData.section.AbsolutePosition
+                                local _secSize = _secData.section.AbsoluteSize
+                                local _caAbs = _ca.AbsolutePosition
+                                local _caSize = _ca.AbsoluteSize
+                                local _overflowDown =
+                                    (_secAbs.Y + _secSize.Y) - (_caAbs.Y + _caSize.Y)
+                                local _overflowUp = _caAbs.Y - _secAbs.Y
+                                local _pan = 0
+                                local _margin = 12
+                                if _overflowDown > 2 and _bodyAtMax
+                                        and input.Position.Z < 0 then
+                                    _pan = _overflowDown + _margin
+                                elseif _overflowUp > 2 and _bodyAtMin
+                                        and input.Position.Z > 0 then
+                                    _pan = -(_overflowUp + _margin)
+                                end
+                                if math.abs(_pan) > 0.5 then
+                                    local _pMax = math.max(0,
+                                        _pageScroll.AbsoluteCanvasSize.Y
+                                        - _pageScroll.AbsoluteSize.Y)
+                                    local _pCurr = _pageScroll:GetAttribute("TargetScrollY")
+                                        or _pageScroll.CanvasPosition.Y
+                                    local _pWant = math.clamp(_pCurr + _pan, 0, _pMax)
+                                    if math.abs(_pWant - _pCurr) > 0.5 then
+                                        self._lastFollowTime = os.clock()
+                                        _pageScroll:SetAttribute("TargetScrollY", _pWant)
+                                    end
+                                end
+                            end
+                        end
+                    end
+                    -- [/D1 AUTO-FOLLOW]
                     if self._SoundsEnabled then
                         local _now = os.clock()
                         if _now - (self._lastScrollSoundTime or 0) > 0.12 then
@@ -15251,6 +15305,60 @@
         self:_attachScrollSound(frame)
         frame:SetAttribute("TargetScrollY", frame.CanvasPosition.Y)
         frame:SetAttribute("DoD_LastSet", frame.CanvasPosition.Y)
+
+        -- [D2 AUTO-FOLLOW TOUCH]
+        frame:GetPropertyChangedSignal("CanvasPosition"):Connect(function()
+            if self:_isDead() or not self._STATE.GuiVisible then return end
+            if os.clock() - (self._lastFollowTime or 0) < 0.2 then return end
+            local _secData = self._STATE.SearchBodies[frame]
+            if not _secData or not _secData.section or not _secData.section.Parent then
+                return
+            end
+            local _ca = self._UI.ContentArea
+            if not _ca or not _ca.Visible then return end
+            local _pageScroll
+            local _pp = frame.Parent
+            while _pp do
+                if _pp:IsA("ScrollingFrame") and _pp ~= frame then
+                    _pageScroll = _pp
+                    break
+                end
+                _pp = _pp.Parent
+            end
+            if not _pageScroll then return end
+            local _bodyMax = math.max(0,
+                frame.AbsoluteCanvasSize.Y - frame.AbsoluteSize.Y)
+            local _bodyCurr = frame.CanvasPosition.Y
+            local _atMax = _bodyCurr >= _bodyMax - 2
+            local _atMin = _bodyCurr <= 2
+            if not _atMax and not _atMin then return end
+            local _secAbs = _secData.section.AbsolutePosition
+            local _secSize = _secData.section.AbsoluteSize
+            local _caAbs = _ca.AbsolutePosition
+            local _caSize = _ca.AbsoluteSize
+            local _overflowDown =
+                (_secAbs.Y + _secSize.Y) - (_caAbs.Y + _caSize.Y)
+            local _overflowUp = _caAbs.Y - _secAbs.Y
+            local _pan = 0
+            local _margin = 12
+            if _overflowDown > 2 and _atMax then
+                _pan = _overflowDown + _margin
+            elseif _overflowUp > 2 and _atMin then
+                _pan = -(_overflowUp + _margin)
+            else
+                return
+            end
+            local _pMax = math.max(0,
+                _pageScroll.AbsoluteCanvasSize.Y - _pageScroll.AbsoluteSize.Y)
+            local _pCurr = _pageScroll:GetAttribute("TargetScrollY")
+                or _pageScroll.CanvasPosition.Y
+            local _pWant = math.clamp(_pCurr + _pan, 0, _pMax)
+            if math.abs(_pWant - _pCurr) > 0.5 then
+                self._lastFollowTime = os.clock()
+                _pageScroll:SetAttribute("TargetScrollY", _pWant)
+            end
+        end)
+        -- [/D2 AUTO-FOLLOW TOUCH]
         if not self._scrollPumpInstalled then
             self._scrollPumpInstalled = true
             self:_registerAnimator(function(dt)
