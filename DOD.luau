@@ -84,6 +84,7 @@
         ["cpu"] = "rbxassetid://7734005169",
         ["minus"] = "rbxassetid://7733988022",
         ["maximize-2"] = "rbxassetid://7734028058",
+        ["minimize-2"] = "rbxassetid://7734028058",
         ["square"] = "rbxassetid://7734028058",
         ["minus-circle"] = "rbxassetid://7733988022",
         ["crown"] = "rbxassetid://7734060101",
@@ -2051,6 +2052,10 @@
         if self._isMobile then gui.ScreenInsets = Enum.ScreenInsets.DeviceSafeInsets end
         self._UI.NotifGui = gui
         self:_installAnimatorPump()
+        self:_bindViewportSignal(function()
+            if self:_isDead() then return end
+            self:_updateNotifPositions()
+        end)
     end
 
     function Library:SetNotificationPosition(pos)
@@ -2108,7 +2113,7 @@
         local _cPanelH = _cMob and math.min(200, _cVpY - 24) or 176
         local _cPad = 16
         local _cGap = 8
-        local _cBtnW = _cMob and math.floor((_cPanelW - _cPad * 2 - _cGap) / 2) or 148
+        local _cBtnW = math.floor((_cPanelW - _cPad * 2 - _cGap) / 2)
         local _cBtnH = _cMob and 44 or 34
         local panel = Instance.new("Frame", overlay)
         panel.Size = UDim2.fromOffset(_cPanelW, _cPanelH)
@@ -4109,6 +4114,39 @@
         end
     end
 
+    function Library:SetTitle(newTitle)
+        if self:_isDead() then return end
+        if type(newTitle) ~= "string" or newTitle == "" then return end
+        self.Title = newTitle
+        local mainT, subT = newTitle:match("^(.-)%s*|%s*(.+)$")
+        if not mainT then mainT = newTitle; subT = "" end
+        if self._UI.TitleLabel and not self.TitleImage then
+            self._UI.TitleLabel.Text = mainT
+        end
+        if self._UI.TitleSubtitle then
+            self._UI.TitleSubtitle.Text = subT
+        end
+        if self._UI.MinimizeButtonText then
+            self._UI.MinimizeButtonText.Text = mainT
+        end
+        if self._UI.MobileToggle then
+            for _, c in ipairs(self._UI.MobileToggle:GetChildren()) do
+                if c:IsA("TextLabel") and c.Text ~= "" then
+                    c.Text = mainT
+                end
+            end
+        end
+    end
+
+    function Library:SetAuthor(newAuthor)
+        if self:_isDead() then return end
+        if type(newAuthor) ~= "string" or newAuthor == "" then return end
+        self.Author = newAuthor
+        if self._UI.TitleDiscord then
+            self._UI.TitleDiscord.Text = "<i>" .. newAuthor .. "</i>"
+        end
+    end
+
     function Library:SetVersion(text)
         if self:_isDead() then return end
         self.Version = tostring(text or "")
@@ -4246,6 +4284,7 @@
                 end
             end
         end)
+        self._wallpaperCache = {}
         self:Notify("WALLPAPER", "Cleared " .. removed .. " cached entries", "success")
     end
 
@@ -5684,6 +5723,9 @@
                 }):Play()
                 self._hudState = "MAXIMIZED"
             end
+            if self._winMaxCtl and self._winMaxCtl.icon then
+                self._winMaxCtl.icon.Image = GetIcon(self._hudState == "MAXIMIZED" and "minimize-2" or "maximize-2")
+            end
         end
 
         local function doClose()
@@ -5693,6 +5735,7 @@
         local minCtl = makeBtn(1, "minus", doMinimize, false)
         local maxCtl = makeBtn(2, "maximize-2", doMaximize, false)
         local closeCtl = makeBtn(3, "x", doClose, true)
+        self._winMaxCtl = maxCtl
 
         self:_registerThemeRefresher(function()
             if not container.Parent then return end
@@ -6869,6 +6912,7 @@
                     if control.hidden then
                         control.hidden = false
                         if control.instance.Parent == nil and control.parent and control.parent.Parent then
+                            control.instance.LayoutOrder = control.layoutOrder or 0
                             control.instance.Parent = control.parent
                         end
                     end
@@ -6938,6 +6982,7 @@
                     if ctrl.hidden then
                         ctrl.hidden = false
                         if ctrl.instance.Parent == nil and ctrl.parent and ctrl.parent.Parent then
+                            ctrl.instance.LayoutOrder = ctrl.layoutOrder or 0
                             ctrl.instance.Parent = ctrl.parent
                         end
                     end
@@ -7129,6 +7174,10 @@
                 self._STATE.SearchTopLevel = self._STATE.SearchTopLevel or {}
                 self._STATE.SearchTopLevel[tabName] = self._STATE.SearchTopLevel[tabName] or {}
                 local text = tostring(searchText or "")
+                if instance:IsA("GuiObject") and instance.LayoutOrder == 0 and instance.Parent then
+                    local _scan = instance.Parent:GetChildren()
+                    instance.LayoutOrder = #_scan
+                end
                 table.insert(self._STATE.SearchTopLevel[tabName], {
                     instance = instance,
                     searchText = text,
@@ -7136,6 +7185,7 @@
                     ctrlId = instance:GetAttribute("DoD_CtrlId"),
                     ctrlType = ctrlType,
                     parent = instance.Parent,
+                    layoutOrder = instance.LayoutOrder,
                 })
                 self:_queueSearchFilter(tabName)
             end
@@ -7143,6 +7193,10 @@
         end
 
         local text = tostring(searchText or "")
+        if instance:IsA("GuiObject") and instance.LayoutOrder == 0 and instance.Parent then
+            local _scan = instance.Parent:GetChildren()
+            instance.LayoutOrder = #_scan
+        end
         table.insert(sectionData.controls, {
             instance = instance,
             searchText = text,
@@ -7150,6 +7204,7 @@
             ctrlId = instance:GetAttribute("DoD_CtrlId"),
             ctrlType = ctrlType,
             parent = instance.Parent,
+            layoutOrder = instance.LayoutOrder,
         })
         self:_queueSearchFilter(sectionData.tabName)
         return instance
@@ -7994,6 +8049,12 @@
             if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
                 if resizing then
                     resizing = false
+                    if self._hudState == "MAXIMIZED" then
+                        self._hudState = "NORMAL"
+                        if self._winMaxCtl and self._winMaxCtl.icon then
+                            self._winMaxCtl.icon.Image = GetIcon("maximize-2")
+                        end
+                    end
                     local mobileToggle = UI.MobileToggle
                     if mobileToggle then
                         mobileToggle.Visible = UserInputService.TouchEnabled and self._STATE.GuiVisible
@@ -11013,6 +11074,7 @@
             if state == _defaultToggleState then return end
             _h:Set(_defaultToggleState)
         end
+        _h.SetVisible = function(_, v) holder.Visible = v and true or false end
         return _h
     end
 
@@ -11516,6 +11578,7 @@
         _h.Reset = function(_)
             _h:Set(_defaultSliderVal)
         end
+        _h.SetVisible = function(_, v) holder.Visible = v and true or false end
         return _h
     end
 
@@ -12133,6 +12196,7 @@
             if currentIndex == _defaultDropdownIdx then return end
             _h:Set(_defaultDropdownIdx)
         end
+        _h.SetVisible = function(_, v) holder.Visible = v and true or false end
         return _h
     end
 
@@ -12730,6 +12794,7 @@
         _h.Reset = function(_)
             _h:Set(_defaultMultiIdx)
         end
+        _h.SetVisible = function(_, v) holder.Visible = v and true or false end
         return _h
     end
 
@@ -12976,6 +13041,7 @@
                     end
                     local g = (getgenv and getgenv()) or _G
                     if g.__DoDConfigs then g.__DoDConfigs[cfg.name] = nil end
+                    self._configsCache = nil
                     if not deleted and cfg.file then
 
                         self:Notify("CONFIG", "Delete failed: " .. tostring(cfg.name), "error")
@@ -13386,6 +13452,12 @@
         end
         _h.SetValue = _h.Set
         _h.SetVisible = function(_, v) holder.Visible = v and true or false end
+        local _defaultKey = _initKey
+        local _defaultMods = {}
+        for _, m in ipairs(_initMods or {}) do table.insert(_defaultMods, m) end
+        _h.Reset = function(_)
+            _h:Set(_defaultKey, _defaultMods)
+        end
         return _h
     end
 
@@ -13731,6 +13803,11 @@
         end
         _h.SetValue = _h.Set
         _h.SetVisible = function(_, v) holder.Visible = v and true or false end
+        local _defaultTextboxVal = ""
+        _h.Reset = function(_)
+            if input.Text == _defaultTextboxVal then return end
+            _h:Set(_defaultTextboxVal)
+        end
         return _h
     end
 
@@ -13797,11 +13874,12 @@
         local hue, saturation, value = defaultColor3:ToHSV()
         local currentColor = defaultColor3
         local _cpCam = getCam()
-        local _cpW = self._isMobile and math.min(280, ((_cpCam and _cpCam.ViewportSize.X) or 320) - 24) or 230
-        local _cpH = self._isMobile and math.min(240, ((_cpCam and _cpCam.ViewportSize.Y) or 600) - 24) or 176
+        local _cpVpX = (_cpCam and _cpCam.ViewportSize.X) or 320
+        local _cpVpY = (_cpCam and _cpCam.ViewportSize.Y) or 600
+        local _cpW = math.max(140, math.min(self._isMobile and 280 or 230, _cpVpX - 24))
+        local _cpH = math.max(160, math.min(self._isMobile and 240 or 176, _cpVpY - 24))
         local popup = Instance.new("Frame", self._UI.MainGui)
         popup.Name = "ColorPickerPopup"
-        _cpH = math.clamp(_cpH or 176, 190, 310)
         popup.Size = UDim2.fromOffset(_cpW, _cpH)
         popup.BackgroundColor3 = self._Colors.Bg2
         popup.BorderSizePixel = 0
@@ -14634,6 +14712,11 @@
         end
 
         _h.SetVisible = function(_, visible) holder.Visible = visible and true or false end
+        local _defaultChipIdx = defaultIndex
+        _h.Reset = function(_)
+            if currentIndex == _defaultChipIdx then return end
+            _h:Set(_defaultChipIdx)
+        end
         return _h
     end
 
@@ -14995,6 +15078,21 @@
     function Library:_isNarrow() return self._bp == "narrow" end
     function Library:_isMedium() return self._bp == "medium" end
     function Library:_isWide() return self._bp == "wide" end
+
+    function Library:GetActiveTab()
+        if self:_isDead() then return nil end
+        return self._STATE.ActiveTab
+    end
+
+    function Library:GetActiveCategory()
+        if self:_isDead() then return nil end
+        return self._STATE.ActiveCategory
+    end
+
+    function Library:GetWindowSize()
+        if self:_isDead() then return nil end
+        return self._UI.MainContainer.Size
+    end
 
     function Library:Minimize()
         if self:_isDead() then return end
@@ -15575,6 +15673,12 @@
         self._Sounds = {}
 
         Fn.disconnectAll(self)
+        local _gvCleanup = (getgenv and getgenv()) or _G
+        if _gvCleanup._DoD_ActiveInstances then
+            local _ci = table.find(_gvCleanup._DoD_ActiveInstances, self)
+            if _ci then table.remove(_gvCleanup._DoD_ActiveInstances, _ci) end
+        end
+        if D.Themes and D.Themes["Auto"] then D.Themes["Auto"] = nil end
         self._particleBGConn = nil
         self._loadingSpinConn = nil
         self._favTweens = nil
