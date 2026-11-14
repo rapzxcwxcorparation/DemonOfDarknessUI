@@ -1334,6 +1334,7 @@
         self:_initDrag()
         self:_initResize()
         self:_initTooltip()
+        self:_initSearchPanel()
         self:_bindToggleKey()
 
         if opts.ReducedMotion == true then
@@ -7175,11 +7176,18 @@
             return
         end
         local hlColor
-        if Fn.luminance(self._Colors.Card) > 0.5 then
-            hlColor = "#B45309"
+        local _acc = self._Colors.Accent
+        local _card = self._Colors.Card
+        local _hl3
+        if Fn.contrastRatio(_acc, _card) >= 3 then
+            _hl3 = _acc
         else
-            hlColor = "#FFD23F"
+            _hl3 = Fn.visibleAccent(_acc, _card, 3)
         end
+        hlColor = string.format("#%02X%02X%02X",
+            math.floor(_hl3.R * 255 + 0.5),
+            math.floor(_hl3.G * 255 + 0.5),
+            math.floor(_hl3.B * 255 + 0.5))
         local pieces = {}
         local cursor = 1
         local qLen = #q
@@ -15167,6 +15175,467 @@
     function Library:GetWindowSize()
         if self:_isDead() then return nil end
         return self._UI.MainContainer.Size
+    end
+
+    function Library:_buildSearchIndex()
+        self._STATE.SearchIndex = {}
+        local index = self._STATE.SearchIndex
+        for tabName, sections in pairs(self._STATE.SearchSections or {}) do
+            for _, sectionData in ipairs(sections) do
+                for _, control in ipairs(sectionData.controls) do
+                    local label = control.searchText or ""
+                    local sectionTitle = sectionData.title or ""
+                    local summary = sectionData.summary or ""
+                    table.insert(index, {
+                        tabName = tabName,
+                        sectionTitle = sectionTitle,
+                        ctrlType = control.ctrlType or "",
+                        label = label,
+                        ctrlRef = control,
+                        sectionRef = sectionData,
+                        blob = string.lower(sectionTitle .. " " .. summary .. " " .. label),
+                        labelLower = string.lower(label),
+                        sectionLower = string.lower(sectionTitle),
+                    })
+                end
+            end
+        end
+        local pool_all = self._STATE.SearchTopLevel or {}
+        for tabName, pool in pairs(pool_all) do
+            for _, ctrl in ipairs(pool) do
+                table.insert(index, {
+                    tabName = tabName,
+                    sectionTitle = "",
+                    ctrlType = ctrl.ctrlType or "",
+                    label = ctrl.searchText or "",
+                    ctrlRef = ctrl,
+                    sectionRef = nil,
+                    blob = string.lower(ctrl.searchText or ""),
+                    labelLower = string.lower(ctrl.searchText or ""),
+                    sectionLower = "",
+                })
+            end
+        end
+        return index
+    end
+
+    function Library:_fuzzyMatchWords(query, target)
+        query = string.lower(query or "")
+        target = string.lower(target or "")
+        local words = {}
+        for w in query:gmatch("%S+") do table.insert(words, w) end
+        if #words == 0 then return true, 0 end
+        local matched = 0
+        for _, w in ipairs(words) do
+            if string.find(target, w, 1, true) then matched = matched + 1 end
+        end
+        if matched == #words then return true, matched * 10 end
+        return false, 0
+    end
+
+    function Library:_searchAll(query)
+        self:_buildSearchIndex()
+        local q = string.gsub(query or "", "^%s*(.-)%s*$", "%1")
+        if q == "" then return {} end
+        local results = {}
+        for _, entry in ipairs(self._STATE.SearchIndex) do
+            local ok, score = self:_fuzzyMatchWords(q, entry.blob)
+            if ok then
+                local lb = self:_fuzzyMatchWords(q, entry.labelLower)
+                local sb = self:_fuzzyMatchWords(q, entry.sectionLower)
+                if lb then score = score + 100 end
+                if sb then score = score + 30 end
+                table.insert(results, { entry = entry, score = score })
+            end
+        end
+        table.sort(results, function(a, b) return a.score > b.score end)
+        return results
+    end
+
+    function Library:_initSearchPanel()
+        local UI = self._UI
+        if not UI or not UI.SearchBar or not UI.MainContainer then return end
+        local allBtn = Instance.new("TextButton", UI.SearchBar)
+        allBtn.Name = "SearchAllBtn"
+        allBtn.Size = UDim2.fromOffset(20, 20)
+        allBtn.Position = UDim2.new(1, -70, 0.5, -10)
+        allBtn.BackgroundColor3 = self._Colors.Bg2
+        allBtn.BackgroundTransparency = 0.5
+        allBtn.Text = ""
+        allBtn.AutoButtonColor = false
+        allBtn.Visible = false
+        allBtn.ZIndex = 5
+        Instance.new("UICorner", allBtn).CornerRadius = UDim.new(0, 5)
+        local allStroke = Instance.new("UIStroke", allBtn)
+        allStroke.Color = self._Colors.Border
+        allStroke.Thickness = 1
+        allStroke.Transparency = 0.6
+        local allIcon = Instance.new("ImageLabel", allBtn)
+        allIcon.Size = UDim2.fromOffset(12, 12)
+        allIcon.Position = UDim2.new(0.5, -6, 0.5, -6)
+        allIcon.BackgroundTransparency = 1
+        allIcon.Image = GetIcon("layers")
+        allIcon.ImageColor3 = self._Colors.TextDim
+        UI.SearchAllBtn = allBtn
+        allBtn.MouseEnter:Connect(function()
+            TweenService:Create(allBtn, TweenInfo.new(0.15), {BackgroundTransparency = 0.2}):Play()
+            TweenService:Create(allStroke, TweenInfo.new(0.15), {Color = self._Colors.Accent, Transparency = 0.2}):Play()
+            TweenService:Create(allIcon, TweenInfo.new(0.15), {ImageColor3 = self._Colors.Accent}):Play()
+        end)
+        allBtn.MouseLeave:Connect(function()
+            TweenService:Create(allBtn, TweenInfo.new(0.15), {BackgroundTransparency = 0.5}):Play()
+            TweenService:Create(allStroke, TweenInfo.new(0.15), {Color = self._Colors.Border, Transparency = 0.6}):Play()
+            TweenService:Create(allIcon, TweenInfo.new(0.15), {ImageColor3 = self._Colors.TextDim}):Play()
+        end)
+        allBtn.MouseButton1Click:Connect(function()
+            self:OpenSearchPanel()
+        end)
+        if UI.SearchInput then
+            UI.SearchInput:GetPropertyChangedSignal("Text"):Connect(function()
+                allBtn.Visible = #(UI.SearchInput.Text or "") > 0
+                if self._searchPanel and self._searchPanel.Parent and self._searchPanel.Visible then
+                    if self._searchPanelInput and self._searchPanelInput.Text ~= UI.SearchInput.Text then
+                        self._searchPanelInput.Text = UI.SearchInput.Text
+                    end
+                end
+            end)
+        end
+        Fn.track(UserInputService.InputBegan, function(inp, gp)
+            if gp then return end
+            if inp.KeyCode ~= Enum.KeyCode.K then return end
+            if UserInputService:IsKeyDown(Enum.KeyCode.LeftControl)
+                or UserInputService:IsKeyDown(Enum.KeyCode.RightControl) then
+                self:OpenSearchPanel()
+            end
+        end, self)
+    end
+
+    function Library:_buildSearchPanel()
+        local UI = self._UI
+        if not UI or self._searchPanel then return end
+        local panel = Instance.new("Frame", UI.MainContainer)
+        panel.Name = "SearchPanel"
+        panel.Size = UDim2.new(1, -20, 1, -140)
+        panel.Position = UDim2.new(0, 10, 0, 90)
+        panel.BackgroundColor3 = self._Colors.Bg2
+        panel.BackgroundTransparency = 0.05
+        panel.BorderSizePixel = 0
+        panel.Visible = false
+        panel.ZIndex = 500
+        panel.ClipsDescendants = true
+        Instance.new("UICorner", panel).CornerRadius = UDim.new(0, 12)
+        local pStroke = Instance.new("UIStroke", panel)
+        pStroke.Color = self._Colors.Accent
+        pStroke.Thickness = 1
+        pStroke.Transparency = 0.4
+        local header = Instance.new("Frame", panel)
+        header.Size = UDim2.new(1, 0, 0, 44)
+        header.BackgroundColor3 = self._Colors.Card
+        header.BackgroundTransparency = 0.3
+        header.BorderSizePixel = 0
+        header.ZIndex = 501
+        Instance.new("UICorner", header).CornerRadius = UDim.new(0, 12)
+        local searchIcon = Instance.new("ImageLabel", header)
+        searchIcon.Size = UDim2.fromOffset(16, 16)
+        searchIcon.Position = UDim2.new(0, 14, 0.5, -8)
+        searchIcon.BackgroundTransparency = 1
+        searchIcon.Image = GetIcon("search")
+        searchIcon.ImageColor3 = self._Colors.TextDim
+        searchIcon.ZIndex = 502
+        local panelInput = Instance.new("TextBox", header)
+        panelInput.Size = UDim2.new(1, -90, 1, 0)
+        panelInput.Position = UDim2.new(0, 40, 0, 0)
+        panelInput.BackgroundTransparency = 1
+        panelInput.Text = ""
+        panelInput.PlaceholderText = "Search all tabs... (Ctrl+K)"
+        panelInput.PlaceholderColor3 = self._Colors.TextDim
+        panelInput.TextColor3 = self._Colors.Text
+        panelInput.Font = Enum.Font.GothamMedium
+        panelInput.TextSize = 13
+        panelInput.TextXAlignment = Enum.TextXAlignment.Left
+        panelInput.ClearTextOnFocus = false
+        panelInput.ZIndex = 502
+        self._searchPanelInput = panelInput
+        local closeBtn = Instance.new("TextButton", header)
+        closeBtn.Size = UDim2.fromOffset(24, 24)
+        closeBtn.Position = UDim2.new(1, -34, 0.5, -12)
+        closeBtn.BackgroundTransparency = 1
+        closeBtn.Text = ""
+        closeBtn.AutoButtonColor = false
+        closeBtn.ZIndex = 502
+        local closeIcon = Instance.new("ImageLabel", closeBtn)
+        closeIcon.Size = UDim2.fromScale(0.6, 0.6)
+        closeIcon.Position = UDim2.fromScale(0.2, 0.2)
+        closeIcon.BackgroundTransparency = 1
+        closeIcon.Image = GetIcon("x")
+        closeIcon.ImageColor3 = self._Colors.TextDim
+        closeIcon.ZIndex = 503
+        closeBtn.MouseButton1Click:Connect(function() self:CloseSearchPanel() end)
+        local scroll = Instance.new("ScrollingFrame", panel)
+        scroll.Size = UDim2.new(1, 0, 1, -50)
+        scroll.Position = UDim2.new(0, 0, 0, 48)
+        scroll.BackgroundTransparency = 1
+        scroll.BorderSizePixel = 0
+        scroll.ScrollBarThickness = 3
+        scroll.ScrollBarImageColor3 = self._Colors.Accent
+        scroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
+        scroll.CanvasSize = UDim2.new(0, 0, 0, 0)
+        scroll.ZIndex = 501
+        self:_registerScrollFrame(scroll)
+        self._searchPanelScroll = scroll
+        local scrollLayout = Instance.new("UIListLayout", scroll)
+        scrollLayout.SortOrder = Enum.SortOrder.LayoutOrder
+        scrollLayout.Padding = UDim.new(0, 2)
+        local scrollPad = Instance.new("UIPadding", scroll)
+        scrollPad.PaddingLeft = UDim.new(0, 8)
+        scrollPad.PaddingRight = UDim.new(0, 8)
+        scrollPad.PaddingTop = UDim.new(0, 8)
+        scrollPad.PaddingBottom = UDim.new(0, 8)
+        self._searchPanel = panel
+        self._searchPanelHeader = header
+        self._searchPanelResults = {}
+        local debounce
+        panelInput:GetPropertyChangedSignal("Text"):Connect(function()
+            if debounce then pcall(task.cancel, debounce) end
+            debounce = task.delay(0.2, function()
+                debounce = nil
+                if panel.Parent and panel.Visible then
+                    self:_renderSearchResults(panelInput.Text)
+                end
+            end)
+        end)
+        Fn.track(UserInputService.InputBegan, function(inp, gp)
+            if gp then return end
+            if not panel.Visible then return end
+            if inp.KeyCode == Enum.KeyCode.Escape then
+                self:CloseSearchPanel()
+            elseif inp.KeyCode == Enum.KeyCode.Down or inp.KeyCode == Enum.KeyCode.Up then
+                self:_searchStepHighlight(inp.KeyCode == Enum.KeyCode.Down and 1 or -1)
+            elseif inp.KeyCode == Enum.KeyCode.Return then
+                local hi = self._searchHighlighted
+                if hi and self._searchPanelResults[hi] then
+                    self:_jumpToResult(self._searchPanelResults[hi].entry)
+                end
+            end
+        end, self)
+        self:_registerThemeRefresher(function()
+            if panel.Parent then
+                panel.BackgroundColor3 = self._Colors.Bg2
+                pStroke.Color = self._Colors.Accent
+                header.BackgroundColor3 = self._Colors.Card
+                panelInput.TextColor3 = self._Colors.Text
+                panelInput.PlaceholderColor3 = self._Colors.TextDim
+                searchIcon.ImageColor3 = self._Colors.TextDim
+                closeIcon.ImageColor3 = self._Colors.TextDim
+                scroll.ScrollBarImageColor3 = self._Colors.Accent
+            end
+        end)
+    end
+
+    function Library:OpenSearchPanel()
+        if self:_isDead() then return end
+        if not self._searchPanel then self:_buildSearchPanel() end
+        if not self._searchPanel then return end
+        self._searchPanel.Visible = true
+        if self._searchPanelInput then
+            self._searchPanelInput.Text = self._STATE.SearchQuery or ""
+            task.defer(function()
+                if self._searchPanelInput and self._searchPanelInput.Parent then
+                    self._searchPanelInput:CaptureFocus()
+                    self:_renderSearchResults(self._searchPanelInput.Text)
+                end
+            end)
+        end
+    end
+
+    function Library:CloseSearchPanel()
+        if not self._searchPanel then return end
+        self._searchPanel.Visible = false
+        if self._searchPanelInput then
+            pcall(function() self._searchPanelInput:ReleaseFocus() end)
+        end
+        self._searchHighlighted = nil
+    end
+
+    function Library:_renderSearchResults(query)
+        if not self._searchPanelScroll then return end
+        local scroll = self._searchPanelScroll
+        for _, child in ipairs(scroll:GetChildren()) do
+            if child:IsA("TextButton") or child:IsA("TextLabel") then
+                child:Destroy()
+            end
+        end
+        self._searchPanelResults = {}
+        self._searchHighlightList = {}
+        self._searchHighlighted = nil
+        query = tostring(query or "")
+        if query == "" then
+            local hint = Instance.new("TextLabel", scroll)
+            hint.Size = UDim2.new(1, 0, 0, 40)
+            hint.BackgroundTransparency = 1
+            hint.Text = "Type to search across all tabs."
+            hint.TextColor3 = self._Colors.TextDim
+            hint.Font = Enum.Font.GothamMedium
+            hint.TextSize = 11
+            hint.TextXAlignment = Enum.TextXAlignment.Center
+            hint.ZIndex = 502
+            return
+        end
+        local results = self:_searchAll(query)
+        if #results == 0 then
+            local empty = Instance.new("TextLabel", scroll)
+            empty.Size = UDim2.new(1, 0, 0, 40)
+            empty.BackgroundTransparency = 1
+            empty.Text = "No results for '" .. query .. "'"
+            empty.TextColor3 = self._Colors.TextDim
+            empty.Font = Enum.Font.GothamMedium
+            empty.TextSize = 11
+            empty.TextXAlignment = Enum.TextXAlignment.Center
+            empty.ZIndex = 502
+            return
+        end
+        local byTab, tabOrder = {}, {}
+        for _, r in ipairs(results) do
+            local tn = r.entry.tabName
+            if not byTab[tn] then byTab[tn] = {}; table.insert(tabOrder, tn) end
+            table.insert(byTab[tn], r)
+        end
+        local layoutOrder = 0
+        for _, tn in ipairs(tabOrder) do
+            local items = byTab[tn]
+            layoutOrder = layoutOrder + 1
+            local tabHeader = Instance.new("TextLabel", scroll)
+            tabHeader.LayoutOrder = layoutOrder
+            tabHeader.Size = UDim2.new(1, 0, 0, 24)
+            tabHeader.BackgroundTransparency = 1
+            tabHeader.Text = string.upper(tn) .. "  (" .. tostring(#items) .. ")"
+            tabHeader.TextColor3 = self._Colors.TextDim
+            tabHeader.Font = Enum.Font.GothamBold
+            tabHeader.TextSize = 10
+            tabHeader.TextXAlignment = Enum.TextXAlignment.Left
+            tabHeader.ZIndex = 502
+            for _, r in ipairs(items) do
+                layoutOrder = layoutOrder + 1
+                local entry = r.entry
+                local btn = Instance.new("TextButton", scroll)
+                btn.LayoutOrder = layoutOrder
+                btn.Size = UDim2.new(1, 0, 0, 40)
+                btn.BackgroundColor3 = self._Colors.Card
+                btn.BackgroundTransparency = 0.5
+                btn.Text = ""
+                btn.AutoButtonColor = false
+                btn.BorderSizePixel = 0
+                btn.ZIndex = 502
+                Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 6)
+                local icon = Instance.new("ImageLabel", btn)
+                icon.Size = UDim2.fromOffset(14, 14)
+                icon.Position = UDim2.new(0, 10, 0.5, -7)
+                icon.BackgroundTransparency = 1
+                icon.Image = GetIcon(entry.ctrlType == "toggle" and "check-circle"
+                    or (entry.ctrlType == "slider" and "activity"
+                    or (entry.ctrlType == "dropdown" and "chevron-down" or "file")))
+                icon.ImageColor3 = self._Colors.Accent
+                icon.ZIndex = 503
+                local title = Instance.new("TextLabel", btn)
+                title.Size = UDim2.new(1, -120, 0, 16)
+                title.Position = UDim2.new(0, 32, 0, 5)
+                title.BackgroundTransparency = 1
+                title.Text = entry.label
+                title.TextColor3 = self._Colors.Text
+                title.Font = Enum.Font.GothamBold
+                title.TextSize = 11
+                title.TextXAlignment = Enum.TextXAlignment.Left
+                title.TextTruncate = Enum.TextTruncate.AtEnd
+                title.ZIndex = 503
+                local sub = Instance.new("TextLabel", btn)
+                sub.Size = UDim2.new(1, -120, 0, 14)
+                sub.Position = UDim2.new(0, 32, 0, 21)
+                sub.BackgroundTransparency = 1
+                sub.Text = (entry.sectionTitle ~= "" and entry.sectionTitle or "—") .. " • " .. entry.ctrlType
+                sub.TextColor3 = self._Colors.TextDim
+                sub.Font = Enum.Font.GothamMedium
+                sub.TextSize = 9
+                sub.TextXAlignment = Enum.TextXAlignment.Left
+                sub.TextTruncate = Enum.TextTruncate.AtEnd
+                sub.ZIndex = 503
+                btn.MouseEnter:Connect(function()
+                    TweenService:Create(btn, TweenInfo.new(0.15), {BackgroundTransparency = 0.2}):Play()
+                end)
+                btn.MouseLeave:Connect(function()
+                    TweenService:Create(btn, TweenInfo.new(0.15), {BackgroundTransparency = 0.5}):Play()
+                end)
+                btn.MouseButton1Click:Connect(function()
+                    self:_jumpToResult(entry)
+                end)
+                table.insert(self._searchPanelResults, { entry = entry, btn = btn })
+                table.insert(self._searchHighlightList, btn)
+            end
+        end
+    end
+
+    function Library:_searchStepHighlight(dir)
+        local list = self._searchHighlightList
+        if not list or #list == 0 then return end
+        local cur = self._searchHighlighted or 0
+        cur = cur + dir
+        if cur < 1 then cur = #list end
+        if cur > #list then cur = 1 end
+        for i, b in ipairs(list) do
+            if i == cur then
+                TweenService:Create(b, TweenInfo.new(0.1), {
+                    BackgroundTransparency = 0,
+                    BackgroundColor3 = self._Colors.Accent,
+                }):Play()
+            else
+                TweenService:Create(b, TweenInfo.new(0.1), {
+                    BackgroundTransparency = 0.5,
+                    BackgroundColor3 = self._Colors.Card,
+                }):Play()
+            end
+        end
+        self._searchHighlighted = cur
+        local btn = list[cur]
+        if btn and btn.Parent then
+            local sb = self._searchPanelScroll
+            if sb then
+                local relY = btn.AbsolutePosition.Y - sb.AbsolutePosition.Y + sb.CanvasPosition.Y - 60
+                local maxY = math.max(0, sb.AbsoluteCanvasSize.Y - sb.AbsoluteSize.Y)
+                sb.CanvasPosition = Vector2.new(0, math.clamp(relY, 0, maxY))
+            end
+        end
+    end
+
+    function Library:_jumpToResult(entry)
+        if not entry then return end
+        self:CloseSearchPanel()
+        if self._STATE.ContentPages[entry.tabName] then
+            self:SwitchTab(entry.tabName)
+        end
+        if entry.sectionRef and entry.sectionRef.setExpanded then
+            pcall(entry.sectionRef.setExpanded, true, false)
+        end
+        task.defer(function()
+            task.wait(0.15)
+            if self:_isDead() then return end
+            local page = self._STATE.ContentPages[entry.tabName]
+            local ctrl = entry.ctrlRef and entry.ctrlRef.instance
+            if not (page and ctrl and ctrl.Parent) then return end
+            local relY = ctrl.AbsolutePosition.Y - page.AbsolutePosition.Y + page.CanvasPosition.Y - 80
+            local maxY = math.max(0, page.AbsoluteCanvasSize.Y - page.AbsoluteSize.Y)
+            page.CanvasPosition = Vector2.new(0, math.clamp(relY, 0, maxY))
+            local origColor = ctrl.BackgroundColor3
+            local origTrans = ctrl.BackgroundTransparency
+            ctrl.BackgroundColor3 = self._Colors.Accent
+            ctrl.BackgroundTransparency = 0.2
+            TweenService:Create(ctrl, TweenInfo.new(0.4), {BackgroundTransparency = 0.1}):Play()
+            task.wait(0.7)
+            if ctrl.Parent then
+                TweenService:Create(ctrl, TweenInfo.new(0.4), {
+                    BackgroundColor3 = origColor,
+                    BackgroundTransparency = origTrans or 0.3,
+                }):Play()
+            end
+        end)
     end
 
     function Library:Minimize()
